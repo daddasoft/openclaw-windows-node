@@ -100,6 +100,7 @@ public static class FluentIconCatalog
     // keeps call sites semantically distinct.
     // See reference/concepts/states/workspace.md.
     public const string Workspace = "\uE8DA";      // OpenLocal (alias of Folder)
+    public const string Cron = "\uE787";           // Calendar — Cron / scheduled jobs (matches HubWindow search mapping)
 
     /// <summary>
     /// Builds a <see cref="FontIcon"/> for the given PUA glyph using the
