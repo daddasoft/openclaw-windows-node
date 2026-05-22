@@ -92,11 +92,7 @@ public static class FluentIconCatalog
     public const string Reset = "\uE72C";          // Refresh (alias) — Reconfigure / start over
     public const string Clear = "\uE74D";          // Delete — clear/reset a buffer
     public const string Develop = "\uE943";        // Code — engineering / explorations action
-
-    // ── Agent Events page ──────────────────────────────────────────
-    // Activity-log metaphor; reused for the empty state on the Agent
-    // Events page (src/OpenClaw.Tray.WinUI/Pages/AgentEventsPage.xaml).
-    public const string AgentEvents = "\uE81C";    // History — agent events feed / activity log
+    public const string AgentEvents = "\uE81C";    // History — agent events feed
 
     /// <summary>
     /// Builds a <see cref="FontIcon"/> for the given PUA glyph using the

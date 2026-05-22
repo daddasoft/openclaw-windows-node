@@ -5,18 +5,15 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:helpers="using:OpenClawTray.Helpers">
 
-    <!-- Width matches PermissionsPage: stretch with MaxWidth=900 so the
-         content occupies the page from the left at the canonical width. -->
     <Grid Padding="24,16,24,16" MaxWidth="900" HorizontalAlignment="Stretch">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>  <!-- Header -->
-            <RowDefinition Height="Auto"/>  <!-- Toolbar: agent picker + Clear -->
-            <RowDefinition Height="Auto"/>  <!-- Filter chips -->
-            <RowDefinition Height="*"/>     <!-- Events list / empty state -->
-            <RowDefinition Height="Auto"/>  <!-- Status footer -->
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- ───────── Page header ───────── -->
         <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,12">
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <TextBlock x:Uid="AgentEventsPage_TextBlock_18" Text="Agent Events"
@@ -33,7 +30,6 @@
                        TextWrapping="Wrap"/>
         </StackPanel>
 
-        <!-- ───────── Toolbar: agent picker + Clear ───────── -->
         <Grid Grid.Row="1" Margin="0,0,0,8" ColumnSpacing="8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
@@ -55,7 +51,6 @@
             </Button>
         </Grid>
 
-        <!-- ───────── Filter (SelectorBar) ───────── -->
         <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
                       Margin="0,0,0,8">
             <SelectorBar x:Name="FilterSelector"
@@ -72,7 +67,6 @@
             </SelectorBar>
         </ScrollViewer>
 
-        <!-- ───────── Events list ───────── -->
         <ListView x:Name="EventsList" Grid.Row="3"
                   SelectionMode="None"
                   Visibility="Collapsed"
@@ -98,7 +92,6 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
-                        <!-- Row 0: badge + timestamp + chevron -->
                         <Grid Grid.Row="0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
@@ -121,20 +114,17 @@
                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
                         </Grid>
 
-                        <!-- Row 1: Summary line -->
                         <TextBlock Grid.Row="1" Text="{Binding SummaryLine}"
                                    Style="{StaticResource BodyTextBlockStyle}"
                                    TextWrapping="Wrap" MaxLines="3"
                                    Margin="0,6,0,0"/>
 
-                        <!-- Row 2: Expandable detail (hidden by default) -->
+                        <!-- Expanded detail; populated by code-behind. -->
                         <Grid Grid.Row="2" Visibility="Collapsed" Margin="0,8,0,0">
-                            <!-- Assistant: full text, same formatting as summary -->
                             <TextBlock TextWrapping="Wrap"
                                        Style="{StaticResource BodyTextBlockStyle}"
                                        IsTextSelectionEnabled="True" Visibility="Collapsed"/>
 
-                            <!-- Non-assistant: RunId + JSON -->
                             <StackPanel Spacing="4">
                                 <TextBlock Text="{Binding RunId}"
                                            Style="{StaticResource CaptionTextBlockStyle}"
@@ -152,7 +142,6 @@
             </ListView.ItemTemplate>
         </ListView>
 
-        <!-- ───────── Empty state ───────── -->
         <StackPanel x:Name="EmptyState" Grid.Row="3"
                     VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12">
             <FontIcon Glyph="{x:Bind helpers:FluentIconCatalog.AgentEvents, Mode=OneTime}"
@@ -168,7 +157,6 @@
                        HorizontalAlignment="Center" TextWrapping="Wrap" MaxWidth="320"/>
         </StackPanel>
 
-        <!-- ───────── Status footer ───────── -->
         <TextBlock Grid.Row="4" x:Name="StatusText"
                    Style="{StaticResource CaptionTextBlockStyle}"
                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"

@@ -160,7 +160,6 @@ public sealed partial class AgentEventsPage : Page
         if (args.Item is not AgentEventInfo evt || args.ItemContainer?.ContentTemplateRoot is not Grid grid)
             return;
 
-        // Row 0: header Grid with badge (col 0), timestamp (col 1), chevron (col 3)
         if (grid.Children[0] is Grid headerGrid && headerGrid.Children[0] is Border badge)
         {
             var hex = evt.BadgeColorHex;
@@ -181,8 +180,6 @@ public sealed partial class AgentEventsPage : Page
                     Microsoft.UI.ColorHelper.FromArgb(40, 100, 100, 100));
             }
 
-            // Update chevron glyph based on model state, and hide it
-            // entirely when there is nothing to expand.
             if (headerGrid.Children.Count > 2 && headerGrid.Children[2] is FontIcon chevron)
             {
                 chevron.Visibility = evt.CanExpand ? Visibility.Visible : Visibility.Collapsed;
@@ -190,13 +187,11 @@ public sealed partial class AgentEventsPage : Page
             }
         }
 
-        // Row 1: summary
         if (grid.Children.Count > 1 && grid.Children[1] is TextBlock summaryBlock)
         {
             summaryBlock.Visibility = evt.HasSummary ? Visibility.Visible : Visibility.Collapsed;
             if (evt.IsAssistantStream)
             {
-                // Swap between truncated summary and full text
                 summaryBlock.Text = evt.IsExpanded ? (evt.FullAssistantText ?? evt.SummaryLine) : evt.SummaryLine;
                 summaryBlock.MaxLines = evt.IsExpanded ? 0 : 3;
             }
@@ -207,40 +202,28 @@ public sealed partial class AgentEventsPage : Page
             }
         }
 
-        // Row 2: detail panel — only for streams that still need raw JSON
         if (grid.Children.Count > 2 && grid.Children[2] is Grid detailGrid)
         {
-            if (!evt.ShowDataJson)
-            {
-                // Assistant/error/lifecycle events show enough context in the summary row.
-                detailGrid.Visibility = Visibility.Collapsed;
-            }
-            else
-            {
-                detailGrid.Visibility = evt.IsExpanded ? Visibility.Visible : Visibility.Collapsed;
-            }
+            detailGrid.Visibility = (evt.IsExpanded && evt.ShowDataJson)
+                ? Visibility.Visible : Visibility.Collapsed;
         }
     }
 
     private void EventsList_ItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is not AgentEventInfo evt) return;
-        // Ignore clicks for events with nothing to reveal.
         if (!evt.CanExpand) return;
         evt.IsExpanded = !evt.IsExpanded;
 
-        // Update the visual container
         if (sender is ListView listView)
         {
             var container = listView.ContainerFromItem(e.ClickedItem) as ListViewItem;
             if (container?.ContentTemplateRoot is Grid grid)
             {
-                // Update chevron
                 if (grid.Children[0] is Grid headerGrid
                     && headerGrid.Children.Count > 2 && headerGrid.Children[2] is FontIcon chevron)
                     chevron.Glyph = evt.IsExpanded ? "\uE70E" : "\uE70D";
 
-                // Update summary text and MaxLines
                 if (grid.Children.Count > 1 && grid.Children[1] is TextBlock summaryBlock)
                 {
                     summaryBlock.Text = evt.IsAssistantStream && evt.IsExpanded
@@ -249,7 +232,6 @@ public sealed partial class AgentEventsPage : Page
                     summaryBlock.MaxLines = evt.IsExpanded ? 0 : 3;
                 }
 
-                // Toggle detail panel only for streams where raw JSON is still useful.
                 if (grid.Children.Count > 2 && grid.Children[2] is Grid detailGrid)
                     detailGrid.Visibility = (evt.IsExpanded && evt.ShowDataJson)
                         ? Visibility.Visible : Visibility.Collapsed;
