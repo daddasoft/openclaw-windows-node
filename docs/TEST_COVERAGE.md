@@ -1,17 +1,19 @@
 # Test Coverage Summary
 
-**2349 tests total** (1464 shared + 885 tray) — required suites passing ✅
+**2400+ tests total** (1500+ shared + 900+ tray) — required suites passing ✅
+
+> **Note**: Counts below are approximate and updated manually. Run `dotnet test` for the exact current totals.
 
 | Metric | Value |
 |--------|-------|
-| Total Tests | 2349 |
-| Result | 2327 passed, 22 skipped |
+| Total Tests | 2400+ |
+| Result | all pass |
 | Failing | 0 |
 | Framework | xUnit / .NET 10.0 |
 
 ## Test Projects
 
-### OpenClaw.Shared.Tests — 1464 tests
+### OpenClaw.Shared.Tests — 1500+ tests
 
 #### ModelsTests
 - **AgentActivityTests** (~15) — glyph mapping for all ActivityKind values, display text formatting
@@ -31,6 +33,15 @@
 
 #### ExecApprovalPolicyTests (~20)
 - Policy rule evaluation, persistence, pattern matching
+
+#### ExecApprovalV2Tests
+- **ExecApprovalV2InputValidationTests** — null/empty fields, oversized values, malformed JSON, valid requests
+- **ExecApprovalV2NormalizationTests** — shell wrapper unwrapping (cmd /c, powershell -Command, bash -c), identity building
+- **ExecApprovalV2EvaluatorTests** — allow/deny decisions against policies, allowlist matching
+- **ExecApprovalV2RoutingTests** — handler dispatch, fallback routing, null-handler pass-through
+- **ExecApprovalV2PromptAdapterTests** — prompt request serialization, outcome parsing
+- **ExecApprovalsStoreTests** — file-backed store reads/writes, agent-scoped resolution
+- **ExecApprovalsCoordinatorTests** (~30) — full pipeline: validate → normalize → evaluate(pass 1) → prompt/fallback → evaluate(pass 2) → final decision; env injection guard, log-injection prevention, concurrency (SemaphoreSlim rail), no-WinUI constraint
 
 #### CapabilityTests (~30)
 - **SystemCapabilityTests** — system command handling
@@ -69,9 +80,69 @@
 #### ReadmeValidationTests (~5)
 - Documentation sync checks
 
+#### AppVersionInfoTests (~8)
+- `TestOverride` returns that value for `Version` and `DisplayVersion`
+- `DisplayVersion` always equals `"v" + Version`
+- Without override: `Version` is non-empty, `DisplayVersion` starts with `"v"`
+- Override clearing restores real version
+
+#### AssetHashPinningTests (~5)
+- Every shipped Whisper model and Piper voice has a non-empty pinned SHA-256 hash
+- Hash format matches `[0-9a-f]{64}`
+
+#### SingleFlightDownloadTests
+- Concurrent requests for the same key coalesce into one download
+- Failed downloads are evicted from the in-flight map
+
+#### McpToolBridgeTests
+- Tool registration, command dispatch, parameter schema validation
+
+#### McpHttpServerTests
+- HTTP server lifecycle, tool listing endpoint, call routing
+
+#### McpAuthTokenResetTests
+- Token reset flow, flag clearing
+
+#### ChannelConfigPatchBuilderTests (~30)
+- Fresh channel creation, existing channel patching, null-safe merge
+- JSON round-trip, patch ordering, defaults preservation
+
+#### ChannelsPipelineTests
+- Pipeline stage ordering, error propagation
+
+#### InstanceMergerTests
+- Presence-beacon + gateway-node merging, deduplication, stale-entry handling
+
+#### A2UICapabilitySecurityTests
+- Capability security gate validation
+
+#### ChatAttachmentTests
+- Attachment serialization, type detection, size limits
+
+#### HttpUrlValidatorTests / HttpUrlRiskEvaluatorTests
+- URL validation (scheme, host, port), risk profiling (HTTPS, IDN homograph detection, IP literals, Windows security zones)
+
+#### UrlLogSanitizerTests
+- PII stripping, first-segment-only paths, unparseable URL handling
+
+#### TokenSanitizerTests
+- Token redaction in log strings
+
+#### WebBridgeMessageTests / WebSocketClientBaseTests
+- Message framing, connection lifecycle
+
+#### SpeechToTextLanguageNormalizationTests
+- BCP-47 normalization, locale fallbacks
+
+#### OpenClawGatewayClientSessionKeyTests
+- Session key parsing and verification
+
+#### LocalGatewayUrlClassifierTests / IdentityFileMigrationTests / GatewayRegistryMigrationTests
+- Local URL detection, identity file migration, registry migration from legacy settings
+
 ---
 
-### OpenClaw.Tray.Tests — 885 tests
+### OpenClaw.Tray.Tests — 900+ tests
 
 #### Core Tray Tests
 
@@ -99,6 +170,11 @@
 - **GatewayConnectionManagerTests / ConnectionStateMachineTests** — operator/node lifecycle, transitions, diagnostics, reconnect/disconnect behavior.
 - **PairingFlowTests / SetupCodeFlowTests / StaleEventGuardTests** — bootstrap setup codes, pairing state transitions, and stale event suppression.
 - **RetryPolicyTests / ConnectionDiagnosticsTests / NodeConnectorTests / SettingsChangeImpactTests** — retry classification, diagnostics, node connector behavior, and settings change impact.
+- **NodePairAutoApproveTests** — node command-upgrade auto-approval, scope guards, duplicate-request dedup.
+
+#### Node Capability Tests
+
+- **NodeCapabilityGatingTests** (~17) — `GetLocalNodeCapabilities` for all supported RIDs, Windows build version gating for MXC sandbox (requires build 26100+), missing-binary fast-fail, combined sandbox+feature gating, Windows 10 / non-Windows compatibility paths.
 
 ---
 
@@ -130,6 +206,6 @@ dotnet test --logger "console;verbosity=detailed"
 
 ---
 
-**Last Updated**: 2026-05-10
+**Last Updated**: 2026-05-22
 **Framework**: xUnit / .NET 10.0
 **Status**: ✅ required suites passing (`.\build.ps1`, Shared tests, Tray tests)
