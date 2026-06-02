@@ -197,7 +197,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
             Environment.GetEnvironmentVariable("OPENCLAW_TRAY_APPDATA_DIR")
                 ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "OpenClawTray");
-    private static readonly string CrashLogPath = Path.Combine(DataPath, "crash.log");
+    private readonly AppCrashLogger _crashLogger = new(Path.Combine(DataPath, "crash.log"));
     private static readonly AppRunMarker s_runMarker = new(Path.Combine(DataPath, "run.marker"));
     private const string DisableMouseInPointerEnv = "OPENCLAW_DISABLE_MOUSE_IN_POINTER";
 
@@ -289,18 +289,18 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
 
     private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
     {
-        LogCrash("UnhandledException", e.Exception);
+        _crashLogger.Log("UnhandledException", e.Exception);
         e.Handled = true; // Try to prevent crash
     }
 
     private void OnDomainUnhandledException(object sender, System.UnhandledExceptionEventArgs e)
     {
-        LogCrash("DomainUnhandledException", e.ExceptionObject as Exception);
+        _crashLogger.Log("DomainUnhandledException", e.ExceptionObject as Exception);
     }
 
     private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
     {
-        LogCrash("UnobservedTaskException", e.Exception);
+        _crashLogger.Log("UnobservedTaskException", e.Exception);
         e.SetObserved(); // Prevent crash
     }
     
@@ -312,33 +312,6 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
             Logger.Info($"Process exiting (ExitCode={Environment.ExitCode})");
         }
         catch { }
-    }
-
-    private static void LogCrash(string source, Exception? ex)
-    {
-        try
-        {
-            var dir = Path.GetDirectoryName(CrashLogPath);
-            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                Directory.CreateDirectory(dir);
-
-            var message = $"\n[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {source}\n{ex}\n";
-            File.AppendAllText(CrashLogPath, message);
-        }
-        catch { /* Can't log the crash logger crash */ }
-        
-        try
-        {
-            if (ex != null)
-            {
-                Logger.Error($"CRASH {source}: {ex}");
-            }
-            else
-            {
-                Logger.Error($"CRASH {source}");
-            }
-        }
-        catch { /* Ignore logging failures */ }
     }
 
     private void OnUiThread(Microsoft.UI.Dispatching.DispatcherQueueHandler action) => _dispatcherQueue?.TryEnqueue(action);
@@ -871,7 +844,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
         }
         catch (Exception ex)
         {
-            LogCrash("ShowTrayMenuPopup", ex);
+            _crashLogger.Log("ShowTrayMenuPopup", ex);
             Logger.Error($"Failed to show tray menu: {ex.Message}");
         }
     }
