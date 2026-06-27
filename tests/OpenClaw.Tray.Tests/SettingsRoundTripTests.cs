@@ -56,6 +56,8 @@ public class SettingsRoundTripTests
             SkippedUpdateTag = "v1.2.3",
             NotifyChatResponses = false,
             PreferStructuredCategories = true,
+            AppTheme = "Dark",
+            ShowDiagnostics = true,
             SystemRunSandboxEnabled = true,
             SystemRunBlockHostFallbackWhenMxcUnavailable = true,
             SystemRunAllowOutbound = true,
@@ -115,6 +117,8 @@ public class SettingsRoundTripTests
         Assert.Equal(original.SkippedUpdateTag, restored.SkippedUpdateTag);
         Assert.Equal(original.NotifyChatResponses, restored.NotifyChatResponses);
         Assert.Equal(original.PreferStructuredCategories, restored.PreferStructuredCategories);
+        Assert.Equal(original.AppTheme, restored.AppTheme);
+        Assert.Equal(original.ShowDiagnostics, restored.ShowDiagnostics);
         Assert.Equal(original.SystemRunSandboxEnabled, restored.SystemRunSandboxEnabled);
         Assert.Equal(original.SystemRunBlockHostFallbackWhenMxcUnavailable, restored.SystemRunBlockHostFallbackWhenMxcUnavailable);
         Assert.Equal(original.SystemRunAllowOutbound, restored.SystemRunAllowOutbound);
@@ -183,6 +187,8 @@ public class SettingsRoundTripTests
         Assert.Null(settings.SkippedUpdateTag);
         Assert.True(settings.NotifyChatResponses);
         Assert.True(settings.PreferStructuredCategories);
+        Assert.Equal("System", settings.AppTheme);
+        Assert.Null(settings.ShowDiagnostics);
         Assert.True(settings.SystemRunSandboxEnabled);
         Assert.False(settings.SystemRunBlockHostFallbackWhenMxcUnavailable);
         Assert.False(settings.SystemRunAllowOutbound);
@@ -190,6 +196,28 @@ public class SettingsRoundTripTests
         // installs and for any settings file that predates the field).
         Assert.True(settings.HubNavPaneOpen);
         Assert.Null(settings.UserRules);
+    }
+
+    [Fact]
+    public void SettingsManager_MissingShowDiagnostics_DefaultsVisible_ForUpgradeCompatibility()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "OpenClaw.Tray.Tests", Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "settings.json"), "{}");
+
+            var settings = new SettingsManager(dir);
+
+            Assert.Null(settings.ShowDiagnosticsOverride);
+            Assert.True(settings.ShowDiagnosticsEffective);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
     }
 
     [Fact]
@@ -346,6 +374,8 @@ public class SettingsRoundTripTests
         Assert.False(settings.HasSeenActivityStreamTip);
         Assert.Null(settings.SkippedUpdateTag);
         Assert.True(settings.GlobalHotkeyEnabled);
+        Assert.Equal("System", settings.AppTheme);
+        Assert.Null(settings.ShowDiagnostics);
         // HubNavPaneOpen wasn't in this older JSON shape; default true.
         Assert.True(settings.HubNavPaneOpen);
         Assert.Null(settings.UserRules);
@@ -400,6 +430,34 @@ public class SettingsRoundTripTests
             var reloaded = new SettingsManager(dir);
             Assert.True(reloaded.ScreenRecordingConsentGiven);
             Assert.True(reloaded.CameraRecordingConsentGiven);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SettingsManager_NormalizesInvalidAppTheme()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "OpenClaw.Tray.Tests", Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "settings.json"), """
+            {
+              "AppTheme": "Neon"
+            }
+            """);
+
+            var settings = new SettingsManager(dir);
+
+            Assert.Equal("System", settings.AppTheme);
+
+            settings.AppTheme = "dark";
+            Assert.Equal("Dark", settings.AppTheme);
         }
         finally
         {
