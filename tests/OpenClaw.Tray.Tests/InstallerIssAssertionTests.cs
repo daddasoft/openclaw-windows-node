@@ -12,30 +12,10 @@ namespace OpenClaw.Tray.Tests;
 /// </summary>
 public sealed class InstallerIssAssertionTests
 {
-    private static string GetRepositoryRoot()
-    {
-        var envRepoRoot = Environment.GetEnvironmentVariable("OPENCLAW_REPO_ROOT");
-        if (!string.IsNullOrWhiteSpace(envRepoRoot) && Directory.Exists(envRepoRoot))
-            return envRepoRoot;
-
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            if ((Directory.Exists(Path.Combine(directory.FullName, ".git")) ||
-                 File.Exists(Path.Combine(directory.FullName, ".git"))) &&
-                File.Exists(Path.Combine(directory.FullName, "README.md")))
-                return directory.FullName;
-            directory = directory.Parent;
-        }
-
-        throw new InvalidOperationException(
-            "Could not find repository root. Set OPENCLAW_REPO_ROOT to the repo path.");
-    }
-
     [Fact]
     public void Installer_HasAppMutexMatchingTraySingleInstance()
     {
-        var iss = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "installer.iss"));
+        var iss = File.ReadAllText(Path.Combine(TestRepositoryPaths.GetRepositoryRoot(), "installer.iss"));
         Assert.Contains("AppMutex=OpenClawTray", iss);
         Assert.Contains("Inno requires \"{{\" to emit a literal opening brace in AppId.", iss);
         Assert.Contains("AppId={{M0LTB0T-TRAY-4PP1-D3N7}", iss);
@@ -43,14 +23,14 @@ public sealed class InstallerIssAssertionTests
 
         // The matching tray-side mutex name must be present in App.xaml.cs.
         var appXamlCs = File.ReadAllText(Path.Combine(
-            GetRepositoryRoot(), "src", "OpenClaw.Tray.WinUI", "App.xaml.cs"));
+            TestRepositoryPaths.GetRepositoryRoot(), "src", "OpenClaw.Tray.WinUI", "App.xaml.cs"));
         Assert.Contains("var mutexName = \"OpenClawTray\";", appXamlCs);
     }
 
     [Fact]
     public void Installer_DoesNotShipCommandPaletteExtension()
     {
-        var iss = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "installer.iss"));
+        var iss = File.ReadAllText(Path.Combine(TestRepositoryPaths.GetRepositoryRoot(), "installer.iss"));
 
         Assert.DoesNotContain("cmdpalette", iss, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("CommandPalette", iss, StringComparison.OrdinalIgnoreCase);
@@ -61,7 +41,7 @@ public sealed class InstallerIssAssertionTests
     [Fact]
     public void Installer_CreatesStartMenuEntrypointsForTraySetupAndSupport()
     {
-        var iss = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "installer.iss"));
+        var iss = File.ReadAllText(Path.Combine(TestRepositoryPaths.GetRepositoryRoot(), "installer.iss"));
 
         Assert.Contains(@"#define MyAppName ""OpenClaw Companion""", iss);
         Assert.Contains(@"#define MyCompression ""lzma""", iss);
@@ -77,7 +57,7 @@ public sealed class InstallerIssAssertionTests
     [Fact]
     public void Installer_RemovesGeneratedAppStateOnlyAfterGatewayCleanup()
     {
-        var iss = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "installer.iss"));
+        var iss = File.ReadAllText(Path.Combine(TestRepositoryPaths.GetRepositoryRoot(), "installer.iss"));
 
         Assert.DoesNotContain("[UninstallRun]", iss);
         Assert.Contains("[Code]", iss);
@@ -100,7 +80,7 @@ public sealed class InstallerIssAssertionTests
     [Fact]
     public void UninstallLocalGatewayScript_DirectlyUnregistersWslDistro()
     {
-        var script = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "scripts", "Uninstall-LocalGateway.ps1"));
+        var script = File.ReadAllText(Path.Combine(TestRepositoryPaths.GetRepositoryRoot(), "scripts", "Uninstall-LocalGateway.ps1"));
 
         Assert.Contains("$DistroName = 'OpenClawGateway'", script);
         Assert.Contains("'--list', '--quiet'", script);
@@ -130,7 +110,7 @@ public sealed class InstallerIssAssertionTests
     [Fact]
     public void Installer_RegistersOpenClawProtocol()
     {
-        var iss = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "installer.iss"));
+        var iss = File.ReadAllText(Path.Combine(TestRepositoryPaths.GetRepositoryRoot(), "installer.iss"));
 
         Assert.Contains(@"Subkey: ""Software\Classes\openclaw""", iss);
         Assert.Contains(@"ValueName: ""URL Protocol""", iss);
@@ -142,8 +122,8 @@ public sealed class InstallerIssAssertionTests
     [Fact]
     public void ReleaseBuildDoesNotShipSeparateSetupUiExecutable()
     {
-        var iss = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "installer.iss"));
-        var ci = File.ReadAllText(Path.Combine(GetRepositoryRoot(), ".github", "workflows", "ci.yml"));
+        var iss = File.ReadAllText(Path.Combine(TestRepositoryPaths.GetRepositoryRoot(), "installer.iss"));
+        var ci = File.ReadAllText(Path.Combine(TestRepositoryPaths.GetRepositoryRoot(), ".github", "workflows", "ci.yml"));
 
         Assert.Contains(@"FileExists(publish + ""\OpenClaw.Tray.WinUI.exe"")", iss);
         Assert.Contains(@"FileExists(publish + ""\SetupEngine\OpenClaw.SetupEngine.UI.exe"")", iss);
@@ -158,14 +138,22 @@ public sealed class InstallerIssAssertionTests
     [Fact]
     public void MxcSdk_IsRestoredCopiedValidatedAndIncludedInInstallerPayload()
     {
-        var repositoryRoot = GetRepositoryRoot();
+        var repositoryRoot = TestRepositoryPaths.GetRepositoryRoot();
         var packageJson = File.ReadAllText(Path.Combine(repositoryRoot, "package.json"));
+        var packageLock = File.ReadAllText(Path.Combine(repositoryRoot, "package-lock.json"));
         var trayProject = File.ReadAllText(Path.Combine(
             repositoryRoot, "src", "OpenClaw.Tray.WinUI", "OpenClaw.Tray.WinUI.csproj"));
         var iss = File.ReadAllText(Path.Combine(repositoryRoot, "installer.iss"));
 
         Assert.Contains(@"""@microsoft/mxc-sdk""", packageJson);
+        Assert.Contains(@"""@microsoft/mxc-sdk"": ""^0.7.0""", packageJson);
+        Assert.Contains(@"""node_modules/@microsoft/mxc-sdk""", packageLock);
+        Assert.Contains(@"""version"": ""0.7.0""", packageLock);
         Assert.Contains("RestoreMxcNodeBridge", trayProject);
+        Assert.Contains(@"Inputs=""$(OpenClawRepoRoot)package-lock.json""", trayProject);
+        Assert.Contains(@"<MxcSdkRestoreStamp>$(OpenClawRepoRoot)node_modules\.openclaw-mxc-sdk-$(MxcSdkExpectedVersion).stamp</MxcSdkRestoreStamp>", trayProject);
+        Assert.Contains(@"Outputs=""$(MxcSdkRestoreStamp)""", trayProject);
+        Assert.Contains(@"<Touch Files=""$(MxcSdkRestoreStamp)"" AlwaysCreate=""true"" />", trayProject);
         Assert.Contains("npm ci --no-audit --no-fund", trayProject);
         Assert.Contains("CopyWxcExecToOutput", trayProject);
         Assert.Contains("CopyWxcExecToPublish", trayProject);
@@ -181,7 +169,7 @@ public sealed class InstallerIssAssertionTests
     [Fact]
     public void MxcRuntime_ProbesShippedWxcExecAndSystemRunUsesIt()
     {
-        var repositoryRoot = GetRepositoryRoot();
+        var repositoryRoot = TestRepositoryPaths.GetRepositoryRoot();
         var availability = File.ReadAllText(Path.Combine(
             repositoryRoot, "src", "OpenClaw.Shared", "Mxc", "MxcAvailability.cs"));
         var nodeService = File.ReadAllText(Path.Combine(
@@ -195,7 +183,7 @@ public sealed class InstallerIssAssertionTests
 
         Assert.Contains("private ICommandRunner BuildSystemRunRunner()", nodeService);
         Assert.Contains("MxcAvailability.Probe(_logger)", nodeService);
-        Assert.Contains("new DirectAppContainerExecutor(availability, _logger)", nodeService);
+        Assert.Contains("new DirectAppContainerExecutor(GetOrProbeMxcAvailability, _logger)", nodeService);
         Assert.Contains("return new MxcCommandRunner(", nodeService);
     }
 

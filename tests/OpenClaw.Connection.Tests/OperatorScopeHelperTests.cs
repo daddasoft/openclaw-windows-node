@@ -115,14 +115,10 @@ public class ChatNavigationReadinessTests
     {
         var mgr = new StubConnectionManager(RoleConnectionState.Connecting);
 
-        // Fire the Connected state event after a short delay
-        _ = Task.Run(async () =>
-        {
-            await Task.Delay(20);
-            mgr.SimulateConnected();
-        });
+        var waitTask = ChatNavigationReadiness.WaitForOperatorHandshakeAsync(mgr, TimeSpan.FromMilliseconds(500));
+        mgr.SimulateConnected();
 
-        var result = await ChatNavigationReadiness.WaitForOperatorHandshakeAsync(mgr, TimeSpan.FromMilliseconds(500));
+        var result = await waitTask;
         Assert.True(result);
     }
 
@@ -177,7 +173,7 @@ public class ChatNavigationReadinessTests
         public Task ReconnectAsync() => Task.CompletedTask;
         public Task SwitchGatewayAsync(string gatewayId) => Task.CompletedTask;
         public Task EnsureNodeConnectedAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task<SetupCodeResult> ApplySetupCodeAsync(string setupCode) => Task.FromResult(new SetupCodeResult(SetupCodeOutcome.InvalidCode));
+        public Task<SetupCodeResult> ApplySetupCodeAsync(string setupCode, SshTunnelConfig? sshTunnel = null) => Task.FromResult(new SetupCodeResult(SetupCodeOutcome.InvalidCode));
         public Task<SetupCodeResult> ConnectWithSharedTokenAsync(string gatewayUrl, string token, SshTunnelConfig? sshTunnel = null) => Task.FromResult(new SetupCodeResult(SetupCodeOutcome.InvalidCode));
         public void Dispose() { }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;

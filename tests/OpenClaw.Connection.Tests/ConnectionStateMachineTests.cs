@@ -279,6 +279,40 @@ public class ConnectionStateMachineTests
     }
 
     [Fact]
+    public void SetNodeInfo_PendingWithoutRequestId_ClearsStaleRequestIdAndKind()
+    {
+        _sm.SetNodeInfo(
+            "node-1",
+            OpenClaw.Shared.PairingStatus.Pending,
+            "req-1",
+            OpenClaw.Shared.PairingApprovalKind.DevicePair);
+
+        _sm.SetNodeInfo("node-1", OpenClaw.Shared.PairingStatus.Pending);
+
+        Assert.Null(_sm.Current.NodePairingRequestId);
+        Assert.Equal(OpenClaw.Shared.PairingApprovalKind.Unknown, _sm.Current.NodePairingApprovalKind);
+    }
+
+    [Fact]
+    public void SetNodeInfo_UnknownKindForSameRequestId_PreservesKnownKind()
+    {
+        _sm.SetNodeInfo(
+            "node-1",
+            OpenClaw.Shared.PairingStatus.Pending,
+            "req-1",
+            OpenClaw.Shared.PairingApprovalKind.DevicePair);
+
+        _sm.SetNodeInfo(
+            "node-1",
+            OpenClaw.Shared.PairingStatus.Pending,
+            "req-1",
+            OpenClaw.Shared.PairingApprovalKind.Unknown);
+
+        Assert.Equal("req-1", _sm.Current.NodePairingRequestId);
+        Assert.Equal(OpenClaw.Shared.PairingApprovalKind.DevicePair, _sm.Current.NodePairingApprovalKind);
+    }
+
+    [Fact]
     public void NodePaired_TransitionsToConnected()
     {
         _sm.SetNodeEnabled(true);
@@ -380,6 +414,16 @@ public class ConnectionStateMachineTests
     [InlineData(RoleConnectionState.Connected, RoleConnectionState.Connecting, true, OverallConnectionState.Connecting)]
     [InlineData(RoleConnectionState.Connected, RoleConnectionState.Idle, false, OverallConnectionState.Ready)]
     [InlineData(RoleConnectionState.Idle, RoleConnectionState.Idle, true, OverallConnectionState.Idle)]
+    // Node errors are suppressed when node mode is disabled → Ready (not Degraded).
+    [InlineData(RoleConnectionState.Connected, RoleConnectionState.Error, false, OverallConnectionState.Ready)]
+    [InlineData(RoleConnectionState.Connected, RoleConnectionState.PairingRejected, false, OverallConnectionState.Ready)]
+    [InlineData(RoleConnectionState.Connected, RoleConnectionState.RateLimited, false, OverallConnectionState.Ready)]
+    // Node connecting is ignored when node mode is disabled → Ready (not Connecting).
+    [InlineData(RoleConnectionState.Connected, RoleConnectionState.Connecting, false, OverallConnectionState.Ready)]
+    // Operator connected, node idle, node enabled → operator-only connected (fallthrough).
+    [InlineData(RoleConnectionState.Connected, RoleConnectionState.Idle, true, OverallConnectionState.Connected)]
+    // Node PairingRequired is reported regardless of nodeEnabled.
+    [InlineData(RoleConnectionState.Connected, RoleConnectionState.PairingRequired, false, OverallConnectionState.PairingRequired)]
     public void DeriveOverall_ReturnsCorrectState(
         RoleConnectionState op, RoleConnectionState node, bool nodeEnabled, OverallConnectionState expected)
     {

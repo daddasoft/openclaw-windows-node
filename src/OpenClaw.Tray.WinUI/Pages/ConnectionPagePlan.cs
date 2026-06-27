@@ -86,8 +86,14 @@ internal enum NodeCardState
 {
     Hidden,
     Off,
+    /// <summary>Gateway node is off, local MCP server is enabled.</summary>
+    OffMcpOnly,
     OnHealthy,
+    /// <summary>Node role is connecting / starting up (not yet ready).</summary>
+    OnNodeConnecting,
     OnPermissionsIncomplete,
+    OnNodeApprovalRequired,
+    OnNodeReapprovalRequired,
     OnNodePairingRequired,
     OnNodeRejected,
     OnNodeRateLimited,
@@ -103,6 +109,14 @@ internal enum RecoveryCategory
     Network,
     Server,
     Tunnel,
+    /// <summary>Authenticated but missing a required scope — re-pair for higher scopes.</summary>
+    Scope,
+    /// <summary>Stored device token rotated/revoked — re-pair to repair.</summary>
+    TokenDrift,
+    /// <summary>TLS/cleartext transport problem — switch to wss:// or a tunnel.</summary>
+    Tls,
+    /// <summary>Gateway is temporarily rate-limiting this client.</summary>
+    RateLimited,
 }
 
 /// <summary>
@@ -129,6 +143,19 @@ internal sealed record ConnectionPagePlan
     public NodeCardState NodeCard { get; init; } = NodeCardState.Hidden;
     /// <summary>For OnNodePairingRequired — the exact CLI command to copy/paste.</summary>
     public string? NodeApproveCommand { get; init; }
+    /// <summary>Copy-only command for node-list command-trust approval or reapproval.</summary>
+    public string? NodeTrustApproveCommand { get; init; }
+    /// <summary>True only when the trust command approves the reported request; false for discovery commands.</summary>
+    public bool NodeTrustCommandApprovesRequest { get; init; }
+    public GatewayNodeApprovalState NodeApprovalState { get; init; }
+    public IReadOnlyList<string> NodeEffectiveCapabilities { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<string> NodeEffectiveCommands { get; init; } = Array.Empty<string>();
+    public IReadOnlyDictionary<string, bool> NodeEffectivePermissions { get; init; } =
+        new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+    public IReadOnlyList<string> NodePendingDeclaredCapabilities { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<string> NodePendingDeclaredCommands { get; init; } = Array.Empty<string>();
+    public IReadOnlyDictionary<string, bool> NodePendingDeclaredPermissions { get; init; } =
+        new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
     /// <summary>For OnNodeError — sanitized error string.</summary>
     public string? NodeErrorDetail { get; init; }
 
@@ -156,32 +183,34 @@ internal sealed record ConnectionPagePlan
     /// <param name="settings">App settings (capability flags, etc.).</param>
     /// <param name="savedGatewayCount">Total saved gateways (governs Welcome vs Cockpit).</param>
     /// <param name="userIntent">User-driven mode override ("adding"); pass <c>UserIntent.None</c> for default.</param>
+    /// <param name="localNode">Gateway-reported local node record, including effective and pending approval surfaces.</param>
     public static ConnectionPagePlan Build(
         GatewayConnectionSnapshot snap,
         GatewayRecord? activeRecord,
         GatewaySelfInfo? self,
         SettingsManager? settings,
         int savedGatewayCount,
-        UserIntent userIntent = UserIntent.None)
+        UserIntent userIntent = UserIntent.None,
+        GatewayNodeInfo? localNode = null)
     {
-        var hasActive = activeRecord != null;
         var displayName = activeRecord?.FriendlyName
             ?? activeRecord?.Url
             ?? snap.GatewayName
             ?? "gateway";
 
+        var plan = BuildDerived(snap, activeRecord, self, settings, savedGatewayCount, displayName);
+
         // ─── User-intent override: AddGateway sub-view ───
         // Keeps Operator/Node cards visible in the strip+roles area while the
         // bottom section is swapped to the Add form.
         if (userIntent == UserIntent.AddingGateway)
-        {
-            // Inherit the snap-derived status strip so the user keeps context,
-            // but force the bottom section to the Add form.
-            var inner = BuildDerived(snap, activeRecord, self, settings, savedGatewayCount, displayName);
-            return inner with { Mode = ConnectionPageMode.AddGateway };
-        }
+            plan = plan with { Mode = ConnectionPageMode.AddGateway };
 
-        return BuildDerived(snap, activeRecord, self, settings, savedGatewayCount, displayName);
+        return ApplyNodeListApproval(
+            plan,
+            localNode,
+            snap,
+            settings);
     }
 
     private static ConnectionPagePlan BuildDerived(
@@ -195,7 +224,7 @@ internal sealed record ConnectionPagePlan
         // ─── Derived layout ───
         return snap.OverallState switch
         {
-            OverallConnectionState.Idle => BuildIdle(savedGatewayCount, activeRecord),
+            OverallConnectionState.Idle => BuildIdle(savedGatewayCount, activeRecord, settings),
 
             OverallConnectionState.Connecting => BuildCockpitConnecting(snap, activeRecord, displayName),
 
@@ -224,7 +253,7 @@ internal sealed record ConnectionPagePlan
                 ActiveGatewayHasSshTunnel = activeRecord?.SshTunnel != null,
             },
 
-            _ => BuildIdle(savedGatewayCount, activeRecord),
+            _ => BuildIdle(savedGatewayCount, activeRecord, settings),
         };
     }
 
@@ -232,8 +261,12 @@ internal sealed record ConnectionPagePlan
     // Mode builders
     // ───────────────────────────────────────────────────────────────────
 
-    private static ConnectionPagePlan BuildIdle(int savedCount, GatewayRecord? activeRecord)
+    private static ConnectionPagePlan BuildIdle(
+        int savedCount,
+        GatewayRecord? activeRecord,
+        SettingsManager? settings)
     {
+        var idleNodeCard = BuildIdleNodeCardState(settings);
         if (savedCount == 0)
         {
             return new ConnectionPagePlan
@@ -243,11 +276,12 @@ internal sealed record ConnectionPagePlan
                 StripAccent = ConnectionAccent.Neutral,
                 StripHeadline = "No gateway yet",
                 StripSub = "Add a gateway to get started.",
+                NodeCard = idleNodeCard,
             };
         }
 
         // Saved gateways exist but none active — drop straight into Cockpit
-        // (Operator/Node panels hide themselves because OperatorCardState=Hidden).
+        // (role panels hide themselves unless local MCP-only status is visible).
         return new ConnectionPagePlan
         {
             Mode = ConnectionPageMode.Cockpit,
@@ -255,6 +289,7 @@ internal sealed record ConnectionPagePlan
             StripAccent = ConnectionAccent.Neutral,
             StripHeadline = "Not connected",
             StripSub = "Pick a gateway below, or add a new one.",
+            NodeCard = idleNodeCard,
             RelevantGatewayId = activeRecord?.Id,
         };
     }
@@ -290,7 +325,7 @@ internal sealed record ConnectionPagePlan
         string name)
     {
         var url = ConnectionCardPlanSanitizer.SanitizeGatewayUrl(rec?.Url ?? snap.GatewayUrl);
-        var sub = BuildConnectedDetailLine(rec, self);
+        var sub = BuildConnectedDetailLine(rec, self, snap);
 
         return new ConnectionPagePlan
         {
@@ -346,7 +381,7 @@ internal sealed record ConnectionPagePlan
             NodeApproveCommand = BuildNodeApproveCommand(snap),
             NodeErrorDetail = ExtractNodeErrorDetail(snap),
             ActiveGatewayDisplayName = name,
-            ActiveGatewayDetailLine = BuildConnectedDetailLine(rec, self),
+            ActiveGatewayDetailLine = BuildConnectedDetailLine(rec, self, snap),
             ActiveGatewayHasSshTunnel = rec?.SshTunnel != null,
             RelevantGatewayId = rec?.Id,
         };
@@ -432,6 +467,85 @@ internal sealed record ConnectionPagePlan
                 RelevantGatewayId = rec?.Id,
             },
 
+            // Stored device token rotated/revoked — the fix is to re-pair, not
+            // retry. Same paste-setup-code affordance as Auth, clearer copy.
+            RecoveryCategory.TokenDrift => new ConnectionPagePlan
+            {
+                Mode = ConnectionPageMode.Recovery,
+                Recovery = RecoveryCategory.TokenDrift,
+                StripGlyph = OpenClawTray.Helpers.FluentIconCatalog.StatusErr,
+                StripAccent = ConnectionAccent.Critical,
+                StripHeadline = "Device needs re-pairing",
+                StripSub = string.IsNullOrEmpty(err)
+                    ? $"The saved device token for {name} is no longer trusted by the gateway."
+                    : err,
+                StripPrimaryLabel = null,
+                StripPrimaryAction = ConnectionPrimaryAction.None,
+                ActiveGatewayDisplayName = name,
+                ActiveGatewayDetailLine = url,
+                ActiveGatewayHasSshTunnel = rec?.SshTunnel != null,
+                RelevantGatewayId = rec?.Id,
+            },
+
+            // Authenticated but under-privileged — re-pair to request the scopes
+            // this device needs (e.g. operator.admin / operator.pairing).
+            RecoveryCategory.Scope => new ConnectionPagePlan
+            {
+                Mode = ConnectionPageMode.Recovery,
+                Recovery = RecoveryCategory.Scope,
+                StripGlyph = OpenClawTray.Helpers.FluentIconCatalog.Lock,
+                StripAccent = ConnectionAccent.Critical,
+                StripHeadline = "Not enough access",
+                StripSub = string.IsNullOrEmpty(err)
+                    ? $"This device is connected but lacks the scopes it needs on {name}."
+                    : err,
+                StripPrimaryLabel = null,
+                StripPrimaryAction = ConnectionPrimaryAction.None,
+                ActiveGatewayDisplayName = name,
+                ActiveGatewayDetailLine = url,
+                ActiveGatewayHasSshTunnel = rec?.SshTunnel != null,
+                RelevantGatewayId = rec?.Id,
+            },
+
+            // TLS/cleartext transport problem — steer toward wss:// or a tunnel.
+            RecoveryCategory.Tls => new ConnectionPagePlan
+            {
+                Mode = ConnectionPageMode.Recovery,
+                Recovery = RecoveryCategory.Tls,
+                StripGlyph = OpenClawTray.Helpers.FluentIconCatalog.StatusErr,
+                StripAccent = ConnectionAccent.Critical,
+                StripHeadline = "Secure connection failed",
+                StripSub = string.IsNullOrEmpty(err)
+                    ? "The gateway's transport could not be secured."
+                    : err,
+                StripPrimaryLabel = "Retry",
+                StripPrimaryAction = ConnectionPrimaryAction.Retry,
+                RecoveryDetail = err,
+                ActiveGatewayDisplayName = name,
+                ActiveGatewayDetailLine = url,
+                ActiveGatewayHasSshTunnel = rec?.SshTunnel != null,
+                RelevantGatewayId = rec?.Id,
+            },
+
+            RecoveryCategory.RateLimited => new ConnectionPagePlan
+            {
+                Mode = ConnectionPageMode.Recovery,
+                Recovery = RecoveryCategory.RateLimited,
+                StripGlyph = OpenClawTray.Helpers.FluentIconCatalog.StatusWarn,
+                StripAccent = ConnectionAccent.Caution,
+                StripHeadline = "Too many failed attempts",
+                StripSub = string.IsNullOrEmpty(err)
+                    ? "The gateway is temporarily limiting connection attempts from this client."
+                    : err,
+                StripPrimaryLabel = null,
+                StripPrimaryAction = ConnectionPrimaryAction.None,
+                RecoveryDetail = err,
+                ActiveGatewayDisplayName = name,
+                ActiveGatewayDetailLine = url,
+                ActiveGatewayHasSshTunnel = rec?.SshTunnel != null,
+                RelevantGatewayId = rec?.Id,
+            },
+
             RecoveryCategory.Tunnel => new ConnectionPagePlan
             {
                 Mode = ConnectionPageMode.Recovery,
@@ -494,17 +608,104 @@ internal sealed record ConnectionPagePlan
     // Card state helpers
     // ───────────────────────────────────────────────────────────────────
 
+    private static ConnectionPagePlan ApplyNodeListApproval(
+        ConnectionPagePlan plan,
+        GatewayNodeInfo? localNode,
+        GatewayConnectionSnapshot snap,
+        SettingsManager? settings)
+    {
+        var pairingApprovalKind = snap.NodePairingApprovalKind;
+        var pairingRequestId = snap.NodePairingRequestId;
+        var isPendingTrustApproval = localNode?.ApprovalState is
+            GatewayNodeApprovalState.PendingApproval or
+            GatewayNodeApprovalState.PendingReapproval;
+        var nodeConnectingAllowsTrustOverride =
+            plan.NodeCard == NodeCardState.Hidden &&
+            settings?.EnableNodeMode == true &&
+            snap.OperatorState == RoleConnectionState.Connected &&
+            snap.NodeState == RoleConnectionState.Connecting;
+        var nodeCardAllowsTrustOverride = plan.NodeCard is
+            NodeCardState.OnHealthy or
+            NodeCardState.OnPermissionsIncomplete or
+            NodeCardState.OnNodePairingRequired or
+            NodeCardState.OnNodeConnecting ||
+            nodeConnectingAllowsTrustOverride;
+        // Authoritative node-list trust can override any non-device-pair card.
+        // Snapshot fallback is narrower: Unknown stays on discovery-only pairing UI.
+        var nodeListTrustOwnsApprovalUx =
+            isPendingTrustApproval &&
+            nodeCardAllowsTrustOverride &&
+            pairingApprovalKind != PairingApprovalKind.DevicePair;
+        var snapshotTrustOwnsApprovalUx =
+            plan.NodeCard == NodeCardState.OnNodePairingRequired &&
+            pairingApprovalKind == PairingApprovalKind.NodePair;
+        var nodeTrustOwnsApprovalUx =
+            nodeListTrustOwnsApprovalUx ||
+            snapshotTrustOwnsApprovalUx;
+        var nodeCard = plan.NodeCard;
+        if (nodeTrustOwnsApprovalUx)
+        {
+            nodeCard = localNode?.ApprovalState switch
+            {
+                GatewayNodeApprovalState.PendingReapproval => NodeCardState.OnNodeReapprovalRequired,
+                _ => NodeCardState.OnNodeApprovalRequired
+            };
+        }
+
+        var trustRequestId = isPendingTrustApproval
+            ? localNode!.PendingRequestId
+            : pairingRequestId;
+        var approvalCommand = "";
+        var hasApprovalCommand = nodeTrustOwnsApprovalUx &&
+            CommandCenterDiagnostics.TryBuildNodeApprovalCommand(
+                trustRequestId,
+                out approvalCommand);
+
+        return plan with
+        {
+            NodeCard = nodeCard,
+            NodeApproveCommand = nodeTrustOwnsApprovalUx ? null : plan.NodeApproveCommand,
+            NodeApprovalState = localNode?.ApprovalState ?? plan.NodeApprovalState,
+            NodeTrustApproveCommand = nodeTrustOwnsApprovalUx
+                ? hasApprovalCommand
+                    ? approvalCommand
+                    : "openclaw nodes pending"
+                : null,
+            NodeTrustCommandApprovesRequest = hasApprovalCommand,
+            NodeEffectiveCapabilities = localNode != null
+                ? localNode.Capabilities.ToArray()
+                : plan.NodeEffectiveCapabilities,
+            NodeEffectiveCommands = localNode != null
+                ? localNode.Commands.ToArray()
+                : plan.NodeEffectiveCommands,
+            NodeEffectivePermissions = localNode != null
+                ? new Dictionary<string, bool>(localNode.Permissions, StringComparer.OrdinalIgnoreCase)
+                : plan.NodeEffectivePermissions,
+            NodePendingDeclaredCapabilities = localNode != null
+                ? localNode.PendingDeclaredCapabilities.ToArray()
+                : plan.NodePendingDeclaredCapabilities,
+            NodePendingDeclaredCommands = localNode != null
+                ? localNode.PendingDeclaredCommands.ToArray()
+                : plan.NodePendingDeclaredCommands,
+            NodePendingDeclaredPermissions = localNode != null
+                ? new Dictionary<string, bool>(localNode.PendingDeclaredPermissions, StringComparer.OrdinalIgnoreCase)
+                : plan.NodePendingDeclaredPermissions
+        };
+    }
+
     private static NodeCardState BuildNodeCardState(GatewayConnectionSnapshot snap, SettingsManager? settings)
     {
         if (settings == null) return NodeCardState.Hidden;
-        if (!settings.EnableNodeMode) return NodeCardState.Off;
 
-        // Operator must be connected for the node card to be meaningful.
+        if (!settings.EnableNodeMode)
+            return settings.EnableMcpServer ? NodeCardState.OffMcpOnly : NodeCardState.Off;
+
         if (snap.OperatorState != RoleConnectionState.Connected)
             return NodeCardState.Off;
 
         return snap.NodeState switch
         {
+            RoleConnectionState.Connecting => NodeCardState.OnNodeConnecting,
             RoleConnectionState.PairingRequired => NodeCardState.OnNodePairingRequired,
             RoleConnectionState.PairingRejected => NodeCardState.OnNodeRejected,
             RoleConnectionState.RateLimited => NodeCardState.OnNodeRateLimited,
@@ -514,27 +715,44 @@ internal sealed record ConnectionPagePlan
         };
     }
 
+    private static NodeCardState BuildIdleNodeCardState(SettingsManager? settings)
+    {
+        if (settings == null) return NodeCardState.Hidden;
+
+        return !settings.EnableNodeMode && settings.EnableMcpServer
+            ? NodeCardState.OffMcpOnly
+            : NodeCardState.Hidden;
+    }
+
     private static string? BuildNodeApproveCommand(GatewayConnectionSnapshot snap)
     {
         if (snap.NodeState != RoleConnectionState.PairingRequired) return null;
         var reqId = !string.IsNullOrEmpty(snap.NodePairingRequestId)
             ? ConnectionCardPlanSanitizer.Sanitize(snap.NodePairingRequestId!, maxLen: 64)
             : null;
-        // CLI is noun-first: `openclaw nodes approve <requestId>` (see
-        // openclaw/src/cli/nodes-cli/register.pairing.ts). The earlier
-        // `openclaw approve node …` form does not match any registered
-        // subcommand and silently failed when users pasted it.
+        // Exact approval commands require an explicit kind. Unknown legacy
+        // events stay discovery-only so operators can classify the request.
         // Missing requestId is a real-world case on older gateway builds:
-        // emit a single discovery command (`openclaw nodes pending`) the
+        // emit a single discovery command the
         // user can paste verbatim into any shell — they then pick a
         // requestId from its output and run approve manually. We avoid
         // embedding a "# then:" or "<requestId>" follow-up in the clipboard
         // text because `#` is treated as a literal arg by cmd.exe and `<`
         // is parsed as input redirection — pasting either breaks for
         // Windows-cmd users.
-        return reqId != null
-            ? $"openclaw nodes approve {reqId}"
-            : "openclaw nodes pending";
+        if (snap.NodePairingApprovalKind == PairingApprovalKind.DevicePair)
+        {
+            return CommandCenterDiagnostics.BuildDeviceApprovalRepairCommand(reqId);
+        }
+
+        if (snap.NodePairingApprovalKind == PairingApprovalKind.NodePair)
+        {
+            return reqId != null
+                ? $"openclaw nodes approve {reqId}"
+                : "openclaw nodes pending";
+        }
+
+        return CommandCenterDiagnostics.BuildUnknownPairingDiscoveryCommands();
     }
 
     private static string? BuildDevicePairingApproveCommand(GatewayConnectionSnapshot snap)
@@ -558,16 +776,30 @@ internal sealed record ConnectionPagePlan
         return ConnectionCardPlanSanitizer.Sanitize(snap.NodeError!);
     }
 
-    private static string BuildConnectedDetailLine(GatewayRecord? rec, GatewaySelfInfo? self)
+    private static string BuildConnectedDetailLine(GatewayRecord? rec, GatewaySelfInfo? self, GatewayConnectionSnapshot snap)
     {
         var bits = new List<string>(4);
         var url = ConnectionCardPlanSanitizer.SanitizeGatewayUrl(rec?.Url);
         if (!string.IsNullOrEmpty(url)) bits.Add(url);
         if (rec?.SshTunnel != null) bits.Add("via SSH tunnel");
+        var credential = FormatCredentialSource(snap.OperatorCredentialSource ?? snap.NodeCredentialSource);
+        if (!string.IsNullOrEmpty(credential)) bits.Add(credential);
         if (!string.IsNullOrWhiteSpace(self?.ServerVersion)) bits.Add($"v{self!.ServerVersion}");
         if (self?.UptimeMs is long uptime && uptime > 0)
             bits.Add($"up {FormatUptime(uptime)}");
         return string.Join(" • ", bits);
+    }
+
+    internal static string FormatCredentialSource(string? source)
+    {
+        return source switch
+        {
+            CredentialResolver.SourceNodeDeviceToken => "paired via node device token",
+            CredentialResolver.SourceDeviceToken => "paired via device token",
+            CredentialResolver.SourceSharedGatewayToken => "shared token",
+            CredentialResolver.SourceBootstrapToken => "bootstrap token",
+            _ => "",
+        };
     }
 
     private static int CountEnabledCapabilities(SettingsManager s)
@@ -585,20 +817,24 @@ internal sealed record ConnectionPagePlan
 
     private static RecoveryCategory ClassifyError(string err)
     {
-        if (string.IsNullOrEmpty(err)) return RecoveryCategory.Network;
-        var e = err.ToLowerInvariant();
-
-        if (e.Contains("auth") || e.Contains("token") || e.Contains("unauthor") || e.Contains("forbid"))
-            return RecoveryCategory.Auth;
-
-        if (e.Contains("ssh") || e.Contains("tunnel"))
-            return RecoveryCategory.Tunnel;
-
-        if (e.Contains("500") || e.Contains("502") || e.Contains("503") ||
-            e.Contains("internal") || e.Contains("server"))
-            return RecoveryCategory.Server;
-
-        return RecoveryCategory.Network;
+        // Delegate the heuristic matching to the pure, unit-tested Shared
+        // classifier so the same kinds drive both setup and recovery copy.
+        return OpenClaw.Shared.GatewayErrorClassifier.Classify(err) switch
+        {
+            OpenClaw.Shared.GatewayErrorKind.ScopeMismatch => RecoveryCategory.Scope,
+            OpenClaw.Shared.GatewayErrorKind.TokenDrift => RecoveryCategory.TokenDrift,
+            OpenClaw.Shared.GatewayErrorKind.Auth => RecoveryCategory.Auth,
+            OpenClaw.Shared.GatewayErrorKind.Tls => RecoveryCategory.Tls,
+            OpenClaw.Shared.GatewayErrorKind.Tunnel => RecoveryCategory.Tunnel,
+            OpenClaw.Shared.GatewayErrorKind.Server => RecoveryCategory.Server,
+            OpenClaw.Shared.GatewayErrorKind.RateLimited => RecoveryCategory.RateLimited,
+            OpenClaw.Shared.GatewayErrorKind.PairingRejected => RecoveryCategory.Auth,
+            // PairingRequired is normally driven by snapshot state, not the
+            // error string; if it surfaces here, the Auth re-pair path is the
+            // closest actionable fit. Network / Unknown → Network.
+            OpenClaw.Shared.GatewayErrorKind.PairingRequired => RecoveryCategory.Auth,
+            _ => RecoveryCategory.Network,
+        };
     }
 
     private static string FormatUptime(long uptimeMs)

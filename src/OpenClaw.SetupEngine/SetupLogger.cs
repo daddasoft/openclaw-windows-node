@@ -1,6 +1,9 @@
 using System.Collections.Concurrent;
+using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using OpenClaw.Shared;
 
 namespace OpenClaw.SetupEngine;
 
@@ -46,7 +49,16 @@ public sealed partial class SetupLogger : IDisposable
         => Write(LogLevel.Info, $"step.started: {displayName}", new { step_id = stepId });
 
     public void StepCompleted(string stepId, StepResult result, TimeSpan elapsed)
-        => Write(LogLevel.Info, $"step.completed: {stepId} → {result.Outcome}", new { step_id = stepId, outcome = result.Outcome.ToString(), message = result.Message, elapsed_ms = elapsed.TotalMilliseconds });
+    {
+        Write(LogLevel.Info, $"step.completed: {stepId} → {result.Outcome}", new { step_id = stepId, outcome = result.Outcome.ToString(), message = result.Message, elapsed_ms = elapsed.TotalMilliseconds });
+        if (result.Error is not null)
+        {
+            // StepResult.Fail(message, ex) preserves the original exception so
+            // callers don't have to log it inline at every catch site. Surface
+            // it here at Error level so the cause is never silently dropped.
+            Write(LogLevel.Error, $"step.exception: {stepId}: {result.Error.GetType().Name}: {result.Error.Message}", new { step_id = stepId, exception_type = result.Error.GetType().FullName, exception = result.Error.ToString() });
+        }
+    }
 
     public void CommandStarted(string exe, string[] args, TimeSpan timeout)
         => Write(LogLevel.Debug, $"cmd.start: {exe} {Sanitize(string.Join(' ', args))}", new { exe, args = args.Select(Sanitize).ToArray(), timeout_ms = timeout.TotalMilliseconds });
@@ -75,7 +87,7 @@ public sealed partial class SetupLogger : IDisposable
     {
         if (level < _minLevel) return;
 
-        var sanitizedMessage = Sanitize(message);
+        var sanitizedMessage = NormalizeLogString(Sanitize(message));
         var entry = new LogEntry(DateTimeOffset.UtcNow, _runId, level, sanitizedMessage, SanitizeData(data));
         _recentEntries.Enqueue(entry);
         while (_recentEntries.Count > MaxRecentEntries)
@@ -116,6 +128,10 @@ public sealed partial class SetupLogger : IDisposable
     internal static string Sanitize(string input)
     {
         if (string.IsNullOrEmpty(input)) return input;
+        input = TokenSanitizer.SanitizeLogMessage(input);
+        if (input == TokenSanitizer.SanitizerTimeoutSentinel)
+            return input;
+
         input = PrivateKeyPattern().Replace(input, "[REDACTED-PRIVATE-KEY]");
         input = BearerPattern().Replace(input, "$1[REDACTED]");
         input = JwtPattern().Replace(input, "[REDACTED-JWT]");
@@ -131,20 +147,64 @@ public sealed partial class SetupLogger : IDisposable
             return null;
 
         if (data is string value)
-            return Sanitize(value);
+            return NormalizeLogString(Sanitize(value));
 
         try
         {
             var json = JsonSerializer.Serialize(data, _jsonOptions);
             var sanitized = Sanitize(json);
-            using var doc = JsonDocument.Parse(sanitized);
-            return doc.RootElement.Clone();
+            var node = JsonNode.Parse(sanitized);
+            return NormalizeJsonNode(node);
         }
         catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException)
         {
-            return Sanitize(data.ToString() ?? string.Empty);
+            return NormalizeLogString(Sanitize(data.ToString() ?? string.Empty));
         }
     }
+
+    private static JsonNode? NormalizeJsonNode(JsonNode? node)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+                var normalizedObject = new JsonObject();
+                foreach (var property in obj)
+                    normalizedObject[property.Key] = NormalizeJsonNode(property.Value);
+                return normalizedObject;
+
+            case JsonArray array:
+                var normalizedArray = new JsonArray();
+                for (var i = 0; i < array.Count; i++)
+                    normalizedArray.Add(NormalizeJsonNode(array[i]));
+                return normalizedArray;
+
+            case JsonValue value when value.TryGetValue<string>(out var text):
+                var normalized = NormalizeLogString(text);
+                var trimmed = normalized.TrimStart();
+                if (trimmed.StartsWith('{') || trimmed.StartsWith('['))
+                {
+                    try
+                    {
+                        return NormalizeJsonNode(JsonNode.Parse(normalized));
+                    }
+                    catch (JsonException)
+                    {
+                        // Keep malformed JSON-shaped text as a flattened string.
+                    }
+                }
+
+                return JsonValue.Create(normalized);
+
+            default:
+                return node?.DeepClone();
+        }
+    }
+
+    private static string NormalizeLogString(string value) =>
+        value
+            .Replace("\r\n", " ", StringComparison.Ordinal)
+            .Replace('\r', ' ')
+            .Replace('\n', ' ');
 
     private static string Truncate(string input, int max = 4096)
         => input.Length <= max ? input : input[..max] + $"... [truncated {input.Length - max} chars]";
@@ -169,7 +229,8 @@ public sealed partial class SetupLogger : IDisposable
 
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
     public void Dispose() => _writer?.Dispose();

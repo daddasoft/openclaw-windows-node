@@ -55,6 +55,10 @@ public sealed partial class ConnectionPage : Page
     // updates the original record instead of orphaning it as a duplicate.
     private string? _editingGatewayId;
 
+    // Last gateway URL decoded from a pasted setup code, used to drive the
+    // transport-security advice for the Setup-code method. Null when no valid
+    // code is decoded.
+    private string? _lastDecodedSetupUrl;
     // ─── Reconnect-mask state ───
     // Toggling Node mode forces the connection manager to tear down the
     // WS and rebuild it (so the gateway sees the role change). That brief
@@ -276,9 +280,17 @@ public sealed partial class ConnectionPage : Page
         var activeRecord = _gatewayRegistry?.GetActive();
         var self = CurrentApp.AppState?.GatewaySelf;
         var settings = CurrentApp.Settings;
+        var localNode = NodeCapabilityGating.GetLocalNodeInfo(
+            _appState?.Nodes, CurrentApp.NodeFullDeviceId);
 
         var plan = ConnectionPagePlan.Build(
-            effective, activeRecord, self, settings, savedCount, _userIntent);
+            effective,
+            activeRecord,
+            self,
+            settings,
+            savedCount,
+            userIntent: _userIntent,
+            localNode: localNode);
 
         _currentPlan = plan;
         ApplyPlan(plan);
@@ -287,18 +299,6 @@ public sealed partial class ConnectionPage : Page
         // background highlight reflects the live snapshot. Cheap — list is
         // typically < 10 entries and only re-runs on real state transitions.
         LoadSavedGateways();
-
-        // Bridge auth error (lives outside the plan as a transient modifier)
-        var authError = CurrentApp.AppState?.AuthFailureMessage;
-        if (!string.IsNullOrEmpty(authError))
-        {
-            AuthErrorBar.Message = GetAuthErrorGuidance(authError!);
-            AuthErrorBar.IsOpen = true;
-        }
-        else
-        {
-            AuthErrorBar.IsOpen = false;
-        }
     }
 
     private void ApplyPlan(ConnectionPagePlan plan)
@@ -309,10 +309,9 @@ public sealed partial class ConnectionPage : Page
         bool isRecovery = plan.Mode == ConnectionPageMode.Recovery;
         bool isAdding   = plan.Mode == ConnectionPageMode.AddGateway;
 
-        // Operator + Node cards only when we actually have an active operator
-        // connection AND we're not in a focused sub-view (Welcome / Recovery /
-        // AddGateway). Recovery's help block carries the action; the role
-        // cards would just compete with it.
+        // Operator + Node cards are normally tied to an active operator session.
+        // Local MCP-only mode has no operator session, but still needs the Node
+        // card so users can see that MCP is serving local tools.
         bool hasOperatorSession = _lastSnapshot.OverallState is
             OverallConnectionState.Connected
             or OverallConnectionState.Ready
@@ -320,9 +319,12 @@ public sealed partial class ConnectionPage : Page
             or OverallConnectionState.Connecting
             or OverallConnectionState.PairingRequired
             or OverallConnectionState.Disconnecting;
-        bool showRoles = hasOperatorSession && !isWelcome && !isAdding && !isRecovery;
+        var hasStandaloneNodeCard = plan.NodeCard != NodeCardState.Hidden && !hasOperatorSession;
+        bool showRoles = (hasOperatorSession || hasStandaloneNodeCard) && !isAdding && !isRecovery;
         CockpitPanel.Visibility = showRoles ? Visibility.Visible : Visibility.Collapsed;
-        OperatorSection.Visibility = showRoles ? Visibility.Visible : Visibility.Collapsed;
+        OperatorSection.Visibility = showRoles && plan.OperatorCard != OperatorCardState.Hidden
+            ? Visibility.Visible
+            : Visibility.Collapsed;
 
         // Bottom section: exactly one of these is visible
         //   • SavedGatewaysCard  — Cockpit / Recovery (always present when registry has items)
@@ -465,9 +467,9 @@ public sealed partial class ConnectionPage : Page
             return;
         }
 
-        GatewayHostControlsTitleText.Text = "WSL gateway";
-        GatewayHostControlsDescriptionText.Text =
-            $"Open a shell or manage the local gateway service in {_activeHostAccessPlan.DistroName}.";
+        GatewayHostControlsDescriptionText.Text = LocalizationHelper.Format(
+            "ConnectionPage_GatewayHostControlsDescription_Format",
+            _activeHostAccessPlan.DistroName);
         GatewayHostOpenTerminalButton.IsEnabled = !_gatewayHostActionInProgress && _activeHostAccessPlan.CanOpenTerminal;
         GatewayHostStartButton.IsEnabled = !_gatewayHostActionInProgress;
         GatewayHostStopButton.IsEnabled = !_gatewayHostActionInProgress;
@@ -478,6 +480,9 @@ public sealed partial class ConnectionPage : Page
             ? Visibility.Visible
             : Visibility.Collapsed;
         ToolTipService.SetToolTip(GatewayHostOpenTerminalButton, _activeHostAccessPlan.TerminalTooltip);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
+            GatewayHostOpenTerminalButton,
+            _activeHostAccessPlan.TerminalLabel);
     }
 
     private void SetGatewayHostActionStatus(string message, bool isError = false)
@@ -658,8 +663,9 @@ public sealed partial class ConnectionPage : Page
             }
             return LocalizationHelper.GetString("ConnectionPage_TopologyRemote");
         }
-        catch
+        catch (Exception ex)
         {
+            Services.Logger.Debug($"[ConnectionPage] ClassifyTopology failed for url '{rec.Url}': {ex.Message}");
             return null;
         }
     }
@@ -760,15 +766,13 @@ public sealed partial class ConnectionPage : Page
 
         var settings = CurrentApp.Settings;
 
-        // Read capability list from the same GatewayNodeInfo source used by
-        // the tray menu and instances page — single source of truth.
-        var nodeCapabilities = NodeCapabilityGating.GetLocalNodeCapabilities(
-            _appState?.Nodes, CurrentApp.NodeFullDeviceId);
-        var capCount = nodeCapabilities?.Count ?? 0;
+        var capCount = plan.NodeEffectiveCapabilities.Count;
 
         // Body text (warning/error detail under the status text) only surfaces
         // for warning/error/pairing states.
         bool showBody = plan.NodeCard is NodeCardState.OnPermissionsIncomplete
+                                       or NodeCardState.OnNodeApprovalRequired
+                                       or NodeCardState.OnNodeReapprovalRequired
                                        or NodeCardState.OnNodePairingRequired
                                        or NodeCardState.OnNodeRejected
                                        or NodeCardState.OnNodeRateLimited
@@ -776,6 +780,8 @@ public sealed partial class ConnectionPage : Page
         var bodyText = plan.NodeCard switch
         {
             NodeCardState.OnPermissionsIncomplete => LocalizationHelper.GetString("ConnectionPage_NodeBodyNoCapabilities"),
+            NodeCardState.OnNodeApprovalRequired  => LocalizationHelper.GetString("ConnectionPage_NodeBodyApprovalRequired"),
+            NodeCardState.OnNodeReapprovalRequired => LocalizationHelper.GetString("ConnectionPage_NodeBodyReapprovalRequired"),
             NodeCardState.OnNodePairingRequired   => LocalizationHelper.GetString("ConnectionPage_NodeBodyAwaitingApproval"),
             NodeCardState.OnNodeRejected          => LocalizationHelper.GetString("ConnectionPage_NodeBodyPairingRejected"),
             NodeCardState.OnNodeRateLimited       => LocalizationHelper.GetString("ConnectionPage_NodeBodyRateLimited"),
@@ -798,10 +804,26 @@ public sealed partial class ConnectionPage : Page
                 Helpers.FluentIconCatalog.StatusOk,
                 "SystemFillColorSuccessBrush",
                 capCount == 1 ? LocalizationHelper.GetString("ConnectionPage_NodeActiveOneCapability") : string.Format(LocalizationHelper.GetString("ConnectionPage_NodeActiveCapabilities"), capCount)),
+            NodeCardState.OnNodeConnecting => (
+                Helpers.FluentIconCatalog.Sync,
+                "SystemFillColorCautionBrush",
+                LocalizationHelper.GetString("ConnectionPage_NodeStarting")),
+            NodeCardState.OffMcpOnly => (
+                Helpers.FluentIconCatalog.Terminal,
+                "SystemFillColorAttentionBrush",
+                LocalizationHelper.GetString("ConnectionPage_NodeMcpOnly")),
             NodeCardState.OnPermissionsIncomplete => (
                 Helpers.FluentIconCatalog.StatusWarn,
                 "SystemFillColorCautionBrush",
                 LocalizationHelper.GetString("ConnectionPage_NodeActiveNoCapabilities")),
+            NodeCardState.OnNodeApprovalRequired => (
+                Helpers.FluentIconCatalog.Lock,
+                "SystemFillColorCautionBrush",
+                LocalizationHelper.GetString("ConnectionPage_NodeApprovalRequired")),
+            NodeCardState.OnNodeReapprovalRequired => (
+                Helpers.FluentIconCatalog.Lock,
+                "SystemFillColorCautionBrush",
+                LocalizationHelper.GetString("ConnectionPage_NodeReapprovalRequired")),
             NodeCardState.OnNodePairingRequired => (
                 Helpers.FluentIconCatalog.Lock,
                 "SystemFillColorCautionBrush",
@@ -834,17 +856,72 @@ public sealed partial class ConnectionPage : Page
             ? ResolveBrush("SystemFillColorCriticalBrush")
             : ResolveBrush("TextFillColorPrimaryBrush");
 
-        // Canonical capability list per design naming.md:
-        //   "Providing N capabilities: browser, camera, canvas, …"
-        //   Empty list renders as "Providing no capabilities".
-        // Hidden when Node mode is off (no concept of a "list" then).
-        // Reads from the same GatewayNodeInfo source as tray/instances.
-        bool showCaps = settings != null && plan.NodeCard != NodeCardState.Off
-                                         && plan.NodeCard != NodeCardState.Hidden;
-        NodeCapabilityText.Visibility = showCaps ? Visibility.Visible : Visibility.Collapsed;
-        if (showCaps)
+        if (plan.NodeCard == NodeCardState.OffMcpOnly)
         {
-            NodeCapabilityText.Text = BuildCapabilityListString(nodeCapabilities);
+            NodeCapabilityText.Visibility = Visibility.Visible;
+            NodeCapabilityText.Text = LocalizationHelper.Format(
+                "ConnectionPage_NodeMcpOnlyReachable", NodeService.McpServerUrl);
+            NodeCommandText.Visibility = Visibility.Collapsed;
+            NodePermissionText.Visibility = Visibility.Collapsed;
+            NodePendingDeclarationsPanel.Visibility = Visibility.Collapsed;
+
+            var mcpError = CurrentApp.ActiveNodeService?.McpStartupError;
+            if (!string.IsNullOrEmpty(mcpError))
+            {
+                NodeStatusIcon.Glyph = Helpers.FluentIconCatalog.StatusErr;
+                NodeStatusIcon.Foreground = ResolveBrush("SystemFillColorCriticalBrush");
+                NodeStatusText.Text = LocalizationHelper.GetString("ConnectionPage_NodeMcpError");
+                NodeStatusText.Foreground = ResolveBrush("SystemFillColorCriticalBrush");
+                NodeCapabilityText.Visibility = Visibility.Collapsed;
+                NodeBodyText.Text = mcpError;
+                NodeBodyText.Foreground = ResolveBrush("SystemFillColorCriticalBrush");
+                NodeBodyText.Visibility = Visibility.Visible;
+            }
+        }
+        else
+        {
+            // Pending declarations are visible for approval context but never
+            // counted as the active node contract.
+            bool showSurfaces = settings != null && plan.NodeCard != NodeCardState.Off
+                                                 && plan.NodeCard != NodeCardState.Hidden
+                                                 && plan.NodeCard != NodeCardState.OnNodeConnecting;
+            NodeCapabilityText.Visibility = showSurfaces ? Visibility.Visible : Visibility.Collapsed;
+            NodeCommandText.Visibility = showSurfaces ? Visibility.Visible : Visibility.Collapsed;
+            NodePermissionText.Visibility = showSurfaces ? Visibility.Visible : Visibility.Collapsed;
+            if (showSurfaces)
+            {
+                NodeCapabilityText.Text = BuildNodeSurfaceListString(
+                    "ConnectionPage_NodeEffectiveCapabilities",
+                    plan.NodeEffectiveCapabilities);
+                NodeCommandText.Text = BuildNodeSurfaceListString(
+                    "ConnectionPage_NodeEffectiveCommands",
+                    plan.NodeEffectiveCommands);
+                NodePermissionText.Text = BuildNodePermissionListString(
+                    "ConnectionPage_NodeEffectivePermissions",
+                    plan.NodeEffectivePermissions);
+            }
+
+            var showPendingDeclarations = showSurfaces &&
+                (plan.NodeApprovalState is GatewayNodeApprovalState.PendingApproval or
+                    GatewayNodeApprovalState.PendingReapproval ||
+                 plan.NodePendingDeclaredCapabilities.Count > 0 ||
+                 plan.NodePendingDeclaredCommands.Count > 0 ||
+                 plan.NodePendingDeclaredPermissions.Count > 0);
+            NodePendingDeclarationsPanel.Visibility = showPendingDeclarations
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            if (showPendingDeclarations)
+            {
+                NodePendingCapabilityText.Text = BuildNodeSurfaceListString(
+                    "ConnectionPage_NodePendingDeclaredCapabilities",
+                    plan.NodePendingDeclaredCapabilities);
+                NodePendingCommandText.Text = BuildNodeSurfaceListString(
+                    "ConnectionPage_NodePendingDeclaredCommands",
+                    plan.NodePendingDeclaredCommands);
+                NodePendingPermissionText.Text = BuildNodePermissionListString(
+                    "ConnectionPage_NodePendingDeclaredPermissions",
+                    plan.NodePendingDeclaredPermissions);
+            }
         }
 
         // Sync toggle from current settings (suppress event)
@@ -852,16 +929,53 @@ public sealed partial class ConnectionPage : Page
         if (settings != null) NodeModeToggle.IsOn = settings.EnableNodeMode;
         _suppressNodeModeToggle = false;
 
-        // Approve command box + connect button (only when pairing required)
-        if (plan.NodeCard == NodeCardState.OnNodePairingRequired && plan.NodeApproveCommand != null)
+        // Command-trust actions are always copy-only. Exact commands approve
+        // one validated request; discovery commands only list pending requests.
+        // This page never auto-approves.
+        if (!string.IsNullOrEmpty(plan.NodeTrustApproveCommand))
+        {
+            NodeTrustApproveCmdBox.Visibility = Visibility.Visible;
+            NodeTrustApproveHelpText.Text = LocalizationHelper.GetString(
+                plan.NodeTrustCommandApprovesRequest
+                    ? "ConnectionPage_NodeTrustApprovalHelp"
+                    : "ConnectionPage_NodeTrustDiscoveryHelp");
+            NodeTrustApproveCmdText.Text = plan.NodeTrustApproveCommand;
+        }
+        else
+        {
+            NodeTrustApproveCmdBox.Visibility = Visibility.Collapsed;
+            NodeTrustApproveCmdText.Text = "";
+        }
+
+        // Role pairing and node-list trust approval share the same explicit
+        // reconnect action, but only role pairing uses the pairing command box.
+        var isNodePairingRequired =
+            plan.NodeCard == NodeCardState.OnNodePairingRequired &&
+            plan.NodeApproveCommand != null;
+        var canReconnectAfterNodeTrustApproval =
+            plan.NodeTrustCommandApprovesRequest &&
+            plan.NodeCard is NodeCardState.OnNodeApprovalRequired or
+                NodeCardState.OnNodeReapprovalRequired;
+        if (isNodePairingRequired)
         {
             NodeApproveCmdBox.Visibility = Visibility.Visible;
             NodeApproveCmdText.Text = plan.NodeApproveCommand;
-            NodeReconnectButton.Visibility = Visibility.Visible;
         }
         else
         {
             NodeApproveCmdBox.Visibility = Visibility.Collapsed;
+        }
+
+        if (isNodePairingRequired || canReconnectAfterNodeTrustApproval)
+        {
+            NodeReconnectButton.Content = LocalizationHelper.GetString(
+                canReconnectAfterNodeTrustApproval
+                    ? "ConnectionPage_NodeReconnectAfterApproval"
+                    : "ConnectionPage_Connect2.Content");
+            NodeReconnectButton.Visibility = Visibility.Visible;
+        }
+        else
+        {
             NodeReconnectButton.Visibility = Visibility.Collapsed;
         }
 
@@ -869,14 +983,16 @@ public sealed partial class ConnectionPage : Page
         // be identical. Fingerprint includes the full capability list from
         // the gateway (same source as tray/instances) so new capabilities
         // trigger a rebuild automatically.
-        var capNames = nodeCapabilities != null
-            ? string.Join(",", nodeCapabilities.OrderBy(c => c, StringComparer.OrdinalIgnoreCase))
-            : "";
+        var capNames = string.Join(
+            ",",
+            plan.NodeEffectiveCapabilities.OrderBy(c => c, StringComparer.OrdinalIgnoreCase));
         var capFp = $"{plan.NodeCard}|{capNames}";
         if (_capabilityChipsFingerprint != capFp)
         {
             _capabilityChipsFingerprint = capFp;
-            NodeCapabilityChipsHost.ItemsSource = BuildCapabilityChips(nodeCapabilities, plan.NodeCard);
+            NodeCapabilityChipsHost.ItemsSource = BuildCapabilityChips(
+                plan.NodeEffectiveCapabilities,
+                plan.NodeCard);
         }
 
         // Permissions link is always visible (entry point even when sharing is off);
@@ -889,6 +1005,7 @@ public sealed partial class ConnectionPage : Page
         RecoveryTunnelBlock.Visibility = Visibility.Collapsed;
         RecoveryAuthPasteBlock.Visibility = Visibility.Collapsed;
         RecoveryApproveCmdBlock.Visibility = Visibility.Collapsed;
+        RecoveryRepairResultText.Visibility = Visibility.Collapsed;
 
         RecoveryHelpHeaderText.Text = plan.Recovery switch
         {
@@ -896,6 +1013,10 @@ public sealed partial class ConnectionPage : Page
             RecoveryCategory.Pairing => LocalizationHelper.GetString("ConnectionPage_RecoveryHeaderPairing"),
             RecoveryCategory.Tunnel => LocalizationHelper.GetString("ConnectionPage_RecoveryHeaderTunnel"),
             RecoveryCategory.Server => LocalizationHelper.GetString("ConnectionPage_RecoveryHeaderServer"),
+            RecoveryCategory.TokenDrift => LocalizationHelper.GetString("ConnectionPage_RecoveryHeaderTokenDrift"),
+            RecoveryCategory.Scope => LocalizationHelper.GetString("ConnectionPage_RecoveryHeaderScope"),
+            RecoveryCategory.Tls => LocalizationHelper.GetString("ConnectionPage_RecoveryHeaderTls"),
+            RecoveryCategory.RateLimited => LocalizationHelper.GetString("ConnectionPage_RecoveryHeaderRateLimited"),
             _ => LocalizationHelper.GetString("ConnectionPage_RecoveryHeaderServer"),
         };
 
@@ -922,6 +1043,26 @@ public sealed partial class ConnectionPage : Page
                 LocalizationHelper.GetString("ConnectionPage_RecoveryServerBullet2"),
                 LocalizationHelper.GetString("ConnectionPage_RecoveryServerBullet3"),
             },
+            RecoveryCategory.TokenDrift => new[]
+            {
+                LocalizationHelper.GetString("ConnectionPage_RecoveryTokenDriftBullet1"),
+                LocalizationHelper.GetString("ConnectionPage_RecoveryTokenDriftBullet2"),
+            },
+            RecoveryCategory.Scope => new[]
+            {
+                LocalizationHelper.GetString("ConnectionPage_RecoveryScopeBullet1"),
+                LocalizationHelper.GetString("ConnectionPage_RecoveryScopeBullet2"),
+            },
+            RecoveryCategory.Tls => new[]
+            {
+                LocalizationHelper.GetString("ConnectionPage_RecoveryTlsBullet1"),
+                LocalizationHelper.GetString("ConnectionPage_RecoveryTlsBullet2"),
+            },
+            RecoveryCategory.RateLimited => new[]
+            {
+                LocalizationHelper.GetString("ConnectionPage_RecoveryRateLimitedBullet1"),
+                LocalizationHelper.GetString("ConnectionPage_RecoveryRateLimitedBullet2"),
+            },
             _ => new[]
             {
                 LocalizationHelper.GetString("ConnectionPage_RecoveryDefaultBullet1"),
@@ -939,7 +1080,11 @@ public sealed partial class ConnectionPage : Page
             RecoveryTunnelBlock.Visibility = Visibility.Visible;
             RecoveryTunnelDetailText.Text = plan.RecoveryDetail ?? LocalizationHelper.GetString("ConnectionPage_SshTunnelIsDownText");
         }
-        if (plan.Recovery == RecoveryCategory.Auth)
+        // Auth, token drift, and scope problems are all repaired by pasting a
+        // fresh setup code (re-pair), which also upgrades scopes on the gateway.
+        if (plan.Recovery is RecoveryCategory.Auth
+                          or RecoveryCategory.TokenDrift
+                          or RecoveryCategory.Scope)
         {
             RecoveryAuthPasteBlock.Visibility = Visibility.Visible;
         }
@@ -980,7 +1125,9 @@ public sealed partial class ConnectionPage : Page
     {
         var chips = new List<Border>();
         if (capabilities == null || capabilities.Count == 0) return chips;
-        if (state == NodeCardState.Off || state == NodeCardState.Hidden) return chips;
+        if (state == NodeCardState.Off || state == NodeCardState.Hidden
+            || state == NodeCardState.OffMcpOnly || state == NodeCardState.OnNodeConnecting)
+            return chips;
 
         void Add(string label, bool enabled, bool warn = false, bool error = false)
         {
@@ -1050,17 +1197,30 @@ public sealed partial class ConnectionPage : Page
     }
 
     /// <summary>
-    /// Canonical "Providing N capabilities: …" line per design naming.md.
-    /// Reads from the gateway-reported capability list (same source as
-    /// tray menu and instances page). Empty → "Providing no capabilities".
+    /// Formats one gateway-reported node surface while preserving the
+    /// approved/effective versus pending-declared label chosen by the caller.
     /// </summary>
-    private static string BuildCapabilityListString(IReadOnlyList<string>? capabilities)
+    private static string BuildNodeSurfaceListString(
+        string resourceKey,
+        IReadOnlyList<string> values)
     {
-        if (capabilities == null || capabilities.Count == 0)
-            return LocalizationHelper.GetString("ConnectionPage_ProvidingNoCapabilities");
-        return capabilities.Count == 1
-            ? string.Format(LocalizationHelper.GetString("ConnectionPage_ProvidingCapabilitiesSingular"), string.Join(", ", capabilities))
-            : string.Format(LocalizationHelper.GetString("ConnectionPage_ProvidingCapabilitiesPlural"), capabilities.Count, string.Join(", ", capabilities));
+        var display = values.Count == 0
+            ? LocalizationHelper.GetString("ConnectionPage_NodeSurfaceNone")
+            : string.Join(", ", values);
+        return LocalizationHelper.Format(resourceKey, display);
+    }
+
+    private static string BuildNodePermissionListString(
+        string resourceKey,
+        IReadOnlyDictionary<string, bool> permissions)
+    {
+        var display = permissions.Count == 0
+            ? LocalizationHelper.GetString("ConnectionPage_NodeSurfaceNone")
+            : string.Join(", ", permissions
+                .OrderBy(permission => permission.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(permission =>
+                    $"{permission.Key}={permission.Value.ToString().ToLowerInvariant()}"));
+        return LocalizationHelper.Format(resourceKey, display);
     }
 
 
@@ -1103,9 +1263,7 @@ public sealed partial class ConnectionPage : Page
                     HasWslGateway = hostAccess.IsWslManaged,
                     HasHostTerminal = hostAccess.CanOpenTerminal,
                     HostTerminalLabel = hostAccess.TerminalLabel,
-                    AuthModeLabel = isActive && !string.IsNullOrEmpty(activeAuthMode)
-                        ? activeAuthMode!
-                        : InferAuthModeLabel(gw),
+                    AuthModeLabel = BuildAuthModeLabel(gw, isActive, _lastSnapshot, activeAuthMode),
                 });
             }
             if (all.Count > 0) emptyVisible = Visibility.Collapsed;
@@ -1141,6 +1299,26 @@ public sealed partial class ConnectionPage : Page
             : string.Format(LocalizationHelper.GetString("ConnectionPage_SavedGatewaysPlural"), items.Count);
     }
 
+    private static string BuildAuthModeLabel(
+        GatewayRecord rec,
+        bool isActive,
+        GatewayConnectionSnapshot snapshot,
+        string? activeAuthMode)
+    {
+        if (isActive)
+        {
+            var credentialLabel = ConnectionPagePlan.FormatCredentialSource(
+                snapshot.OperatorCredentialSource ?? snapshot.NodeCredentialSource);
+            if (!string.IsNullOrEmpty(credentialLabel))
+                return credentialLabel;
+
+            if (!string.IsNullOrEmpty(activeAuthMode))
+                return NormalizeGatewayAuthMode(activeAuthMode!);
+        }
+
+        return InferAuthModeLabel(rec);
+    }
+
     private static string InferAuthModeLabel(GatewayRecord rec)
     {
         if (!string.IsNullOrEmpty(rec.BootstrapToken)) return LocalizationHelper.GetString("ConnectionPage_AuthModeBootstrap");
@@ -1149,6 +1327,11 @@ public sealed partial class ConnectionPage : Page
         // stored in the DeviceIdentityStore for this gateway's identity dir).
         return LocalizationHelper.GetString("ConnectionPage_AuthModeDeviceToken");
     }
+
+    private static string NormalizeGatewayAuthMode(string authMode) =>
+        string.Equals(authMode, "device-token", StringComparison.OrdinalIgnoreCase)
+            ? "paired via device token"
+            : authMode;
 
     private List<Border> BuildSavedGatewayRowControls(IEnumerable<SavedGatewayRow> rows)
     {
@@ -1446,6 +1629,7 @@ public sealed partial class ConnectionPage : Page
     {
         _editingGatewayId = null;
         _userIntent = UserIntent.AddingGateway;
+        ClearAddGatewaySshFields();
         // Direct is default — make sure the selector is on Direct.
         // Pre-fill the most common local gateway URL.
         DirectUrlBox.Text = "ws://127.0.0.1:18789";
@@ -1461,6 +1645,7 @@ public sealed partial class ConnectionPage : Page
     {
         _editingGatewayId = null;
         _userIntent = UserIntent.AddingGateway;
+        ClearAddGatewaySshFields();
         ShowAddPane("direct");
         AddDirectItem.IsSelected = true;
         RefreshFromSnapshot(_lastSnapshot);
@@ -1470,6 +1655,7 @@ public sealed partial class ConnectionPage : Page
     {
         _editingGatewayId = null;
         _userIntent = UserIntent.AddingGateway;
+        ClearAddGatewaySshFields();
         ShowAddPane("setup");
         AddSetupCodeItem.IsSelected = true;
         RefreshFromSnapshot(_lastSnapshot);
@@ -1490,6 +1676,7 @@ public sealed partial class ConnectionPage : Page
         AddResultText.Text = "";
         AddSetupCodeBox.Text = "";
         AddSetupCodePreviewPanel.Visibility = Visibility.Collapsed;
+        ClearAddGatewaySshFields();
         AddScanStatusText.Text = LocalizationHelper.GetString("ConnectionPage_PressScan");
         AddScanProgressBar.Visibility = Visibility.Collapsed;
         AddScanResultsPanel.Children.Clear();
@@ -1516,6 +1703,111 @@ public sealed partial class ConnectionPage : Page
         bool isFormMethod = (tag == "direct") || (tag == "setup");
         AddSshExpander.Visibility = isFormMethod ? Visibility.Visible : Visibility.Collapsed;
         AddSaveButton.Visibility = isFormMethod ? Visibility.Visible : Visibility.Collapsed;
+        AddRemoteHelpLink.Visibility = isFormMethod ? Visibility.Visible : Visibility.Collapsed;
+        if (!isFormMethod)
+            AddRemoteHelpTip.IsOpen = false;
+
+        UpdateRemoteSetupAdvice();
+    }
+
+    private void ClearAddGatewaySshFields()
+    {
+        AddSshExpander.IsExpanded = false;
+        AddSshUserBox.Text = "";
+        AddSshHostBox.Text = "";
+        AddSshServerPortBox.Text = "";
+        AddSshRemotePortBox.Text = "";
+        AddSshLocalPortBox.Text = "";
+    }
+
+    private void OnRemoteHelpClick(object sender, RoutedEventArgs e)
+    {
+        AddRemoteHelpTip.IsOpen = !AddRemoteHelpTip.IsOpen;
+    }
+
+    // ─── Remote setup transport-security advisory ─────────────────────
+    // Offline (no network) classification driven by RemoteGatewayClassifier.
+    // Steers users to TLS / SSH tunnel / trusted proxy before they save a
+    // gateway that would send the token in cleartext over the network.
+
+    private void OnAddSshExpanding(Expander sender, ExpanderExpandingEventArgs args) =>
+        UpdateRemoteSetupAdvice(sshExpandedOverride: true);
+
+    private void OnAddSshCollapsed(Expander sender, ExpanderCollapsedEventArgs args) =>
+        UpdateRemoteSetupAdvice(sshExpandedOverride: false);
+
+    private void OnAddSshFieldChanged(object sender, TextChangedEventArgs e) =>
+        UpdateRemoteSetupAdvice();
+
+    private void UpdateRemoteSetupAdvice(bool? sshExpandedOverride = null)
+    {
+        if (AddSecurityAdviceBar == null) return;
+
+        // The advice applies to the two form methods (Direct + Setup code).
+        // Pick the URL from whichever is active: the typed Direct URL, or the
+        // URL decoded from a pasted setup code.
+        string? url;
+        var tag = ActiveAddPaneTag();
+        if (tag == "direct")
+            url = DirectUrlBox.Text?.Trim();
+        else if (tag == "setup")
+            url = _lastDecodedSetupUrl;
+        else
+        {
+            AddSecurityAdviceBar.IsOpen = false;
+            return;
+        }
+
+        // The Expander.Expanding/Collapsed events fire before IsExpanded flips,
+        // so callers pass the post-transition state to avoid a one-frame flash
+        // of the cleartext warning.
+        bool sshExpanded = sshExpandedOverride ?? AddSshExpander.IsExpanded;
+        bool hasSshTunnel = sshExpanded
+                         && !string.IsNullOrWhiteSpace(AddSshUserBox.Text)
+                         && !string.IsNullOrWhiteSpace(AddSshHostBox.Text);
+
+        var profile = RemoteGatewayClassifier.Classify(url, hasSshTunnel);
+
+        InfoBarSeverity severity;
+        string title;
+        string message;
+        bool open = true;
+
+        switch (profile.Topology)
+        {
+            case GatewayConnectionTopology.DirectInsecure:
+                severity = InfoBarSeverity.Warning;
+                title = LocalizationHelper.GetString("ConnectionPage_AdviceCleartextTitle");
+                message = LocalizationHelper.GetString("ConnectionPage_AdviceCleartextMessage");
+                break;
+            case GatewayConnectionTopology.DirectSecure:
+                severity = InfoBarSeverity.Success;
+                title = LocalizationHelper.GetString("ConnectionPage_AdviceSecureTitle");
+                message = LocalizationHelper.GetString("ConnectionPage_AdviceSecureMessage");
+                break;
+            case GatewayConnectionTopology.SshTunnel:
+                severity = InfoBarSeverity.Success;
+                title = LocalizationHelper.GetString("ConnectionPage_AdviceTunnelTitle");
+                message = LocalizationHelper.GetString("ConnectionPage_AdviceTunnelMessage");
+                break;
+            default:
+                // Local or unparseable — no transport warning needed.
+                AddSecurityAdviceBar.IsOpen = false;
+                return;
+        }
+
+        // InfoBar does not reliably repaint its severity icon/accent when
+        // Severity changes while IsOpen stays true. When the severity actually
+        // changes (e.g. cleartext ws:// → TLS wss://), force a close before
+        // re-applying so the bar re-renders cleanly. Guard on change so we
+        // don't flicker on every keystroke within the same severity.
+        if (AddSecurityAdviceBar.IsOpen && AddSecurityAdviceBar.Severity != severity)
+            AddSecurityAdviceBar.IsOpen = false;
+
+        AddSecurityAdviceBar.Severity = severity;
+        AddSecurityAdviceBar.Title = title;
+        AddSecurityAdviceBar.Message = message;
+        AddSecurityAdviceBar.IsOpen = open;
     }
 
     private string ActiveAddPaneTag()
@@ -1697,10 +1989,23 @@ public sealed partial class ConnectionPage : Page
             return;
         }
 
-        AuthErrorBar.Title = title;
-        AuthErrorBar.Message = message;
-        AuthErrorBar.Severity = InfoBarSeverity.Error;
-        AuthErrorBar.IsOpen = true;
+        // No inline WSL-controls surface is available here (e.g. launching a
+        // terminal for a non-active saved gateway, where that card isn't shown).
+        // The in-page Connection Error bar was removed, so surface the failure as
+        // a transient top-bar notification rather than dropping it silently. This
+        // is a one-off action failure, not the persistent connection-issue banner,
+        // so it carries no "Open Connection" action.
+        AppNotificationPublisher.Show(
+            CurrentApp.AppNotifications,
+            title,
+            message,
+            "connection",
+            "gateway-host",
+            AppNotificationSeverity.Error,
+            $"gateway-host-action:{title}",
+            actionRoute: string.Empty,
+            actionLabel: string.Empty,
+            id: $"gateway-host-action:{title}");
     }
 
     private static string UppercaseFirst(string value)
@@ -1746,17 +2051,23 @@ public sealed partial class ConnectionPage : Page
 
     // ─── Operator card navigation ────────────────────────────────────
 
-    private void OnOpenSessions(object sender, RoutedEventArgs e) => ((IAppCommands)CurrentApp).Navigate("sessions", "connection");
-    private void OnOpenInstances(object sender, RoutedEventArgs e) => ((IAppCommands)CurrentApp).Navigate("instances", "connection");
+    private void OnOpenSessions(object sender, RoutedEventArgs e) => ((IAppCommands)CurrentApp).Navigate("sessions");
+    private void OnOpenInstances(object sender, RoutedEventArgs e) => ((IAppCommands)CurrentApp).Navigate("instances");
 
     // ─── Node card navigation ────────────────────────────────────────
 
-    private void OnOpenPermissions(object sender, RoutedEventArgs e) => ((IAppCommands)CurrentApp).Navigate("permissions", "connection");
+    private void OnOpenPermissions(object sender, RoutedEventArgs e) => ((IAppCommands)CurrentApp).Navigate("permissions");
 
     private void OnCopyNodeApproveCommand(object sender, RoutedEventArgs e)
     {
         if (!string.IsNullOrEmpty(NodeApproveCmdText.Text))
             ClipboardHelper.CopyText(NodeApproveCmdText.Text);
+    }
+
+    private void OnCopyNodeTrustApproveCommand(object sender, RoutedEventArgs e)
+    {
+        if (!string.IsNullOrEmpty(NodeTrustApproveCmdText.Text))
+            ClipboardHelper.CopyText(NodeTrustApproveCmdText.Text);
     }
 
     // ─── Recovery actions ────────────────────────────────────────────
@@ -1799,6 +2110,7 @@ public sealed partial class ConnectionPage : Page
             AddSshExpander.IsExpanded = true;
             AddSshUserBox.Text = rec.SshTunnel.User;
             AddSshHostBox.Text = rec.SshTunnel.Host;
+            AddSshServerPortBox.Text = rec.SshTunnel.SshPort.ToString();
             AddSshRemotePortBox.Text = rec.SshTunnel.RemotePort.ToString();
             AddSshLocalPortBox.Text = rec.SshTunnel.LocalPort.ToString();
         }
@@ -1817,16 +2129,24 @@ public sealed partial class ConnectionPage : Page
     {
         var code = RecoveryRepairCodeBox.Text?.Trim();
         if (string.IsNullOrEmpty(code) || _connectionManager == null) return;
+        void ShowResult(string text, bool error)
+        {
+            RecoveryRepairResultText.Text = text;
+            RecoveryRepairResultText.Foreground = (Brush)Application.Current.Resources[
+                error ? "SystemFillColorCriticalBrush" : "SystemFillColorSuccessBrush"];
+            RecoveryRepairResultText.Visibility = Visibility.Visible;
+        }
         try
         {
             var result = await _connectionManager.ApplySetupCodeAsync(code);
-            AddResultText.Text = result.Outcome == SetupCodeOutcome.Success
-                ? LocalizationHelper.GetString("ConnectionPage_RepairedReconnecting")
-                : $"✗ {result.ErrorMessage ?? LocalizationHelper.GetString("ConnectionPage_CouldNotApplyCode")}";
+            if (result.Outcome == SetupCodeOutcome.Success)
+                ShowResult(LocalizationHelper.GetString("ConnectionPage_RepairedReconnecting"), error: false);
+            else
+                ShowResult($"✗ {result.ErrorMessage ?? LocalizationHelper.GetString("ConnectionPage_CouldNotApplyCode")}", error: true);
         }
         catch (Exception ex)
         {
-            AddResultText.Text = $"✗ {ex.Message}";
+            ShowResult($"✗ {ex.Message}", error: true);
         }
     }
 
@@ -1858,20 +2178,22 @@ public sealed partial class ConnectionPage : Page
         catch (Exception ex)
         {
             // Strip status will read the snapshot's terminal state next tick;
-            // surface the immediate error in the auth-error bar so the user
-            // gets feedback even if the snapshot is briefly silent.
+            // surface the immediate error in the single top connection banner so
+            // the user gets feedback (and an "Open Connection" action) even if
+            // the snapshot is briefly silent.
             try
             {
-                AuthErrorBar.Title = LocalizationHelper.GetString("ConnectionPage_ConnectFailed");
-                AuthErrorBar.Message = ex.Message;
-                AuthErrorBar.Severity = Microsoft.UI.Xaml.Controls.InfoBarSeverity.Error;
-                AuthErrorBar.IsOpen = true;
+                CurrentApp.ShowTransientConnectionError(ex.Message);
             }
-            catch { /* last-ditch */ }
+            catch (Exception uiEx)
+            {
+                Logger.Warn($"ConnectionPage: Failed to surface connect failure in connection banner: {uiEx.Message}");
+            }
         }
         finally
         {
-            try { btn.IsEnabled = true; } catch { /* control may be detached */ }
+            try { btn.IsEnabled = true; }
+            catch (Exception uiEx) { Logger.Debug($"ConnectionPage: Failed to re-enable connect button; control may be detached: {uiEx.Message}"); }
         }
     }
 
@@ -1911,6 +2233,7 @@ public sealed partial class ConnectionPage : Page
             AddSshExpander.IsExpanded = true;
             AddSshUserBox.Text = rec.SshTunnel.User;
             AddSshHostBox.Text = rec.SshTunnel.Host;
+            AddSshServerPortBox.Text = rec.SshTunnel.SshPort.ToString();
             AddSshRemotePortBox.Text = rec.SshTunnel.RemotePort.ToString();
             AddSshLocalPortBox.Text = rec.SshTunnel.LocalPort.ToString();
         }
@@ -1949,7 +2272,8 @@ public sealed partial class ConnectionPage : Page
             var wasActive = string.Equals(_gatewayRegistry?.ActiveGatewayId, gwId, StringComparison.Ordinal);
             if (wasActive && _connectionManager != null)
             {
-                try { await _connectionManager.DisconnectAsync(); } catch { }
+                try { await _connectionManager.DisconnectAsync(); }
+                catch (Exception ex) { Logger.Warn($"ConnectionPage: Failed to disconnect active gateway before removal: {ex.Message}"); }
             }
             _gatewayRegistry?.Remove(gwId);
             _gatewayRegistry?.Save();
@@ -1969,6 +2293,7 @@ public sealed partial class ConnectionPage : Page
         var url = DirectUrlBox.Text?.Trim();
         ScheduleConnectivityTest(url);
         AutoFillTokenForUrl(url);
+        UpdateRemoteSetupAdvice();
     }
 
     private void OnDirectUrlLostFocus(object sender, RoutedEventArgs e)
@@ -1977,6 +2302,7 @@ public sealed partial class ConnectionPage : Page
         ScheduleConnectivityTest(url);
         // On focus-out, overwrite token even if already populated (user finished editing URL).
         AutoFillTokenForUrl(url, force: true);
+        UpdateRemoteSetupAdvice();
     }
 
     private void AutoFillTokenForUrl(string? url, bool force = false)
@@ -2024,17 +2350,27 @@ public sealed partial class ConnectionPage : Page
 
             using var httpClient = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
             System.Net.Http.HttpResponseMessage? response = null;
+            Exception? firstProbeError = null;
             try { response = await httpClient.GetAsync(httpUrl, ct); }
             catch (OperationCanceledException) { throw; }
-            catch { }
+            catch (Exception ex)
+            {
+                firstProbeError = ex;
+                Logger.Warn($"ConnectionPage: Gateway connectivity probe failed for {GatewayUrlHelper.SanitizeForDisplay(httpUrl)}: {ex.Message}");
+            }
 
             if (ct.IsCancellationRequested) return;
 
             if (response == null || !response.IsSuccessStatusCode)
             {
-                try { response = await httpClient.GetAsync($"{httpUrl}/health", ct); }
+                var healthUrl = $"{httpUrl}/health";
+                try { response = await httpClient.GetAsync(healthUrl, ct); }
                 catch (OperationCanceledException) { throw; }
-                catch { }
+                catch (Exception ex)
+                {
+                    Logger.Warn($"ConnectionPage: Gateway /health connectivity probe failed for {GatewayUrlHelper.SanitizeForDisplay(httpUrl)}: {ex.Message}");
+                    firstProbeError ??= ex;
+                }
             }
 
             if (ct.IsCancellationRequested) return;
@@ -2055,12 +2391,14 @@ public sealed partial class ConnectionPage : Page
                 AddTestResultText.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["SystemFillColorCriticalBrush"];
             }
         }
+        // slopwatch-ignore: SW003 Shutdown cancellation or disposal is expected and the caller already preserves the safe state.
         catch (OperationCanceledException) { /* debounce or page nav */ }
         catch (Exception ex)
         {
             if (!ct.IsCancellationRequested)
             {
-                AddTestResultText.Text = $"✗ {ex.Message}";
+                Logger.Warn($"ConnectionPage: Gateway connectivity test failed for {GatewayUrlHelper.SanitizeForDisplay(rawUrl)}: {ex.Message}");
+                AddTestResultText.Text = "✗ Unable to test gateway connection. Check the URL and try again.";
                 AddTestResultText.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["SystemFillColorCriticalBrush"];
             }
         }
@@ -2113,27 +2451,12 @@ public sealed partial class ConnectionPage : Page
 
         url = GatewayUrlHelper.NormalizeForWebSocket(url);
 
-        // SSH tunnel — read from the Add form (per-gateway) if the expander is open
-        SshTunnelConfig? sshConfig = null;
-        bool useSsh = AddSshExpander.IsExpanded
-                   && !string.IsNullOrWhiteSpace(AddSshUserBox.Text)
-                   && !string.IsNullOrWhiteSpace(AddSshHostBox.Text);
-        if (useSsh)
+        if (!TryBuildAddSshTunnelConfig(out var sshConfig, out var sshError))
         {
-            var sshUser = AddSshUserBox.Text.Trim();
-            var sshHost = AddSshHostBox.Text.Trim();
-            if (!int.TryParse(AddSshRemotePortBox.Text, out var remotePort) || remotePort is < 1 or > 65535)
-            {
-                AddResultText.Text = LocalizationHelper.GetString("ConnectionPage_SshRemotePortInvalid");
-                return;
-            }
-            if (!int.TryParse(AddSshLocalPortBox.Text, out var localPort) || localPort is < 1 or > 65535)
-            {
-                AddResultText.Text = LocalizationHelper.GetString("ConnectionPage_SshLocalPortInvalid");
-                return;
-            }
-            sshConfig = new SshTunnelConfig(sshUser, sshHost, remotePort, localPort);
+            AddResultText.Text = sshError;
+            return;
         }
+        bool useSsh = sshConfig != null;
 
         AddSaveButton.IsEnabled = false;
         AddResultText.Text = LocalizationHelper.GetString("ConnectionPage_Connecting");
@@ -2145,6 +2468,7 @@ public sealed partial class ConnectionPage : Page
         var prevUseSsh = previousSettings?.UseSshTunnel ?? false;
         var prevSshUser = previousSettings?.SshTunnelUser;
         var prevSshHost = previousSettings?.SshTunnelHost;
+        var prevSshPort = previousSettings?.SshTunnelSshPort ?? 22;
         var prevSshRemotePort = previousSettings?.SshTunnelRemotePort ?? 0;
         var prevSshLocalPort = previousSettings?.SshTunnelLocalPort ?? 0;
 
@@ -2186,7 +2510,7 @@ public sealed partial class ConnectionPage : Page
                 BootstrapToken = null,
                 SshTunnel = sshConfig,
                 LastConnected = existing?.LastConnected,
-            };
+            }.PreserveAdvancedFields(existing); // keep per-gateway BrowserControlPort across edits
             _gatewayRegistry.AddOrUpdate(record);
             _gatewayRegistry.SetActive(recordId);
             _gatewayRegistry.Save();
@@ -2215,7 +2539,10 @@ public sealed partial class ConnectionPage : Page
                     identityBackupMtimeUtc = info.LastWriteTimeUtc;
                 }
             }
-            catch { /* backup is best-effort; rollback simply skips restore */ }
+            catch (Exception ex)
+            {
+                Logger.Warn($"ConnectionPage: Failed to snapshot gateway identity before direct connect; rollback will skip restore: {ex.Message}");
+            }
 
             if (!string.IsNullOrWhiteSpace(token))
             {
@@ -2231,6 +2558,7 @@ public sealed partial class ConnectionPage : Page
                 {
                     previousSettings.SshTunnelUser = sshConfig.User;
                     previousSettings.SshTunnelHost = sshConfig.Host;
+                    previousSettings.SshTunnelSshPort = sshConfig.SshPort;
                     previousSettings.SshTunnelRemotePort = sshConfig.RemotePort;
                     previousSettings.SshTunnelLocalPort = sshConfig.LocalPort;
                 }
@@ -2260,7 +2588,7 @@ public sealed partial class ConnectionPage : Page
             AddResultText.Text = $"✗ {ex.Message}";
             RollbackDirectConnect(previousActiveId, isNewRecord, recordId, existingRecordSnapshot,
                 previousSettings, prevGatewayUrl, prevUseSsh, prevSshUser, prevSshHost,
-                prevSshRemotePort, prevSshLocalPort,
+                prevSshPort, prevSshRemotePort, prevSshLocalPort,
                 identityCleared ? identityKeyPath : null,
                 identityCleared ? identityBackup : null,
                 identityCleared ? identityBackupLength : -1,
@@ -2319,6 +2647,51 @@ public sealed partial class ConnectionPage : Page
         snapshot.OperatorState is RoleConnectionState.PairingRequired
             or RoleConnectionState.Error;
 
+    private bool TryBuildAddSshTunnelConfig(out SshTunnelConfig? sshConfig, out string? error)
+    {
+        sshConfig = null;
+        error = null;
+
+        if (!AddSshExpander.IsExpanded ||
+            string.IsNullOrWhiteSpace(AddSshUserBox.Text) ||
+            string.IsNullOrWhiteSpace(AddSshHostBox.Text))
+        {
+            return true;
+        }
+
+        var sshUser = AddSshUserBox.Text.Trim();
+        var sshHost = AddSshHostBox.Text.Trim();
+        var sshPortText = string.IsNullOrWhiteSpace(AddSshServerPortBox.Text) ? "22" : AddSshServerPortBox.Text;
+        if (!int.TryParse(sshPortText, out var sshPort) || sshPort is < 1 or > 65535)
+        {
+            error = LocalizationHelper.GetString("ConnectionPage_SshServerPortInvalid");
+            return false;
+        }
+        if (!int.TryParse(AddSshRemotePortBox.Text, out var remotePort) || remotePort is < 1 or > 65535)
+        {
+            error = LocalizationHelper.GetString("ConnectionPage_SshRemotePortInvalid");
+            return false;
+        }
+        if (!int.TryParse(AddSshLocalPortBox.Text, out var localPort) || localPort is < 1 or > 65535)
+        {
+            error = LocalizationHelper.GetString("ConnectionPage_SshLocalPortInvalid");
+            return false;
+        }
+
+        var includeBrowserProxyForward = BrowserProxySshTunnelForwardPolicy.ShouldInclude(
+            CurrentApp.Settings.NodeBrowserProxyEnabled,
+            remotePort,
+            localPort);
+        sshConfig = new SshTunnelConfig(
+            sshUser,
+            sshHost,
+            remotePort,
+            localPort,
+            IncludeBrowserProxyForward: includeBrowserProxyForward,
+            SshPort: sshPort);
+        return true;
+    }
+
     private static GatewayConnectionSnapshot EnsureDirectConnectSucceeded(GatewayConnectionSnapshot snapshot)
     {
         if (snapshot.OperatorState == RoleConnectionState.Error)
@@ -2333,7 +2706,7 @@ public sealed partial class ConnectionPage : Page
         string? previousActiveId, bool isNewRecord, string recordId,
         GatewayRecord? existingRecordSnapshot, SettingsManager? settings,
         string? prevGatewayUrl, bool prevUseSsh, string? prevSshUser,
-        string? prevSshHost, int prevSshRemotePort, int prevSshLocalPort,
+        string? prevSshHost, int prevSshPort, int prevSshRemotePort, int prevSshLocalPort,
         string? identityKeyPath = null, string? identityBackup = null,
         long identityBackupLength = -1, DateTime identityBackupMtimeUtc = default)
     {
@@ -2378,7 +2751,10 @@ public sealed partial class ConnectionPage : Page
                     File.WriteAllText(identityKeyPath, identityBackup);
                 // else: another writer touched the file; preserve it.
             }
-            catch { /* best-effort restore; failure cannot regress further */ }
+            catch (Exception ex)
+            {
+                Logger.Warn($"ConnectionPage: Failed to restore gateway identity after direct connect rollback: {ex.Message}");
+            }
         }
 
         if (settings != null)
@@ -2387,6 +2763,7 @@ public sealed partial class ConnectionPage : Page
             settings.UseSshTunnel = prevUseSsh;
             settings.SshTunnelUser = prevSshUser ?? string.Empty;
             settings.SshTunnelHost = prevSshHost ?? string.Empty;
+            settings.SshTunnelSshPort = prevSshPort;
             settings.SshTunnelRemotePort = prevSshRemotePort;
             settings.SshTunnelLocalPort = prevSshLocalPort;
             settings.Save();
@@ -2401,6 +2778,11 @@ public sealed partial class ConnectionPage : Page
             AddResultText.Text = LocalizationHelper.GetString("ConnectionPage_PleaseEnterSetupCode");
             return;
         }
+        if (!TryBuildAddSshTunnelConfig(out var sshConfig, out var sshError))
+        {
+            AddResultText.Text = sshError;
+            return;
+        }
 
         AddSaveButton.IsEnabled = false;
         AddResultText.Text = LocalizationHelper.GetString("ConnectionPage_Applying");
@@ -2408,7 +2790,7 @@ public sealed partial class ConnectionPage : Page
         {
             if (_connectionManager != null)
             {
-                var result = await _connectionManager.ApplySetupCodeAsync(code);
+                var result = await _connectionManager.ApplySetupCodeAsync(code, sshConfig);
                 AddResultText.Text = result.Outcome switch
                 {
                     SetupCodeOutcome.Success => $"✓ {string.Format(LocalizationHelper.GetString("ConnectionPage_AppliedGateway"), SanitizeUrl(result.GatewayUrl ?? ""))}",
@@ -2459,6 +2841,8 @@ public sealed partial class ConnectionPage : Page
         if (string.IsNullOrEmpty(code) || code.Length < 10)
         {
             AddSetupCodePreviewPanel.Visibility = Visibility.Collapsed;
+            _lastDecodedSetupUrl = null;
+            UpdateRemoteSetupAdvice();
             return;
         }
         var decoded = SetupCodeDecoder.Decode(code);
@@ -2473,10 +2857,15 @@ public sealed partial class ConnectionPage : Page
             // Auto-test connectivity with the decoded URL
             if (!string.IsNullOrEmpty(decoded.Url))
                 ScheduleConnectivityTest(decoded.Url);
+            // Warn if the decoded URL would send the bootstrap token in cleartext.
+            _lastDecodedSetupUrl = decoded.Url;
+            UpdateRemoteSetupAdvice();
         }
         else
         {
             AddSetupCodePreviewPanel.Visibility = Visibility.Collapsed;
+            _lastDecodedSetupUrl = null;
+            UpdateRemoteSetupAdvice();
         }
     }
 
@@ -2741,6 +3130,9 @@ public sealed partial class ConnectionPage : Page
                     _lastSnapshot = snapshot;
                     RefreshFromSnapshot(snapshot);
                     break;
+                case nameof(AppState.Nodes):
+                    RefreshFromSnapshot(_connectionManager?.CurrentSnapshot ?? _lastSnapshot);
+                    break;
                 case nameof(AppState.NodePairList):
                     if (_appState?.NodePairList != null) UpdatePairingRequests(_appState.NodePairList);
                     break;
@@ -2877,11 +3269,12 @@ public sealed partial class ConnectionPage : Page
             successPath = ok;
             // !ok falls into finally below — re-enable so user can retry.
         }
-        catch
+        catch (Exception ex)
         {
-            // Swallow; finally re-enables. The pairing list refresh has
-            // its own observable surface (gateway list-updated event), so
-            // there's no clean place to surface a per-row error here.
+            // Finally re-enables. The pairing list refresh has its own
+            // observable surface (gateway list-updated event), so there's
+            // no clean place to surface a per-row error here — but log it.
+            Services.Logger.Warn($"[ConnectionPage] Pairing row action failed: {ex.Message}");
         }
         finally
         {
@@ -3146,21 +3539,6 @@ public sealed partial class ConnectionPage : Page
         return card;
     }
 
-    // ─── Auth error guidance (preserved) ─────────────────────────────
-
-    private static string GetAuthErrorGuidance(string error)
-    {
-        if (error.Contains("token", StringComparison.OrdinalIgnoreCase))
-            return string.Format(LocalizationHelper.GetString("ConnectionPage_AuthGuidanceToken"), error);
-        if (error.Contains("pairing", StringComparison.OrdinalIgnoreCase))
-            return string.Format(LocalizationHelper.GetString("ConnectionPage_AuthGuidancePairing"), error);
-        if (error.Contains("password", StringComparison.OrdinalIgnoreCase))
-            return string.Format(LocalizationHelper.GetString("ConnectionPage_AuthGuidancePassword"), error);
-        if (error.Contains("signature", StringComparison.OrdinalIgnoreCase))
-            return string.Format(LocalizationHelper.GetString("ConnectionPage_AuthGuidanceSignature"), error);
-        return string.Format(LocalizationHelper.GetString("ConnectionPage_AuthGuidanceDefault"), error);
-    }
-
     private static string SanitizeUrl(string url)
     {
         try
@@ -3168,7 +3546,10 @@ public sealed partial class ConnectionPage : Page
             if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
                 return uri.Port > 0 ? $"{uri.Scheme}://{uri.Host}:{uri.Port}" : $"{uri.Scheme}://{uri.Host}";
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Logger.Debug($"ConnectionPage: Failed to sanitize gateway URL '{url}': {ex.Message}");
+        }
         return url;
     }
 }

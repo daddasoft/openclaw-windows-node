@@ -6,28 +6,88 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using OpenClawTray.Chat;
 
 namespace OpenClawTray.Services;
 
 public sealed class ExecApprovalPromptService : IExecApprovalPromptHandler
 {
     private readonly IOpenClawLogger _logger;
+    private readonly Func<OpenClawChatDataProvider?>? _chatProviderProvider;
+    private readonly Func<string, bool>? _inlineApprovalAvailable;
 
     public ExecApprovalPromptService(
         DispatcherQueue dispatcherQueue,
         Func<FrameworkElement?> rootProvider,
-        IOpenClawLogger logger)
+        IOpenClawLogger logger,
+        Func<OpenClawChatDataProvider?>? chatProviderProvider = null,
+        Func<string, bool>? inlineApprovalAvailable = null)
     {
         _logger = logger;
+        _chatProviderProvider = chatProviderProvider;
+        _inlineApprovalAvailable = inlineApprovalAvailable;
     }
 
-    public Task<ExecApprovalPromptDecision> RequestAsync(
+    /// <summary>
+    /// Raised after every prompt resolves (Allow once / Always allow / Deny /
+    /// cancellation / failure). May fire from either the prompt's background
+    /// STA thread (normal path / exception path) or the caller's thread
+    /// (pre-check cancellation), so subscribers must marshal to their own UI
+    /// thread if needed. Inspect <see cref="ExecApprovalPromptDecidedEventArgs.Source"/>
+    /// to distinguish a user click from a cancellation/failure that also
+    /// resolved as Deny.
+    /// </summary>
+    public event EventHandler<ExecApprovalPromptDecidedEventArgs>? Decided;
+    public event EventHandler<ExecApprovalPromptRequestedEventArgs>? InlineApprovalRequested;
+
+    public async Task<ExecApprovalPromptDecision> RequestAsync(
         ExecApprovalPromptRequest request,
         CancellationToken cancellationToken = default)
     {
-        var tcs = new TaskCompletionSource<ExecApprovalPromptDecision>(TaskCreationOptions.RunContinuationsAsynchronously);
         if (cancellationToken.IsCancellationRequested)
-            return Task.FromResult(ExecApprovalPromptDecision.Deny("Approval prompt was cancelled"));
+        {
+            var cancelled = ExecApprovalPromptDecision.Deny("Approval prompt was cancelled");
+            RaiseDecided(request, cancelled, ExecApprovalPromptDecisionSource.Cancelled);
+            return cancelled;
+        }
+
+        var hasSessionKey = !string.IsNullOrWhiteSpace(request.SessionKey);
+        var chatProvider = _chatProviderProvider?.Invoke();
+        if (hasSessionKey
+            && (_inlineApprovalAvailable?.Invoke(request.SessionKey!) ?? false)
+            && chatProvider is { } provider)
+        {
+            try
+            {
+                var inlineTask = provider.RequestLocalExecApprovalAsync(request, cancellationToken);
+                if (!inlineTask.IsCompleted)
+                    RaiseInlineApprovalRequested(request);
+
+                var inlineDecision = await inlineTask.ConfigureAwait(false);
+                if (inlineDecision is not null)
+                {
+                    _logger.Info($"[ExecApproval] Inline prompt decision: {inlineDecision.Kind}");
+                    RaiseDecided(request, inlineDecision, MapDecisionToSource(inlineDecision));
+                    return inlineDecision;
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                var cancelled = ExecApprovalPromptDecision.Deny("Approval prompt was cancelled");
+                RaiseDecided(request, cancelled, ExecApprovalPromptDecisionSource.Cancelled);
+                return cancelled;
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn($"[ExecApproval] Inline prompt failed: {ex.Message}; falling back to native prompt");
+            }
+        }
+        else if (hasSessionKey && chatProvider is not null)
+        {
+            _logger.Info("[ExecApproval] Native prompt selected because no native chat surface is active");
+        }
+
+        var tcs = new TaskCompletionSource<ExecApprovalPromptDecision>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var thread = new Thread(() =>
         {
@@ -35,12 +95,15 @@ public sealed class ExecApprovalPromptService : IExecApprovalPromptHandler
             {
                 var decision = ShowNativePrompt(request);
                 _logger.Info($"[ExecApproval] Prompt decision: {decision.Kind}");
+                RaiseDecided(request, decision, MapDecisionToSource(decision));
                 tcs.TrySetResult(decision);
             }
             catch (Exception ex)
             {
                 _logger.Warn($"[ExecApproval] Prompt failed: {ex.Message}");
-                tcs.TrySetResult(ExecApprovalPromptDecision.Deny("Approval prompt failed"));
+                var failed = ExecApprovalPromptDecision.Deny("Approval prompt failed");
+                RaiseDecided(request, failed, ExecApprovalPromptDecisionSource.Failed);
+                tcs.TrySetResult(failed);
             }
         })
         {
@@ -50,7 +113,49 @@ public sealed class ExecApprovalPromptService : IExecApprovalPromptHandler
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
 
-        return tcs.Task;
+        return await tcs.Task.ConfigureAwait(false);
+    }
+
+    private void RaiseInlineApprovalRequested(ExecApprovalPromptRequest request)
+    {
+        try
+        {
+            InlineApprovalRequested?.Invoke(this, new ExecApprovalPromptRequestedEventArgs(request));
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn($"[ExecApproval] InlineApprovalRequested subscriber threw: {ex.Message}");
+        }
+    }
+
+    private static ExecApprovalPromptDecisionSource MapDecisionToSource(ExecApprovalPromptDecision decision)
+    {
+        if (string.Equals(decision.Reason, ExecApprovalPromptDecision.TimedOutReason, StringComparison.Ordinal))
+            return ExecApprovalPromptDecisionSource.TimedOut;
+
+        return MapKindToUserSource(decision.Kind);
+    }
+
+    private static ExecApprovalPromptDecisionSource MapKindToUserSource(ExecApprovalPromptDecisionKind kind) => kind switch
+    {
+        ExecApprovalPromptDecisionKind.AllowOnce => ExecApprovalPromptDecisionSource.UserAllowOnce,
+        ExecApprovalPromptDecisionKind.AlwaysAllow => ExecApprovalPromptDecisionSource.UserAlwaysAllow,
+        _ => ExecApprovalPromptDecisionSource.UserDeny
+    };
+
+    private void RaiseDecided(
+        ExecApprovalPromptRequest request,
+        ExecApprovalPromptDecision decision,
+        ExecApprovalPromptDecisionSource source)
+    {
+        try
+        {
+            Decided?.Invoke(this, new ExecApprovalPromptDecidedEventArgs(request, decision, source));
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn($"[ExecApproval] Decided subscriber threw: {ex.Message}");
+        }
     }
 
     private static ExecApprovalPromptDecision ShowNativePrompt(ExecApprovalPromptRequest request)

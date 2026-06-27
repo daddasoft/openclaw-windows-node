@@ -5,7 +5,7 @@ public sealed class ReleaseSigningWorkflowTests
     [Fact]
     public void ReleaseWorkflow_SignsOnlyOpenClawOwnedPayloadExecutables()
     {
-        var workflow = File.ReadAllText(Path.Combine(GetRepositoryRoot(), ".github", "workflows", "ci.yml"));
+        var workflow = File.ReadAllText(Path.Combine(TestRepositoryPaths.GetRepositoryRoot(), ".github", "workflows", "ci.yml"));
 
         Assert.DoesNotContain("azure/trusted-signing-action", workflow);
         Assert.DoesNotContain("AZURE_CLIENT_SECRET", workflow);
@@ -34,8 +34,8 @@ public sealed class ReleaseSigningWorkflowTests
     [Fact]
     public void ReleaseWorkflow_VerifiesExecutableSigningPolicy()
     {
-        var workflow = File.ReadAllText(Path.Combine(GetRepositoryRoot(), ".github", "workflows", "ci.yml"));
-        var verifier = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "scripts", "Test-ReleaseExecutableSignatures.ps1"));
+        var workflow = File.ReadAllText(Path.Combine(TestRepositoryPaths.GetRepositoryRoot(), ".github", "workflows", "ci.yml"));
+        var verifier = File.ReadAllText(Path.Combine(TestRepositoryPaths.GetRepositoryRoot(), "scripts", "Test-ReleaseExecutableSignatures.ps1"));
 
         Assert.Contains("Test-ReleaseExecutableSignatures.ps1 -PayloadPath artifacts/tray-win-x64 -RequireSignedOpenClaw", workflow);
         Assert.Contains("Test-ReleaseExecutableSignatures.ps1 -PayloadPath artifacts/tray-win-arm64 -RequireSignedOpenClaw", workflow);
@@ -53,7 +53,7 @@ public sealed class ReleaseSigningWorkflowTests
     [Fact]
     public void ReleaseWorkflow_BundlesAndVerifiesNativeRuntimeDependencies()
     {
-        var root = GetRepositoryRoot();
+        var root = TestRepositoryPaths.GetRepositoryRoot();
         var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "ci.yml"));
         var installer = File.ReadAllText(Path.Combine(root, "installer.iss"));
         var verifier = File.ReadAllText(Path.Combine(root, "scripts", "Test-ReleaseNativeDependencies.ps1"));
@@ -82,17 +82,23 @@ public sealed class ReleaseSigningWorkflowTests
         Assert.Contains("Get-AuthenticodeSignature -LiteralPath $File.FullName", verifier);
         Assert.Contains("Get-VCRuntimeFiles", verifier);
         Assert.Contains("vcruntime140.dll", verifier);
-        Assert.Contains("libsodium.dll", verifier);
+        Assert.DoesNotContain("libsodium.dll", verifier);
         Assert.Contains("OpenClawNativeDependencyProbe", verifier);
+        Assert.Contains("Microsoft.ML.OnnxRuntime.dll", verifier);
+        Assert.Contains("onnxruntime.dll", verifier);
+        Assert.Contains("sherpa-onnx-c-api.dll", verifier);
+        Assert.Contains("TTS native stack probe", verifier);
         Assert.Contains("SkipNativeLoadProbe", verifier);
         Assert.Contains("CopyOpenClawVCRuntimeToPublish", targets);
+        Assert.Contains("ResolveOpenClawVCRuntimeFromVSInstall", targets);
         Assert.Contains("ResolveOpenClawVCRuntimeArm64FromVSInstall", targets);
+        Assert.Contains("VCRuntimeMinVersion", verifier);
     }
 
     [Fact]
     public void ReleaseWorkflow_PausesMsixForAlpha()
     {
-        var workflow = File.ReadAllText(Path.Combine(GetRepositoryRoot(), ".github", "workflows", "ci.yml"));
+        var workflow = File.ReadAllText(Path.Combine(TestRepositoryPaths.GetRepositoryRoot(), ".github", "workflows", "ci.yml"));
 
         Assert.Contains("if: false # Paused for alpha.4; ship Inno setup and portable ZIP artifacts only.", workflow);
         Assert.Contains("needs: [repo-hygiene, test, e2etests, build]", workflow);
@@ -109,24 +115,4 @@ public sealed class ReleaseSigningWorkflowTests
         return workflow[start..];
     }
 
-    private static string GetRepositoryRoot()
-    {
-        var env = Environment.GetEnvironmentVariable("OPENCLAW_REPO_ROOT");
-        if (!string.IsNullOrWhiteSpace(env) && Directory.Exists(env))
-            return env;
-
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            if (File.Exists(Path.Combine(directory.FullName, "openclaw-windows-node.slnx")) &&
-                Directory.Exists(Path.Combine(directory.FullName, "src")))
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new InvalidOperationException("Could not find repository root.");
-    }
 }

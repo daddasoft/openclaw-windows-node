@@ -35,13 +35,23 @@ public interface IChatGatewayBridge : IDisposable
     void StartProactiveBootstrap();
 
     Task SendChatMessageAsync(string message, string? sessionKey, string? sessionId, IReadOnlyList<ChatAttachment>? attachments = null);
+    Task<ChatSendResult> SendChatMessageForRunAsync(string message, string? sessionKey, string? sessionId, IReadOnlyList<ChatAttachment>? attachments = null);
     Task PatchSessionModelAsync(string sessionKey, string model);
+    /// <summary>
+    /// Clears the session's model override (tri-state <c>sessions.patch</c> with
+    /// an explicit JSON null), reverting the session to the gateway/agent
+    /// default. Distinct from <see cref="PatchSessionModelAsync"/>, which sets a
+    /// concrete model.
+    /// </summary>
+    Task ClearSessionModelAsync(string sessionKey);
     Task PatchSessionThinkingLevelAsync(string sessionKey, string thinkingLevel);
     Task<ChatHistoryInfo> RequestChatHistoryAsync(string? sessionKey);
     Task SendChatAbortAsync(string runId, string? sessionKey = null);
+    Task ResolveExecApprovalAsync(string approvalId, string decision);
 
     event EventHandler<ConnectionStatus>? StatusChanged;
     event EventHandler<SessionInfo[]>? SessionsUpdated;
+    event EventHandler<SessionCommandResult>? SessionCommandCompleted;
     event EventHandler<ChatMessageInfo>? ChatMessageReceived;
     event EventHandler<AgentEventInfo>? AgentEventReceived;
     event EventHandler<ModelsListInfo>? ModelsListUpdated;
@@ -55,6 +65,7 @@ public sealed class GatewayClientChatBridge : IChatGatewayBridge
     private readonly OpenClawGatewayClient _client;
     private readonly EventHandler<ConnectionStatus> _statusChangedHandler;
     private readonly EventHandler<SessionInfo[]> _sessionsUpdatedHandler;
+    private readonly EventHandler<SessionCommandResult> _sessionCommandCompletedHandler;
     private readonly EventHandler<ChatMessageInfo> _chatMessageReceivedHandler;
     private readonly EventHandler<AgentEventInfo> _agentEventReceivedHandler;
     private readonly EventHandler<ModelsListInfo> _modelsListUpdatedHandler;
@@ -88,6 +99,7 @@ public sealed class GatewayClientChatBridge : IChatGatewayBridge
             }
         };
         _sessionsUpdatedHandler = (s, e) => SessionsUpdated?.Invoke(s, e);
+        _sessionCommandCompletedHandler = (s, e) => SessionCommandCompleted?.Invoke(s, e);
         _chatMessageReceivedHandler = (s, e) => ChatMessageReceived?.Invoke(s, e);
         _agentEventReceivedHandler = (s, e) => AgentEventReceived?.Invoke(s, e);
         _modelsListUpdatedHandler = (s, e) =>
@@ -111,6 +123,7 @@ public sealed class GatewayClientChatBridge : IChatGatewayBridge
         // ``IsConnectedToGateway``. ``volatile`` covers atomic reads.
         _client.StatusChanged += _statusChangedHandler;
         _client.SessionsUpdated += _sessionsUpdatedHandler;
+        _client.SessionCommandCompleted += _sessionCommandCompletedHandler;
         _client.ChatMessageReceived += _chatMessageReceivedHandler;
         _client.AgentEventReceived += _agentEventReceivedHandler;
         _client.ModelsListUpdated += _modelsListUpdatedHandler;
@@ -150,19 +163,29 @@ public sealed class GatewayClientChatBridge : IChatGatewayBridge
     public Task SendChatMessageAsync(string message, string? sessionKey, string? sessionId, IReadOnlyList<ChatAttachment>? attachments = null) =>
         _client.SendChatMessageAsync(message, sessionKey, sessionId, attachments);
 
+    public Task<ChatSendResult> SendChatMessageForRunAsync(string message, string? sessionKey, string? sessionId, IReadOnlyList<ChatAttachment>? attachments = null) =>
+        _client.SendChatMessageForRunAsync(message, sessionKey, sessionId, attachments);
+
     public Task PatchSessionModelAsync(string sessionKey, string model) =>
-        _client.PatchSessionAsync(sessionKey, model: model);
+        _client.PatchSessionAsync(sessionKey, new SessionPatch { Model = model });
+
+    public Task ClearSessionModelAsync(string sessionKey) =>
+        _client.PatchSessionAsync(sessionKey, new SessionPatch { Model = SessionPatch.Clear });
 
     public Task PatchSessionThinkingLevelAsync(string sessionKey, string thinkingLevel) =>
-        _client.PatchSessionAsync(sessionKey, thinkingLevel: thinkingLevel);
+        _client.PatchSessionAsync(sessionKey, new SessionPatch { ThinkingLevel = thinkingLevel });
 
     public Task<ChatHistoryInfo> RequestChatHistoryAsync(string? sessionKey) =>
         _client.RequestChatHistoryAsync(sessionKey);
 
     public Task SendChatAbortAsync(string runId, string? sessionKey = null) => _client.SendChatAbortAsync(runId, sessionKey);
 
+    public Task ResolveExecApprovalAsync(string approvalId, string decision) =>
+        _client.ResolveExecApprovalAsync(approvalId, decision);
+
     public event EventHandler<ConnectionStatus>? StatusChanged;
     public event EventHandler<SessionInfo[]>? SessionsUpdated;
+    public event EventHandler<SessionCommandResult>? SessionCommandCompleted;
     public event EventHandler<ChatMessageInfo>? ChatMessageReceived;
     public event EventHandler<AgentEventInfo>? AgentEventReceived;
     public event EventHandler<ModelsListInfo>? ModelsListUpdated;
@@ -174,15 +197,16 @@ public sealed class GatewayClientChatBridge : IChatGatewayBridge
 
         _client.StatusChanged -= _statusChangedHandler;
         _client.SessionsUpdated -= _sessionsUpdatedHandler;
+        _client.SessionCommandCompleted -= _sessionCommandCompletedHandler;
         _client.ChatMessageReceived -= _chatMessageReceivedHandler;
         _client.AgentEventReceived -= _agentEventReceivedHandler;
         _client.ModelsListUpdated -= _modelsListUpdatedHandler;
 
         StatusChanged = null;
         SessionsUpdated = null;
+        SessionCommandCompleted = null;
         ChatMessageReceived = null;
         AgentEventReceived = null;
         ModelsListUpdated = null;
     }
 }
-

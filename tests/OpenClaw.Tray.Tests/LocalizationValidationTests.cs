@@ -49,11 +49,22 @@ public class LocalizationValidationTests
         "VoiceOverlayWindow_winexWindowEx_2.Title",
         // Brand name — identical across all locales.
         "ConnectionPage_TopologyTailscale",
+        // Product/feature name — "OpenClaw Onboard" is kept identical across
+        // all locales (the card's description and button are translated).
+        "SettingsPage_OnboardWizard_Header.Text",
+        // Technical product term — "Gateway" is kept in English across
+        // supported locales per onboarding terminology.
+        "DiagnosticsPage_Section_Gateway.Text",
         "PermissionsPage_TtsElevenLabsModel.PlaceholderText",
         "PermissionsPage_TtsProviderElevenLabs.Content",
         // Sample IDs / brand identifiers — same across locales.
         "VoiceSettingsPage_ElevenLabsVoiceIdBox.PlaceholderText",
         "VoiceSettingsPage_ElevenLabsModelBox.PlaceholderText",
+        // Capability command identifier — should match the wire/API name.
+        "NotificationsPage_MetadataSystemRun",
+        // Punctuation-only layout format; localized parts are supplied by
+        // separate placeholders and should keep the same visual separator.
+        "ConfigPage_AccessSummaryFormat",
         // NodesPage detail labels — "Version", "Hardware", and "PATH" are
         // technical loanwords that read the same in every supported locale
         // in this app's audience. Translating them adds no clarity and
@@ -108,6 +119,10 @@ public class LocalizationValidationTests
         "PermissionsPage_TtsStatus_DefaultProviderFormat",
         "PermissionsPage_TtsStatus_ElevenLabsSaved",
         "PermissionsPage_McpStatus_TokenReadFailedFormat",
+        // Session key display formatter: "{agent} / {slot}" intentionally
+        // uses an invariant separator while the surrounding notification copy
+        // and common labels ("Main chat") are localized.
+        "AppNotification_ExecApprovalPending_AgentSlotLabelFormat",
         // Chat runtime warning seeded English-only until translations land.
         "Chat_Composer_Placeholder_IncompatibleGateway",
         // InstancesPage / ConnectionPage new strings — seeded English across
@@ -148,6 +163,21 @@ public class LocalizationValidationTests
         "InstancesPage_UpdateReason_Tooltip_NoReason",
         "ConnectionPage_NodePairing_Title.Text",
         "ConnectionPage_NodePairing_Subtitle.Text",
+        "ConnectionPage_CopyTrustApproval.Content",
+        "ConnectionPage_NodeApprovalRequired",
+        "ConnectionPage_NodeReapprovalRequired",
+        "ConnectionPage_NodeBodyApprovalRequired",
+        "ConnectionPage_NodeBodyReapprovalRequired",
+        "ConnectionPage_NodeTrustApprovalHelp",
+        "ConnectionPage_NodeTrustDiscoveryHelp",
+        "ConnectionPage_NodeReconnectAfterApproval",
+        "ConnectionPage_NodeSurfaceNone",
+        "ConnectionPage_NodeEffectiveCapabilities",
+        "ConnectionPage_NodeEffectiveCommands",
+        "ConnectionPage_NodeEffectivePermissions",
+        "ConnectionPage_NodePendingDeclaredCapabilities",
+        "ConnectionPage_NodePendingDeclaredCommands",
+        "ConnectionPage_NodePendingDeclaredPermissions",
         "AboutPage_MoreDiagnosticsLink.Content",
         "ConnectionStatusWindow.Title",
         // Hard-coded XAML strings resolved by issue #491 — seeded English-only across
@@ -181,6 +211,121 @@ public class LocalizationValidationTests
         "SandboxPage_1MiB.Content",
         "SandboxPage_64MiB.Content",
         "SandboxPage_SystemRun.Text",
+        // SessionsPage runtime accessibility strings — seeded English-only across
+        // all 5 locales using the deferred-translation pattern. These are
+        // tooltip / AutomationProperties.Name overrides on the OpenChat button.
+        // Same precedent as the PermissionsPage / InstancesPage / ConfigPage
+        // runtime keys above.
+        "SessionsPage_OpenChatButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip",
+        "SessionsPage_OpenChatButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name",
+        // CronPage / InfoBar / HubWindow nav / CommandCenter runtime strings —
+        // seeded English-only across all 5 locales using the deferred-translation
+        // pattern. Fetched at runtime via LocalizationHelper. Same precedent as
+        // the PermissionsPage / InstancesPage / SessionsPage runtime keys above.
+        "CronPage_JobCompleted",
+        "CronPage_JobCompletedRanSuccessfully",
+        "BindingsPage_CouldNotLoadBindings",
+        "ConfigPage_CheckingConfigPermissions",
+        "ConfigPage_ConfigUnavailable",
+        "ConfigPage_ConfigIsReadOnly",
+        // ConnectionPage gateway terminal controls — surfaced after PR #597
+        // landed in master. Seeded English-only across all 5 locales using the
+        // same deferred-translation pattern as the AgentEventsPage / SkillsPage
+        // / CronPage entries above. The Description_Format key takes the WSL
+        // distro name as {0} and is formatted in ConnectionPage.xaml.cs.
+        "ConnectionPage_GatewayHostControlsDescription_Format",
+        // GatewayHostAccess plan strings (terminal label / tooltip / disabled
+        // reasons). Resolved in the classifier via LocalizationHelper so the
+        // OpenTerminal button and any consumers of DisabledReason show
+        // localized text.
+        "GatewayHostAccess_OpenTerminalLabel",
+        "GatewayHostAccess_OpenSshTerminalLabel",
+        "GatewayHostAccess_OpenTerminalInWslTooltip_Format",
+        "GatewayHostAccess_OpenSshTerminalTooltip_Format",
+        "GatewayHostAccess_NoTerminalAccess",
+        "GatewayHostAccess_NoWslOrSshDisabled",
+        "Command_GoToConnection_Title",
+        "Command_GoToConnection_Subtitle",
+        "Command_GoToChat_Title",
+        "Command_GoToChat_Subtitle",
+        "Command_GoToSessions_Title",
+        "Command_GoToSessions_Subtitle",
+        "Command_GoToAgentEvents_Title",
+        "Command_GoToAgentEvents_Subtitle",
+        "Command_GoToSkills_Title",
+        "Command_GoToSkills_Subtitle",
+        "Command_GoToCron_Title",
+        "Command_GoToCron_Subtitle",
+        "Command_GoToWorkspace_Title",
+        "Command_GoToWorkspace_Subtitle",
+        "Command_GoToChannels_Title",
+        "Command_GoToChannels_Subtitle",
+        "Command_GoToInstances_Title",
+        "Command_GoToInstances_Subtitle",
+        "Command_GoToConfig_Title",
+        "Command_GoToConfig_Subtitle",
+        "Command_GoToUsage_Title",
+        "Command_GoToUsage_Subtitle",
+        "Command_GoToBindings_Title",
+        "Command_GoToBindings_Subtitle",
+        "Command_GoToPermissions_Title",
+        "Command_GoToPermissions_Subtitle",
+        "Command_GoToSettings_Title",
+        "Command_GoToSettings_Subtitle",
+        "Command_GoToDiagnostics_Title",
+        "Command_GoToDiagnostics_Subtitle",
+        "Command_GoToInfo_Title",
+        "Command_GoToInfo_Subtitle",
+        "Command_OpenChatWindow_Title",
+        "Command_OpenChatWindow_Subtitle",
+        "Command_OpenDashboard_Title",
+        "Command_OpenDashboard_Subtitle",
+        "Command_ToggleNodeMode_Title",
+        "Command_ToggleCamera_Title",
+        "Command_ToggleCanvas_Title",
+        "Command_ToggleScreenCapture_Title",
+        "Command_ToggleBrowserControl_Title",
+        "Command_Subtitle_CurrentlyOn",
+        "Command_Subtitle_CurrentlyOff",
+        "CommandCenter_AuthFailed",
+        "CommandCenter_NodePendingApproval",
+        "CommandCenter_GatewayConnectionError",
+        "CommandCenter_GatewayNotConnected",
+        "CommandCenter_GatewayHealthStale",
+        "CommandCenter_NoChannelsReported",
+        "CommandCenter_WaitingForGatewayHealth",
+        "CommandCenter_NoChannelsRunning",
+        "CommandCenter_NoNodesReported",
+        "CommandCenter_UsageCostsMissing",
+        "CommandCenter_BrowserProxyAuthMayNeed",
+        "CommandCenter_SshTunnelPortNotListening",
+        "CommandCenter_NoLocalGatewayListener",
+        "CommandCenter_BrowserProxySshForwardNotListening",
+        "CommandCenter_BrowserProxyHostNotDetected",
+        // WorkspacePage session file rail strings — seeded English across all
+        // locales until translations land. Same deferred-translation precedent
+        // as the InstancesPage / ConnectionPage runtime keys above.
+        "WorkspacePage_SearchBox.PlaceholderText",
+        "WorkspacePage_ParentFolderButton.Content",
+        "WorkspacePage_OpenConnectionSettings.Content",
+        "WorkspacePage_NoSearchResults.Text",
+        "WorkspacePage_NoFolderResults",
+        "WorkspacePage_LoadErrorMessage",
+        "WorkspacePage_UnsupportedMessage",
+        "WorkspacePage_Badge_Missing",
+        "WorkspacePage_Badge_Edited",
+        "WorkspacePage_Badge_Read",
+        "WorkspacePage_FolderNote",
+        "WorkspacePage_FileUnavailable",
+        "WorkspacePage_BrowserOnlyFileNote",
+        "WorkspacePage_OpenFolder",
+        "WorkspacePage_CopyPath",
+        "WorkspacePage_CopyPathFailed",
+        "WorkspacePage_FileType_File",
+        "WorkspacePage_FileType_Folder",
+        "WorkspacePage_RootFolder",
+        "WorkspacePage_SearchResultsPath",
+        "WorkspacePage_BrowserTruncated",
     };
 
     private static readonly string[] RequiredRuntimeOnboardingKeys =
@@ -205,27 +350,8 @@ public class LocalizationValidationTests
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
 
-    private static string GetRepositoryRoot()
-    {
-        var envRepoRoot = Environment.GetEnvironmentVariable("OPENCLAW_REPO_ROOT");
-        if (!string.IsNullOrWhiteSpace(envRepoRoot) && Directory.Exists(envRepoRoot))
-            return envRepoRoot;
-
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            if (Directory.Exists(Path.Combine(directory.FullName, ".git")) &&
-                File.Exists(Path.Combine(directory.FullName, "README.md")))
-                return directory.FullName;
-            directory = directory.Parent;
-        }
-
-        throw new InvalidOperationException(
-            "Could not find repository root. Set OPENCLAW_REPO_ROOT to the repo path.");
-    }
-
     private static string GetStringsDirectory() =>
-        Path.Combine(GetRepositoryRoot(), "src", "OpenClaw.Tray.WinUI", "Strings");
+        Path.Combine(TestRepositoryPaths.GetRepositoryRoot(), "src", "OpenClaw.Tray.WinUI", "Strings");
 
     private static Dictionary<string, string> LoadResw(string path)
     {
@@ -457,6 +583,15 @@ public class LocalizationValidationTests
         || key.StartsWith("ChannelsPage_", StringComparison.Ordinal)
         || key.StartsWith("DiagnosticsPage_", StringComparison.Ordinal)
         || key.StartsWith("SettingsRow_", StringComparison.Ordinal)
+        // Title-bar status pill + notifications bell flyout strings. Seeded
+        // English-only across all five .resw files using the deferred-translation
+        // pattern; translations land in a follow-up.
+        || key.StartsWith("HubWindow_StatusFlyout_", StringComparison.Ordinal)
+        || key.StartsWith("HubWindow_StatusPill_", StringComparison.Ordinal)
+        || key.StartsWith("HubWindow_Pill_", StringComparison.Ordinal)
+        || key.StartsWith("HubWindow_Role_", StringComparison.Ordinal)
+        || key.StartsWith("HubWindow_Bell_", StringComparison.Ordinal)
+        || key.StartsWith("NotificationsFlyout_", StringComparison.Ordinal)
         // V2 onboarding redesign strings (V2_*) are intentionally English-only at first
         // ship. They live in V2Strings.DefaultEnUs and the cutover seeded them into all
         // five .resw files with English values. Translations land in a follow-up.
@@ -496,7 +631,7 @@ public class LocalizationValidationTests
     [Fact]
     public void XamlControlsWithXUid_HaveMatchingEnUsResources()
     {
-        var winUiRoot = Path.Combine(GetRepositoryRoot(), "src", "OpenClaw.Tray.WinUI");
+        var winUiRoot = Path.Combine(TestRepositoryPaths.GetRepositoryRoot(), "src", "OpenClaw.Tray.WinUI");
         var resourceKeys = LoadResw(Path.Combine(GetStringsDirectory(), "en-us", "Resources.resw"))
             .Keys
             .ToHashSet(StringComparer.Ordinal);
@@ -506,7 +641,7 @@ public class LocalizationValidationTests
                      .Where(IsSourceXaml)
                      .OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
         {
-            var relativePath = Path.GetRelativePath(GetRepositoryRoot(), xamlPath);
+            var relativePath = Path.GetRelativePath(TestRepositoryPaths.GetRepositoryRoot(), xamlPath);
             var doc = XDocument.Load(xamlPath, LoadOptions.SetLineInfo);
 
             foreach (var element in doc.Descendants())
@@ -543,7 +678,7 @@ public class LocalizationValidationTests
 
     private static bool IsSourceXaml(string path)
     {
-        var relative = Path.GetRelativePath(GetRepositoryRoot(), path);
+        var relative = Path.GetRelativePath(TestRepositoryPaths.GetRepositoryRoot(), path);
         var segments = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         return !segments.Contains("bin", StringComparer.OrdinalIgnoreCase) &&
                !segments.Contains("obj", StringComparer.OrdinalIgnoreCase);

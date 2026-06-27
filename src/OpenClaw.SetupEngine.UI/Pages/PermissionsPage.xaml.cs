@@ -69,7 +69,7 @@ public sealed partial class PermissionsPage : Page
             Child = new TextBlock
             {
                 Text = perm.Glyph,
-                FontFamily = new FontFamily("Segoe Fluent Icons"),
+                FontFamily = IconFonts.SymbolThemeFontFamily,
                 FontSize = 20,
                 Foreground = new SolidColorBrush(isDark ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.White),
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -97,7 +97,7 @@ public sealed partial class PermissionsPage : Page
             var btnContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
             btnContent.Children.Add(new TextBlock
             {
-                Text = "\uE8A7", FontFamily = new FontFamily("Segoe Fluent Icons"),
+                Text = "\uE8A7", FontFamily = IconFonts.SymbolThemeFontFamily,
                 FontSize = 14, VerticalAlignment = VerticalAlignment.Center
             });
             btnContent.Children.Add(new TextBlock { Text = "Open Settings", FontSize = 13, VerticalAlignment = VerticalAlignment.Center });
@@ -106,6 +106,7 @@ public sealed partial class PermissionsPage : Page
             btn.Click += async (_, _) =>
             {
                 try { await Windows.System.Launcher.LaunchUriAsync(new Uri(uri)); }
+                // slopwatch-ignore: SW003 UI helper action is best-effort and failure should not break the owning UI flow.
                 catch { /* best effort */ }
             };
             actionCol = btn;

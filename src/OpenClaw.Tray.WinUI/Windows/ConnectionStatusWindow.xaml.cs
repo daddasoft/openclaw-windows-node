@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Media;
 using OpenClaw.Shared;
 using OpenClawTray.Helpers;
+using OpenClawTray.Services;
 using OpenClaw.Connection;
 using System;
 using System.IO;
@@ -370,11 +371,28 @@ public sealed partial class ConnectionStatusWindow : WindowEx
         {
             var sshUser = DiagSshUserBox.Text.Trim();
             var sshHost = DiagSshHostBox.Text.Trim();
+            var sshPortText = string.IsNullOrWhiteSpace(DiagSshServerPortBox.Text) ? "22" : DiagSshServerPortBox.Text;
+            if (!int.TryParse(sshPortText, out var sshPort) || sshPort is < 1 or > 65535)
+            {
+                DirectConnectResult.Text = LocalizationHelper.GetString("ConnectionPage_SshServerPortInvalid");
+                return;
+            }
             int.TryParse(DiagSshRemotePortBox.Text, out var remotePort);
             int.TryParse(DiagSshLocalPortBox.Text, out var localPort);
             if (remotePort <= 0) remotePort = 18789;
             if (localPort <= 0) localPort = 18790;
-            sshConfig = new SshTunnelConfig(sshUser, sshHost, remotePort, localPort);
+            var app = (App)Microsoft.UI.Xaml.Application.Current;
+            var includeBrowserProxyForward = BrowserProxySshTunnelForwardPolicy.ShouldInclude(
+                app.Settings.NodeBrowserProxyEnabled,
+                remotePort,
+                localPort);
+            sshConfig = new SshTunnelConfig(
+                sshUser,
+                sshHost,
+                remotePort,
+                localPort,
+                IncludeBrowserProxyForward: includeBrowserProxyForward,
+                SshPort: sshPort);
         }
 
         DirectConnectResult.Text = useSsh ? LocalizationHelper.GetString("ConnectionStatus_StartingSshTunnel") : LocalizationHelper.GetString("ConnectionStatus_Connecting");
@@ -392,7 +410,7 @@ public sealed partial class ConnectionStatusWindow : WindowEx
                 SharedGatewayToken = string.IsNullOrWhiteSpace(token) ? null : token,
                 BootstrapToken = null,
                 SshTunnel = sshConfig,
-            };
+            }.PreserveAdvancedFields(existing); // keep per-gateway BrowserControlPort across reconnect/edit
             _registry.AddOrUpdate(record);
             _registry.SetActive(recordId);
             _registry.Save();
@@ -410,6 +428,7 @@ public sealed partial class ConnectionStatusWindow : WindowEx
                 settings.UseSshTunnel = true;
                 settings.SshTunnelUser = sshConfig.User;
                 settings.SshTunnelHost = sshConfig.Host;
+                settings.SshTunnelSshPort = sshConfig.SshPort;
                 settings.SshTunnelRemotePort = sshConfig.RemotePort;
                 settings.SshTunnelLocalPort = sshConfig.LocalPort;
                 settings.Save();
@@ -526,7 +545,7 @@ public sealed partial class ConnectionStatusWindow : WindowEx
 
     private void OnCopyTimeline(object sender, RoutedEventArgs e)
     {
-        ClipboardHelper.CopyText(_plainBuffer.ToString());
+        ClipboardHelper.CopyText(DiagnosticsExportSanitizer.SanitizeTextBlock(_plainBuffer.ToString()));
     }
 
     private void OnClearTimeline(object sender, RoutedEventArgs e)
