@@ -454,16 +454,23 @@ public sealed class OpenClawComposer : Component<OpenClawComposerProps>
         }, needsCatalog);
 
         IReadOnlyList<GatewayCommand> slashResults = Array.Empty<GatewayCommand>();
+        IReadOnlyList<CommandCategoryGroup> slashGroups = Array.Empty<CommandCategoryGroup>();
+        // Index (within the flattened group order) of the GLOBAL best search match
+        // — the default keyboard selection, so display grouping never demotes a
+        // strong later-bucket match behind a weak earlier-bucket one for Enter/Tab.
+        var slashDefaultIndex = 0;
         if (slashActive && !slash.ArgsMode && Props.AvailableCommands is { } slashCmds)
         {
-            // Relevance-ranked; index 0 is the top match and is what Enter inserts
-            // when the user hasn't navigated. (No category re-sort — that would
-            // demote an exact match below a weakly-matched command in an
-            // earlier-ordered category.)
-            slashResults = new ChatCommandCatalogView(slashCmds)
-                .Search(slash.Query)
-                .Take(SlashMenuMaxItems)
-                .ToList();
+            // Category-grouped palette (Mac/web parity): commands render under
+            // their Mac display bucket (Session, Model, Tools, Agents). Within a
+            // bucket the relevance order from Search is preserved; Flattened drives
+            // keyboard navigation, and DefaultSelectionIndex pins the global top
+            // match as the default Enter/Tab target.
+            var palette = new ChatCommandCatalogView(slashCmds)
+                .GroupForPalette(CommandCategories.Bucket, slash.Query, CommandCategories.DisplayOrder);
+            slashGroups = palette.Groups;
+            slashResults = palette.Flattened;
+            slashDefaultIndex = palette.DefaultSelectionIndex;
         }
 
         // Args-mode: the command (parsed from the composer text) plus its static
@@ -483,9 +490,13 @@ public sealed class OpenClawComposer : Component<OpenClawComposerProps>
 
         var inArgsMode = slash.ArgsMode && slashArgCmd is not null && slashArgResults.Count > 0;
         var slashSelectableCount = inArgsMode ? slashArgResults.Count : slashResults.Count;
+        // slash.Index < 0 means "not navigated yet": default to the global best
+        // command match (slashDefaultIndex) in command mode, or the first arg
+        // choice in args mode. Up/Down then make it a concrete index.
+        var slashDefault = inArgsMode ? 0 : slashDefaultIndex;
         var slashIndex = slashSelectableCount == 0
             ? 0
-            : Math.Clamp(slash.Index, 0, slashSelectableCount - 1);
+            : Math.Clamp(slash.Index < 0 ? slashDefault : slash.Index, 0, slashSelectableCount - 1);
 
         // Pushes a new composer value into the textbox and restores the caret to
         // the end (shared by command insertion and arg-choice insertion).
@@ -534,7 +545,9 @@ public sealed class OpenClawComposer : Component<OpenClawComposerProps>
                 var (active, query, argsMode) = ComputeSlashState(v, Props.AvailableCommands);
                 var cur = slashMenuState.Value;
                 if (active != cur.Active || query != cur.Query || argsMode != cur.ArgsMode)
-                    slashMenuState.Set((active, query, 0, argsMode));
+                    // -1 = "not navigated": selection resolves to the global best
+                    // match (see slashIndex) until the user presses Up/Down.
+                    slashMenuState.Set((active, query, -1, argsMode));
             })
             .Set(tb =>
             {
@@ -640,11 +653,11 @@ public sealed class OpenClawComposer : Component<OpenClawComposerProps>
                         return;
                     }
                 }
-                else if (slashActive)
+                else if (slashActive && Props.AvailableCommands is null)
                 {
-                    // Popup is up but nothing is selectable: either the catalog is
-                    // still loading or no command matches the typed text.
-                    var slashLoading = Props.AvailableCommands is null;
+                    // The loading popup is visible but nothing is selectable yet.
+                    // No-match input hides the popup, so it must fall through as
+                    // ordinary composer text instead of trapping Tab/Escape/arrows.
                     if (key == global::Windows.System.VirtualKey.Escape
                         || key == global::Windows.System.VirtualKey.Tab)
                     {
@@ -661,12 +674,10 @@ public sealed class OpenClawComposer : Component<OpenClawComposerProps>
                         e.Handled = true;
                         return;
                     }
-                    if (slashLoading && key == global::Windows.System.VirtualKey.Enter)
+                    if (key == global::Windows.System.VirtualKey.Enter)
                     {
                         // We don't yet know whether "/token" is a real command, so
                         // don't let Enter send it as raw text and race the fetch.
-                        // (Once loaded with no match it's not a command, so Enter
-                        // falls through below and sends as an ordinary message.)
                         e.Handled = true;
                         return;
                     }
@@ -1088,12 +1099,13 @@ public sealed class OpenClawComposer : Component<OpenClawComposerProps>
             }
             else if (slashResults.Count == 0)
             {
-                slashPopupContent = BuildSlashHintPopup("No matching commands");
-                slashMenuVisible = true;
+                // No command matches the typed text — hide the palette entirely
+                // (no "no matches" hint) so the composer reads as normal.
+                slashMenuVisible = false;
             }
             else
             {
-                slashPopupContent = BuildSlashPopup(slashResults, slashIndex, insertSlashCommand);
+                slashPopupContent = BuildSlashPopup(slashGroups, slashIndex, slash.Query, insertSlashCommand);
                 slashMenuVisible = true;
             }
         }
@@ -1302,15 +1314,27 @@ public sealed class OpenClawComposer : Component<OpenClawComposerProps>
     }
 
     private static Border BuildSlashPopup(
-        IReadOnlyList<GatewayCommand> results, int selectedIndex, Action<GatewayCommand> onPick)
+        IReadOnlyList<CommandCategoryGroup> groups, int selectedIndex, string query, Action<GatewayCommand> onPick)
     {
         var primary = (Brush)Microsoft.UI.Xaml.Application.Current.Resources["TextFillColorPrimaryBrush"];
         var secondary = (Brush)Microsoft.UI.Xaml.Application.Current.Resources["TextFillColorSecondaryBrush"];
         var selectedBg = (Brush)Microsoft.UI.Xaml.Application.Current.Resources["SubtleFillColorSecondaryBrush"];
+        var headerBrush = (Brush)Microsoft.UI.Xaml.Application.Current.Resources["TextFillColorTertiaryBrush"];
 
         var list = new StackPanel { Orientation = Orientation.Vertical };
-        for (int i = 0; i < results.Count; i++)
-            list.Children.Add(SlashRow(results[i], i == selectedIndex, primary, secondary, selectedBg, onPick));
+        // Each group leads with a non-interactive category subheading; command
+        // rows follow. A single running index across all groups keeps the
+        // rendered rows aligned with the flattened keyboard-navigation list.
+        var idx = 0;
+        foreach (var group in groups)
+        {
+            list.Children.Add(SlashCategoryHeader(CommandCategories.Label(group.Category), headerBrush));
+            foreach (var cmd in group.Commands)
+            {
+                list.Children.Add(SlashRow(cmd, idx == selectedIndex, query, primary, secondary, selectedBg, onPick));
+                idx++;
+            }
+        }
         var scroll = new ScrollViewer
         {
             VerticalScrollBarVisibility = Microsoft.UI.Xaml.Controls.ScrollBarVisibility.Auto,
@@ -1320,6 +1344,22 @@ public sealed class OpenClawComposer : Component<OpenClawComposerProps>
         };
         return SlashShell(scroll);
     }
+
+    /// <summary>
+    /// Non-interactive category subheading for the slash palette: uppercase and
+    /// letter-spaced like Mac's .slash-menu-group__label, rendered in a muted
+    /// tone (Mac tints its label with the accent color; we keep it subdued to
+    /// match the reference design).
+    /// </summary>
+    private static TextBlock SlashCategoryHeader(string text, Brush foreground) => new()
+    {
+        Text = (text ?? "").ToUpperInvariant(),
+        FontSize = 11,
+        FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+        CharacterSpacing = 60,   // ~0.06em (units are 1/1000 em)
+        Foreground = foreground,
+        Margin = new Thickness(8, 8, 8, 2),
+    };
 
     private static Border BuildSlashArgPopup(
         GatewayCommand cmd, IReadOnlyList<GatewayCommandArgChoice> choices,
@@ -1405,13 +1445,32 @@ public sealed class OpenClawComposer : Component<OpenClawComposerProps>
         // Floating, opaque, elevated container for the slash menu. Uses the same
         // 8px corner radius + default surface stroke as the composer card, with a
         // soft shadow so the menu reads as a distinct layer over the chat content.
+        var res = Microsoft.UI.Xaml.Application.Current.Resources;
+
+        // Match the composer input's background, but OPAQUE. TextControlBackground
+        // is a semi-transparent overlay (fine over the solid composer card, but it
+        // would show chat content through this floating popup), so composite it
+        // over the base surface into a solid color.
+        Brush background;
+        if (res["TextControlBackground"] as SolidColorBrush is { } overlay
+            && res["SolidBackgroundFillColorBaseBrush"] as SolidColorBrush is { } baseBrush)
+        {
+            var a = overlay.Color.A / 255.0;
+            byte Mix(byte b, byte o) => (byte)Math.Round(b * (1 - a) + o * a);
+            var o = overlay.Color;
+            var b = baseBrush.Color;
+            background = new SolidColorBrush(
+                global::Windows.UI.Color.FromArgb(255, Mix(b.R, o.R), Mix(b.G, o.G), Mix(b.B, o.B)));
+        }
+        else
+        {
+            background = (Brush)res["SolidBackgroundFillColorBaseBrush"];
+        }
+
         var shell = new Border
         {
-            // Elevated flyout surface: Tertiary reads lighter than the chat
-            // background (in dark theme Secondary is actually darker than Base),
-            // so the menu lifts off the content instead of sinking into it.
-            Background = (Brush)Microsoft.UI.Xaml.Application.Current.Resources["SolidBackgroundFillColorTertiaryBrush"],
-            BorderBrush = (Brush)Microsoft.UI.Xaml.Application.Current.Resources["SurfaceStrokeColorDefaultBrush"],
+            Background = background,
+            BorderBrush = (Brush)res["SurfaceStrokeColorDefaultBrush"],
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(8),
             Padding = new Thickness(4),
@@ -1422,63 +1481,150 @@ public sealed class OpenClawComposer : Component<OpenClawComposerProps>
         return shell;
     }
 
-    private static Button SlashRow(
-        GatewayCommand cmd, bool selected, Brush primary, Brush secondary, Brush selectedBg, Action<GatewayCommand> onPick)
+    // Highlights every case-insensitive occurrence of the typed query inside a
+    // row TextBlock (command name / description) with a soft accent tint, so it's
+    // clear what the filter matched. Uses TextHighlighter (rectangular) because it
+    // is the only WinUI text-highlight that doesn't disturb the line layout —
+    // inline rounded "chip" elements (InlineUIContainer) render as superscript and
+    // break the baseline. No-op when the query is empty or shorter than the text.
+    private static void ApplyQueryHighlight(TextBlock tb, string? query)
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        row.Children.Add(new FontIcon
+        tb.TextHighlighters.Clear();
+        var text = tb.Text ?? "";
+        var q = (query ?? "").Trim().TrimStart('/').Trim();
+        if (q.Length == 0 || text.Length < q.Length) return;
+
+        var accent = Microsoft.UI.Xaml.Application.Current.Resources["AccentFillColorDefaultBrush"] as SolidColorBrush
+            ?? new SolidColorBrush(Microsoft.UI.Colors.SteelBlue);
+        // IMPORTANT: TextHighlighter ignores SolidColorBrush.Opacity (unlike a
+        // normal element background), so the alpha must be baked into the Color
+        // itself — otherwise it renders the full, vivid accent. ~12% alpha gives
+        // the same soft, muted blue-grey the old padded chip had.
+        var ac = accent.Color;
+        var tint = global::Windows.UI.Color.FromArgb(31, ac.R, ac.G, ac.B);
+        var highlighter = new Microsoft.UI.Xaml.Documents.TextHighlighter
+        {
+            Background = new SolidColorBrush(tint),
+            // Make the matched text pop over the tint (white in dark theme, near-
+            // black in light) — theme-aware via the primary text brush.
+            Foreground = (Brush)Microsoft.UI.Xaml.Application.Current.Resources["TextFillColorPrimaryBrush"],
+        };
+
+        var i = 0;
+        while (i <= text.Length - q.Length)
+        {
+            var found = text.IndexOf(q, i, StringComparison.OrdinalIgnoreCase);
+            if (found < 0) break;
+            highlighter.Ranges.Add(new Microsoft.UI.Xaml.Documents.TextRange { StartIndex = found, Length = q.Length });
+            i = found + q.Length;
+        }
+
+        if (highlighter.Ranges.Count > 0) tb.TextHighlighters.Add(highlighter);
+    }
+
+    private static Button SlashRow(
+        GatewayCommand cmd, bool selected, string query, Brush primary, Brush secondary, Brush selectedBg, Action<GatewayCommand> onPick)
+    {
+        // Row layout mirrors Mac's .slash-menu-item: icon · /name · [args] on the
+        // left; description + "N options" badge pushed to the right edge (the
+        // description column is star-sized and right-aligned). Args use the mono
+        // font; the name keeps the default font (bold) for readability.
+        var mono = new Microsoft.UI.Xaml.Media.FontFamily("Consolas");
+
+        var grid = new Microsoft.UI.Xaml.Controls.Grid { ColumnSpacing = 8, VerticalAlignment = VerticalAlignment.Center };
+        grid.ColumnDefinitions.Add(new Microsoft.UI.Xaml.Controls.ColumnDefinition { Width = Microsoft.UI.Xaml.GridLength.Auto }); // icon
+        grid.ColumnDefinitions.Add(new Microsoft.UI.Xaml.Controls.ColumnDefinition { Width = Microsoft.UI.Xaml.GridLength.Auto }); // name
+        grid.ColumnDefinitions.Add(new Microsoft.UI.Xaml.Controls.ColumnDefinition { Width = Microsoft.UI.Xaml.GridLength.Auto }); // args
+        grid.ColumnDefinitions.Add(new Microsoft.UI.Xaml.Controls.ColumnDefinition { Width = new Microsoft.UI.Xaml.GridLength(1, Microsoft.UI.Xaml.GridUnitType.Star) }); // desc
+        grid.ColumnDefinitions.Add(new Microsoft.UI.Xaml.Controls.ColumnDefinition { Width = Microsoft.UI.Xaml.GridLength.Auto }); // badge
+
+        var icon = new FontIcon
         {
             FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Microsoft.UI.Xaml.Application.Current.Resources["SymbolThemeFontFamily"],
             Glyph = SlashGlyph(cmd),
             FontSize = 14,
             Foreground = secondary,
             VerticalAlignment = VerticalAlignment.Center,
-        });
-        row.Children.Add(new TextBlock
+        };
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(icon, 0);
+        grid.Children.Add(icon);
+
+        var name = new TextBlock
         {
             Text = cmd.DisplayName(),
             FontSize = 13,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             Foreground = primary,
             VerticalAlignment = VerticalAlignment.Center,
-        });
+        };
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(name, 1);
+        grid.Children.Add(name);
+        ApplyQueryHighlight(name, query);
+
         var args = cmd.ArgTemplate();
         if (!string.IsNullOrWhiteSpace(args))
         {
-            row.Children.Add(new TextBlock
+            var argBlock = new TextBlock
             {
                 Text = args,
                 FontSize = 12,
+                FontFamily = mono,
                 Foreground = secondary,
+                Opacity = 0.75,
                 VerticalAlignment = VerticalAlignment.Center,
-            });
+            };
+            Microsoft.UI.Xaml.Controls.Grid.SetColumn(argBlock, 2);
+            grid.Children.Add(argBlock);
         }
+
         if (!string.IsNullOrWhiteSpace(cmd.Description))
         {
-            row.Children.Add(new TextBlock
+            var desc = new TextBlock
             {
                 Text = cmd.Description!,
                 FontSize = 12,
                 Foreground = secondary,
                 VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                TextAlignment = Microsoft.UI.Xaml.TextAlignment.Right,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 MaxLines = 1,
-            });
+            };
+            Microsoft.UI.Xaml.Controls.Grid.SetColumn(desc, 3);
+            grid.Children.Add(desc);
+            ApplyQueryHighlight(desc, query);
         }
+
         var opts = cmd.OptionCount();
-        if (opts > 0) row.Children.Add(SlashBadge($"{opts} options", secondary));
+        if (opts > 0)
+        {
+            var badge = SlashBadge($"{opts} options");
+            Microsoft.UI.Xaml.Controls.Grid.SetColumn(badge, 4);
+            grid.Children.Add(badge);
+        }
 
         var btn = new Button
         {
-            Content = row,
+            Content = grid,
             Padding = new Thickness(8, 7, 8, 7),
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = HorizontalAlignment.Left,
+            // Stretch the content so the star-sized description column fills the
+            // row and its right-alignment actually pushes desc/badge to the edge.
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
             CornerRadius = new CornerRadius(6),
             Background = selected ? selectedBg : new SolidColorBrush(Colors.Transparent),
             BorderThickness = new Thickness(0),
         };
         btn.Click += (_, _) => onPick(cmd);
+        // Auto-scroll: when this is the keyboard-selected row, bring it into view
+        // once it mounts so arrow navigation past the visible fold follows the
+        // selection (the popup content is rebuilt each render, so Loaded fires per
+        // navigation step). No animation to keep keypress scrolling snappy.
+        if (selected)
+        {
+            btn.Loaded += (_, _) =>
+                btn.StartBringIntoView(new Microsoft.UI.Xaml.BringIntoViewOptions { AnimationDesired = false });
+        }
         return btn;
     }
 
@@ -1509,16 +1655,27 @@ public sealed class OpenClawComposer : Component<OpenClawComposerProps>
         };
     }
 
-    private static Border SlashBadge(string text, Brush foreground) => new()
+    // Accent-tinted pill mirroring Mac's .slash-menu-badge (accent text on a
+    // ~14% accent fill).
+    private static Border SlashBadge(string text)
     {
-        Padding = new Thickness(5, 1, 5, 1),
-        CornerRadius = new CornerRadius(4),
-        Background = (Brush)Microsoft.UI.Xaml.Application.Current.Resources["SubtleFillColorSecondaryBrush"],
-        BorderThickness = new Thickness(1),
-        BorderBrush = (Brush)Microsoft.UI.Xaml.Application.Current.Resources["ControlStrokeColorDefaultBrush"],
-        VerticalAlignment = VerticalAlignment.Center,
-        Child = new TextBlock { Text = text, FontSize = 10, Foreground = foreground },
-    };
+        var accent = Microsoft.UI.Xaml.Application.Current.Resources["AccentFillColorDefaultBrush"] as SolidColorBrush
+            ?? new SolidColorBrush(Microsoft.UI.Colors.SteelBlue);
+        return new Border
+        {
+            Padding = new Thickness(6, 1, 6, 1),
+            CornerRadius = new CornerRadius(4),
+            Background = new SolidColorBrush(accent.Color) { Opacity = 0.14 },
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = new TextBlock
+            {
+                Text = text,
+                FontSize = 10,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = accent,
+            },
+        };
+    }
 
     /// <summary>
     /// Creates (once) and drives the floating slash-menu Popup so it overlays
