@@ -186,7 +186,6 @@ public sealed class DiagnosticsPageContractTests
                     $@"x:Uid=""{cardUid}""[\s\S]{{0,600}}SettingsCard\.ActionIcon[\s\S]{{0,200}}FluentIconCatalog\.Copy"),
                 xaml);
         }
-
         // The transient "Copied to clipboard" feedback InfoBar must
         // be on the page and start collapsed (IsOpen=False).
         Assert.Contains("x:Name=\"CopyFeedbackInfoBar\"", xaml);
@@ -210,6 +209,26 @@ public sealed class DiagnosticsPageContractTests
         Assert.Contains("CopyDiagnosticText(\"Browser setup guidance\"", cs);
         Assert.Contains("CopyDiagnosticText(\"Port diagnostics\"", cs);
         Assert.Contains("CopyDiagnosticText(\"Capability diagnostics\"", cs);
+    }
+
+    [Fact]
+    public void DiagnosticsGate_DefaultsVisible_ForMissingSettingsCompatibility()
+    {
+        var source = Read("src", "OpenClaw.Tray.WinUI", "Helpers", "DiagnosticsGate.cs");
+
+        Assert.Contains("public static bool BuildDefault =>", source);
+        Assert.Contains("true;", source);
+        Assert.DoesNotContain("PackageHelper.IsPackaged", source);
+    }
+
+    [Fact]
+    public void HubWindow_RemovesDiagnosticsBackStack_WhenDiagnosticsHidden()
+    {
+        var source = Read("src", "OpenClaw.Tray.WinUI", "Windows", "HubWindow.xaml.cs");
+
+        Assert.Contains("RemoveBackStackEntries(\"debug\")", source);
+        Assert.Contains("NavigateInternal(\"settings\")", source);
+        Assert.Contains("RefreshDiagnosticsNavVisibility()", source);
     }
 
     [Fact]
@@ -280,16 +299,16 @@ public sealed class DiagnosticsPageContractTests
     }
 
     [Fact]
-    public void DebugPage_UsesCanonicalReconfigureLabel()
+    public void DebugPage_DoesNotDuplicateSettingsSetupEntryPoint()
     {
-        // Per docs/design/naming.md, "Reconfigure…" (with ellipsis) is
-        // the canonical verb for "walk the user back through the
-        // onboarding wizard". The old "Relaunch first-run setup"
-        // label is prohibited.
         var xaml = Read("src", "OpenClaw.Tray.WinUI", "Pages", "DebugPage.xaml");
-        Assert.Contains("Reconfigure", xaml);
-        Assert.Contains("\u2026", xaml); // U+2026 HORIZONTAL ELLIPSIS
+        Assert.DoesNotContain("Reconfigure", xaml);
+        Assert.DoesNotContain("OnRelaunchOnboarding", xaml);
         Assert.DoesNotContain("Relaunch first-run setup", xaml);
+
+        var settings = Read("src", "OpenClaw.Tray.WinUI", "Pages", "SettingsPage.xaml");
+        Assert.Contains("OnOpenLocalGatewaySetup", settings);
+        Assert.Contains("Open setup", settings);
     }
 
     [Fact]
@@ -363,18 +382,24 @@ public sealed class DiagnosticsPageContractTests
     }
 
     [Fact]
-    public void AboutPage_CopySupportContext_UsesUnifiedHelper()
+    public void SettingsPage_HostsAboutAndGatewayInfoAfterAboutPageRemoval()
     {
-        var cs = Read("src", "OpenClaw.Tray.WinUI", "Pages", "AboutPage.xaml.cs");
-        // Plan §4 / rubber-duck v2 #7: AboutPage's Copy Support Context
-        // must call the same CommandCenterTextHelper.BuildSupportContext
-        // that Diagnostics uses, not its old hand-rolled local string.
-        Assert.Contains("CommandCenterTextHelper.BuildSupportContext", cs);
-        Assert.Contains("DiagnosticsExportSanitizer.SanitizeTextBlock(context)", cs);
-        // And there must be a hyperlink that takes the user from About
-        // to the richer Diagnostics surface.
-        var xaml = Read("src", "OpenClaw.Tray.WinUI", "Pages", "AboutPage.xaml");
-        Assert.Contains("OnMoreDiagnosticsClick", xaml);
+        var settingsXaml = Read("src", "OpenClaw.Tray.WinUI", "Pages", "SettingsPage.xaml");
+        var settingsCs = Read("src", "OpenClaw.Tray.WinUI", "Pages", "SettingsPage.xaml.cs");
+        var hub = Read("src", "OpenClaw.Tray.WinUI", "Windows", "HubWindow.xaml.cs");
+
+        Assert.Contains("SettingsPage_AppInfoExpander", settingsXaml);
+        Assert.Contains("SettingsPage_GatewayInfoExpander", settingsXaml);
+        Assert.Contains("OnCheckUpdates", settingsXaml);
+        Assert.Contains("OnDocumentationLink", settingsXaml);
+        Assert.Contains("OnGitHubLink", settingsXaml);
+        Assert.Contains("OnDashboardLink", settingsXaml);
+        Assert.Contains("RefreshGatewayInfo", settingsCs);
+        Assert.Contains("\"info\" => typeof(SettingsPage)", hub);
+        Assert.Contains("\"about\" => typeof(SettingsPage)", hub);
+        var repoRoot = TestRepositoryPaths.GetRepositoryRoot();
+        Assert.False(File.Exists(Path.Combine(repoRoot, "src", "OpenClaw.Tray.WinUI", "Pages", "AboutPage.xaml")));
+        Assert.False(File.Exists(Path.Combine(repoRoot, "src", "OpenClaw.Tray.WinUI", "Pages", "AboutPage.xaml.cs")));
     }
 
     [Fact]
@@ -618,6 +643,7 @@ public sealed class DiagnosticsPageContractTests
         var app = Read("src", "OpenClaw.Tray.WinUI", "App.xaml.cs");
 
         Assert.Contains("_dispatcherQueue.HasThreadAccess", app);
-        Assert.Contains("_dispatcherQueue.TryEnqueue(() => SettingsChanged?.Invoke", app);
+        Assert.Contains("void ApplyUiSettingsAndNotify()", app);
+        Assert.Contains("_dispatcherQueue.TryEnqueue(ApplyUiSettingsAndNotify)", app);
     }
 }

@@ -60,6 +60,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
     public GatewayRegistry? Registry => _gatewayRegistry;
     public GatewayConnectionManager? ConnectionManager => _connectionManager;
     internal SettingsManager Settings => _settings ?? throw new InvalidOperationException("Settings are not initialized.");
+    internal SettingsManager? SettingsOrNull => _settings;
     internal string DataDirectoryPath => DataPath;
 
     /// <summary>The active hub window, exposed so pages can obtain an HWND for file pickers.</summary>
@@ -699,6 +700,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
             !prewarmIsBootstrapToken)
         {
             _chatWindow = new ChatWindow(prewarmUrl, prewarmToken);
+            ApplyThemePreference(_chatWindow);
             // Window is created but hidden — WebView2 initializes in the background
         }
 
@@ -736,6 +738,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
         // This prevents GC/threading issues when creating windows after idle
         _keepAliveWindow = new Window();
         _keepAliveWindow.Content = new Microsoft.UI.Xaml.Controls.Grid();
+        ApplyThemePreference(_keepAliveWindow);
         _keepAliveWindow.AppWindow.IsShownInSwitchers = false;
         
         // Move off-screen and set minimal size
@@ -768,8 +771,26 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
     {
         // Pre-create menu window once - reuse to avoid crash on window creation after idle
         _trayMenuWindow = new TrayMenuWindow();
+        ApplyThemePreference(_trayMenuWindow);
         _trayMenuWindow.MenuItemClicked += OnTrayMenuItemClicked;
         // Don't close - just hide
+    }
+
+    internal void ApplyThemePreferenceToOpenWindows()
+    {
+        ApplyThemePreference(_keepAliveWindow);
+        ApplyThemePreference(_hubWindow);
+        ApplyThemePreference(_trayMenuWindow);
+        ApplyThemePreference(_chatWindow);
+        ApplyThemePreference(_connectionStatusWindow);
+    }
+
+    private void ApplyThemePreference(Window? window)
+    {
+        if (_settings is null)
+            return;
+
+        ThemeHelper.ApplyTheme(window, _settings.AppTheme);
     }
 
     private void OnTrayIconSelected(TrayIcon sender, TrayIconEventArgs e)
@@ -806,6 +827,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
         if (_chatWindow == null)
         {
             _chatWindow = new ChatWindow(url, token);
+            ApplyThemePreference(_chatWindow);
         }
 
         // Bug 2: cached ChatWindow may have been pre-warmed with empty/stale credentials
@@ -1225,8 +1247,8 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
             Title = title,
             Content = body,
             PrimaryButtonText = actionLabel,
-            CloseButtonText = LocalizationHelper.GetString("CancelButton.Content"),
-            DefaultButton = ContentDialogButton.Close,
+            CloseButtonText = LocalizationHelper.GetString("SessionActionPrompt_CancelLabel"),
+            DefaultButton = ContentDialogButton.None,
             XamlRoot = root.XamlRoot
         };
         var result = await dialog.ShowAsync();
@@ -1928,238 +1950,6 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
     private bool IsGatewayNodeEnabled()
     {
         return _settings?.EnableNodeMode == true;
-    }
-
-    /// <summary>
-    /// Ensures a WSL keepalive process is running for the local gateway distro
-    /// so the WSL2 VM stays up even after the tray exits.
-    /// Best-effort, fire-and-forget.
-    /// </summary>
-    private async Task TryEnsureLocalGatewayKeepAliveAsync()
-    {
-        try
-        {
-            if (_settings is null) return;
-
-            var activeRecord = _gatewayRegistry?.GetActive();
-            if (!WslKeepAlivePolicy.ShouldStart(activeRecord, _settings.GetEffectiveGatewayUrl()))
-            {
-                await StopStaleLocalGatewayKeepAliveAsync();
-                return;
-            }
-
-            var distroName = await ResolveLocalGatewayDistroNameAsync(activeRecord);
-            if (string.IsNullOrWhiteSpace(distroName)) return;
-
-            // Verify distro exists before spawning keepalive
-            var runner = new WslExeCommandRunner(new AppLogger(), defaultTimeout: TimeSpan.FromSeconds(4));
-            var distros = await runner.ListDistrosAsync();
-            if (!distros.Any(d => string.Equals(d.Name, distroName, StringComparison.OrdinalIgnoreCase)))
-            {
-                Logger.Warn($"[WslKeepAlive] Distro '{distroName}' not found; skipping keepalive.");
-                return;
-            }
-
-            // Spawn a detached wsl sleep process to keep the VM alive
-            var psi = new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = ResolveWslExePath(),
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-            psi.ArgumentList.Add("-d");
-            psi.ArgumentList.Add(distroName);
-            psi.ArgumentList.Add("--");
-            psi.ArgumentList.Add("sleep");
-            psi.ArgumentList.Add("infinity");
-
-            var proc = System.Diagnostics.Process.Start(psi);
-            if (proc is not null)
-            {
-                Logger.Info($"[WslKeepAlive] Started keepalive for {distroName} (PID {proc.Id}).");
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.Warn($"[WslKeepAlive] Startup keepalive failed (non-fatal): {ex.Message}");
-        }
-    }
-
-    private async Task StopStaleLocalGatewayKeepAliveAsync()
-    {
-        try
-        {
-            var localDataDir = SetupExistingGatewayClassifier.ResolveLocalDataPath();
-            var markerDir = Path.Combine(localDataDir, "wsl-keepalive");
-            var markerDistroNames = ReadKeepAliveMarkerDistroNames(markerDir);
-            var setupStateDistroName = await ReadSetupStateDistroNameAsync(localDataDir);
-            var records = _gatewayRegistry?.GetAll() ?? [];
-
-            foreach (var distroName in WslKeepAlivePolicy.FindStaleSetupManagedDistroNames(
-                records,
-                markerDistroNames,
-                setupStateDistroName))
-            {
-                StopKeepAliveProcessesForDistro(distroName);
-                DeleteKeepAliveMarker(markerDir, distroName);
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.Warn($"[WslKeepAlive] Stale keepalive cleanup failed (non-fatal): {ex.Message}");
-        }
-    }
-
-    private static IReadOnlyList<string> ReadKeepAliveMarkerDistroNames(string markerDir)
-    {
-        if (!Directory.Exists(markerDir))
-            return [];
-
-        var distroNames = new List<string>();
-        foreach (var markerPath in Directory.EnumerateFiles(markerDir, "*.json"))
-        {
-            if (WslKeepAlivePolicy.TryGetMarkerDistroName(File.ReadAllText(markerPath), out var distroName))
-                distroNames.Add(distroName);
-        }
-
-        return distroNames;
-    }
-
-    private static async Task<string?> ReadSetupStateDistroNameAsync(string localDataDir)
-    {
-        var stateFile = Path.Combine(localDataDir, "setup-state.json");
-        if (!File.Exists(stateFile))
-            return null;
-
-        var json = await File.ReadAllTextAsync(stateFile);
-        using var doc = System.Text.Json.JsonDocument.Parse(json);
-        return doc.RootElement.TryGetProperty("DistroName", out var distroElement)
-            ? distroElement.GetString()
-            : null;
-    }
-
-    private static void StopKeepAliveProcessesForDistro(string distroName)
-    {
-        var procs = System.Diagnostics.Process.GetProcessesByName("wsl")
-            .Concat(System.Diagnostics.Process.GetProcessesByName("wsl.exe"));
-
-        foreach (var proc in procs)
-        {
-            try
-            {
-                if (WslKeepAlivePolicy.IsKeepaliveCommandLine(GetProcessCommandLine(proc.Id), distroName))
-                {
-                    proc.Kill(entireProcessTree: true);
-                    proc.WaitForExit(5000);
-                    Logger.Info($"[WslKeepAlive] Stopped stale keepalive for {distroName} (PID {proc.Id}).");
-                }
-            }
-            catch (Exception ex)
-            {
-                // Process may have exited while being inspected — common race; log at Debug.
-                Logger.Debug($"[WslKeepAlive] Inspect/stop race for PID {proc.Id}: {ex.GetType().Name}: {ex.Message}");
-            }
-            finally
-            {
-                proc.Dispose();
-            }
-        }
-    }
-
-    private static void DeleteKeepAliveMarker(string markerDir, string distroName)
-    {
-        if (!Directory.Exists(markerDir))
-            return;
-
-        foreach (var markerPath in Directory.EnumerateFiles(markerDir, "*.json"))
-        {
-            try
-            {
-                if (WslKeepAlivePolicy.TryGetMarkerDistroName(File.ReadAllText(markerPath), out var markerDistro)
-                    && string.Equals(markerDistro, distroName, StringComparison.OrdinalIgnoreCase))
-                {
-                    File.Delete(markerPath);
-                    Logger.Info($"[WslKeepAlive] Deleted stale keepalive marker for {distroName}.");
-                }
-            }
-            catch (Exception ex)
-            {
-                // Best-effort cleanup; stale/corrupt markers are not fatal. Log at Debug for diagnostics.
-                Logger.Debug($"[WslKeepAlive] Failed to process marker '{markerPath}': {ex.GetType().Name}: {ex.Message}");
-            }
-        }
-    }
-
-    private static string? GetProcessCommandLine(int pid)
-    {
-        try
-        {
-            var psi = new System.Diagnostics.ProcessStartInfo("powershell.exe",
-                $"-NoProfile -Command \"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}').CommandLine\"")
-            {
-                RedirectStandardOutput = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-            using var p = System.Diagnostics.Process.Start(psi);
-            if (p == null) return null;
-            var output = p.StandardOutput.ReadToEnd();
-            p.WaitForExit(5000);
-            return output.Trim();
-        }
-        catch (Exception ex)
-        {
-            Logger.Debug($"App: GetProcessCommandLine(pid={pid}) failed: {ex.GetType().Name}: {ex.Message}");
-            return null;
-        }
-    }
-
-    private static string ResolveWslExePath()
-    {
-        var windowsDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-        if (string.IsNullOrWhiteSpace(windowsDir))
-            windowsDir = Environment.GetEnvironmentVariable("SystemRoot") ?? @"C:\Windows";
-
-        return Path.Combine(windowsDir, "System32", "wsl.exe");
-    }
-
-    /// <summary>
-    /// Resolves the WSL distro name to keep alive. Prefers the value persisted by
-    /// onboarding in <c>setup-state.json</c> so the keepalive always targets the distro
-    /// the user actually installed. In DEBUG / test builds, an
-    /// <c>OPENCLAW_WSL_DISTRO_NAME</c> environment override is honored to match
-    /// Resolves the local gateway distro name by reading setup-state.json.
-    /// Falls back to "OpenClawGateway" if not found.
-    /// </summary>
-    private async Task<string?> ResolveLocalGatewayDistroNameAsync(GatewayRecord? activeRecord)
-    {
-        string? setupStateDistroName = null;
-        try
-        {
-            var stateFile = Path.Combine(
-                SetupExistingGatewayClassifier.ResolveLocalDataPath(),
-                "setup-state.json");
-
-            if (File.Exists(stateFile))
-            {
-                var json = await File.ReadAllTextAsync(stateFile);
-                using var doc = System.Text.Json.JsonDocument.Parse(json);
-                if (doc.RootElement.TryGetProperty("DistroName", out var dn) &&
-                    dn.GetString() is { Length: > 0 } distroName)
-                {
-                    setupStateDistroName = distroName;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.Warn($"[WslKeepAlive] Failed to read setup-state.json: {ex.Message}");
-        }
-
-        return WslKeepAlivePolicy.ResolveDistroName(
-            activeRecord,
-            setupStateDistroName,
-            Environment.GetEnvironmentVariable("OPENCLAW_WSL_DISTRO_NAME"));
     }
 
     // The pre-unification ShouldInitializeNodeService(GatewayRecord, string) overload
@@ -3334,6 +3124,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
         if (_hubWindow == null || _hubWindow.IsClosed)
         {
             _hubWindow = new HubWindow();
+            ApplyThemePreference(_hubWindow);
             _hubWindow.AppModel = _appState;
             _hubWindow.BindAppNotifications(_appNotificationService!);
             _hubWindow.ApplyNavPaneState(_settings!);
@@ -3489,7 +3280,6 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
             WireAppCapabilityHandlers();
         }
 
-        // Non-connection settings always applied regardless of impact
         if (_settings!.GlobalHotkeyEnabled)
         {
             _globalHotkey ??= new GlobalHotkeyService();
@@ -3508,19 +3298,24 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
             AutoStartManager.SetAutoStartAsync(_settings.AutoStart),
             "[App] Failed to apply auto-start setting");
 
-        // Notify ad-hoc listeners (e.g. ChatWindow may be alive but not
-        // owned by the hub) that settings have changed. Marshal onto the
-        // UI thread because IAppCommands.NotifySettingsSaved is a public
-        // entry point that may be invoked from background work; existing
-        // handlers (DebugPage, ChatWindow) update UI directly and would
-        // crash if dispatched from a non-UI thread (Hanselman v2 #7).
+        // Apply UI-only settings and notify ad-hoc listeners. This public
+        // entry point can be invoked from background work, while existing
+        // listeners update UI directly.
+        void ApplyUiSettingsAndNotify()
+        {
+            ApplyThemePreferenceToOpenWindows();
+            if (_hubWindow is { IsClosed: false })
+                _hubWindow.RefreshDiagnosticsNavVisibility();
+            SettingsChanged?.Invoke(this, EventArgs.Empty);
+        }
+
         if (_dispatcherQueue != null && !_dispatcherQueue.HasThreadAccess)
         {
-            _dispatcherQueue.TryEnqueue(() => SettingsChanged?.Invoke(this, EventArgs.Empty));
+            _dispatcherQueue.TryEnqueue(ApplyUiSettingsAndNotify);
         }
         else
         {
-            SettingsChanged?.Invoke(this, EventArgs.Empty);
+            ApplyUiSettingsAndNotify();
         }
     }
 
@@ -3581,6 +3376,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
             _connectionManager!.Diagnostics,
             _gatewayRegistry,
             _connectionManager);
+        ApplyThemePreference(_connectionStatusWindow);
         _connectionStatusWindow.Activate();
     }
 

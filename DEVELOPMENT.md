@@ -18,8 +18,12 @@ A comprehensive guide for building, running, and contributing to the OpenClaw Wi
 
 - **.NET 10 SDK** - [Download here](https://dotnet.microsoft.com/download)
 - **Windows 10/11** - WinUI 3 and Windows App SDK require Windows 10 version 1903 or later
+- **Node.js LTS with npm** - Required by the WinUI build to restore JavaScript build assets
+- **Windows 10 SDK** - Required for WinUI builds
 - **WebView2 Runtime** - Usually pre-installed on Windows 10+ ([Manual download](https://developer.microsoft.com/microsoft-edge/webview2/))
 - **Visual Studio 2022** (optional) - For easier development and debugging with WinUI 3 designer support
+
+Run `.\scripts\setup-dev.ps1` from the repository root to install or verify local prerequisites with winget. Agents can use `.\scripts\setup-dev.ps1 -RunValidation` to prepare the worktree and run the required closeout validation.
 
 ### For Testing
 
@@ -40,9 +44,17 @@ openclaw-windows-hub/
 │   │   ├── Models.cs                 # Data models (SessionInfo, ChannelHealth, etc.)
 │   │   └── IOpenClawLogger.cs        # Logging interface
 │   │
+│   ├── OpenClaw.Connection/          # Gateway registry, credentials, connection manager
+│   │
 │   ├── OpenClaw.Chat/                # Native chat model and reducer
 │   │   ├── ChatModels.cs             # Threads, entries, events, provider contract
 │   │   └── ChatTimelineReducer.cs    # Timeline state transitions
+│   │
+│   ├── OpenClaw.Cli/                 # WebSocket connect/send/probe validator
+│   │
+│   ├── OpenClaw.WinNode.Cli/         # winnode local MCP/Windows-node CLI
+│   │
+│   ├── OpenClaw.SetupEngine/         # Local WSL gateway setup and setup-code support
 │   │
 │   ├── OpenClawTray.FunctionalUI/    # Small in-repo declarative WinUI helper
 │   │   └── FunctionalUI.cs           # Components, hooks, elements, host control
@@ -55,8 +67,12 @@ openclaw-windows-hub/
 │   │   └── Helpers/                  # Icon generation, utilities
 │   │
 ├── tests/
-│   ├── OpenClaw.Shared.Tests/        # Unit tests for shared library
-│   └── OpenClaw.Tray.Tests/          # Tests for tray helpers (menu, settings, deep links)
+│   ├── OpenClaw.Shared.Tests/        # Unit tests for shared library/capabilities/MCP
+│   ├── OpenClaw.Connection.Tests/    # Gateway registry and connection manager tests
+│   ├── OpenClaw.Tray.Tests/          # Tests for tray helpers (menu, settings, deep links)
+│   ├── OpenClaw.WinNode.Cli.Tests/   # winnode CLI contract tests
+│   ├── OpenClaw.SetupEngine.Tests/   # Setup engine tests
+│   └── OpenClaw.Tray.UITests/        # Native WinUI/A2UI UI tests
 │
 ├── tools/
 │   └── icongen/                      # Icon generation tool
@@ -72,9 +88,10 @@ openclaw-windows-hub/
 ### Project Dependencies
 
 ```
-OpenClaw.Tray.WinUI  ──depends on──▶  OpenClaw.Shared
-OpenClaw.Shared.Tests  ──tests──▶  OpenClaw.Shared
-OpenClaw.Tray.Tests  ──tests──▶  OpenClaw.Shared
+OpenClaw.Tray.WinUI  ──depends on──▶  OpenClaw.Shared + OpenClaw.Connection + OpenClaw.Chat
+OpenClaw.WinNode.Cli  ──depends on──▶  OpenClaw.Shared
+OpenClaw.SetupEngine  ──supports──▶  local WSL gateway setup
+OpenClaw.*.Tests  ──test──▶  corresponding shared, connection, tray, setup, and CLI surfaces
 ```
 
 ### Key Subsystems
@@ -82,6 +99,7 @@ OpenClaw.Tray.Tests  ──tests──▶  OpenClaw.Shared
 | Subsystem | Location | Purpose |
 |-----------|----------|---------|
 | **Gateway Communication** | `OpenClaw.Shared/OpenClawGatewayClient.cs` | WebSocket client with protocol v3, reconnect/backoff logic |
+| **Connection Management** | `OpenClaw.Connection/` | Gateway registry, credential precedence, pairing, tunnels, and reconnect policy |
 | **Notification System** | `OpenClaw.Tray.WinUI/App.xaml.cs` | Event routing, toast notifications, classification |
 | **WebView2 Integration** | `OpenClaw.Tray.WinUI/Windows/ChatWindow.xaml.cs` | Embedded chat panel with lifecycle management |
 | **Tray Icon Management** | `OpenClaw.Tray.WinUI/Helpers/IconHelper.cs` | GDI handle management, dynamic icon generation |

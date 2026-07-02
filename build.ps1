@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Build script for OpenClaw Windows Hub
 
@@ -6,7 +6,7 @@
     Builds all projects, checks prerequisites, and provides clear guidance.
 
 .PARAMETER Project
-    Which project to build: All, Tray, WinUI, Shared, Cli
+    Which project to build: All, Tray, WinUI, Shared, Cli, WinNodeCli, SetupEngine
     Default: All
 
 .PARAMETER Configuration
@@ -138,6 +138,24 @@ function Ensure-GitVersionRepositoryTrust {
     Write-Success "Repository trusted for GitVersion"
 }
 
+function Ensure-GitVersionRepositoryHistory {
+    $insideWorkTree = & git -C $repoRoot rev-parse --is-inside-work-tree 2>$null
+    if ($LASTEXITCODE -ne 0 -or $insideWorkTree -ne "true") {
+        Write-Error "Git metadata not found. GitVersion requires a git clone with full history."
+        Write-Info "Clone the repository with git, then rerun .\build.ps1."
+        $script:issues += "Repository is missing git metadata required by GitVersion"
+        return
+    }
+
+    $isShallow = & git -C $repoRoot rev-parse --is-shallow-repository 2>$null
+    if ($LASTEXITCODE -eq 0 -and $isShallow -eq "true") {
+        Write-Error "Repository is a shallow clone. GitVersion requires full git history."
+        Write-Info "Run this once, then retry the build:"
+        Write-Info "git fetch --unshallow --tags origin"
+        $script:issues += "Repository is shallow; GitVersion requires full history"
+    }
+}
+
 Write-Host @"
 
   🦞 OpenClaw Windows Hub - Build Script
@@ -200,6 +218,7 @@ if (-not $git) {
     }
 
     Ensure-GitVersionRepositoryTrust
+    Ensure-GitVersionRepositoryHistory
 }
 
 # Check Node.js + npm (WinUI build runs `npm ci` to restore @microsoft/mxc-sdk
@@ -228,11 +247,23 @@ if (-not $nodeVersion) {
 # Check Windows SDK (for WinUI)
 $windowsSdkPath = "${env:ProgramFiles(x86)}\Windows Kits\10\Include"
 if (Test-Path $windowsSdkPath) {
-    $sdkVersions = Get-ChildItem $windowsSdkPath -Directory | Select-Object -ExpandProperty Name | Sort-Object -Descending
-    Write-Success "Windows SDK: $($sdkVersions[0])"
+    $sdkVersions = @(
+        Get-ChildItem $windowsSdkPath -Directory |
+            Where-Object { $_.Name -match "^\d+\.\d+\.\d+\.\d+$" } |
+            Sort-Object { [version]$_.Name } -Descending |
+            Select-Object -ExpandProperty Name
+    )
+
+    if ($sdkVersions.Count -gt 0) {
+        Write-Success "Windows SDK: $($sdkVersions[0])"
+    } else {
+        Write-Warning "Windows 10 SDK not found (needed for WinUI build)"
+        Write-Info "Install via Visual Studio Installer, standalone SDK, or: winget install --id Microsoft.WindowsSDK.10.0.26100 -e"
+        $issues += "Windows 10 SDK not detected"
+    }
 } else {
     Write-Warning "Windows 10 SDK not found (needed for WinUI build)"
-    Write-Info "Install via Visual Studio Installer or standalone SDK"
+    Write-Info "Install via Visual Studio Installer, standalone SDK, or: winget install --id Microsoft.WindowsSDK.10.0.26100 -e"
     $issues += "Windows 10 SDK not detected"
 }
 
@@ -291,7 +322,10 @@ if ($issues.Count -gt 0) {
 Write-Header "Building Projects ($Configuration)"
 
 # Detect runtime identifier based on architecture
-$rid = if ($arch -eq "ARM64") { "win-arm64" } else { "win-x64" }
+$rid = switch ($arch) {
+    "ARM64" { "win-arm64" }
+    default { "win-x64" }
+}
 Write-Info "Runtime identifier: $rid"
 
 $buildResults = @{}

@@ -41,6 +41,43 @@ public sealed class AppRefactorContractTests
     }
 
     [Fact]
+    public void Startup_WslKeepAlive_IsOwnedByDedicatedService()
+    {
+        var source = ReadAppSources();
+        var startup = ExtractMethod(source, "OnLaunchedAsync");
+        var service = ReadWslKeepAliveServiceSource();
+
+        Assert.Contains("new WslGatewayKeepAliveService(() => _settings, () => _gatewayRegistry)", startup);
+        Assert.Contains("Task.Run(wslKeepAlive.TryEnsureAsync)", startup);
+
+        foreach (var duplicateMethod in new[]
+        {
+            "TryEnsureLocalGatewayKeepAliveAsync",
+            "StopStaleLocalGatewayKeepAliveAsync",
+            "ReadKeepAliveMarkerDistroNames",
+            "ReadSetupStateDistroNameAsync",
+            "StopKeepAliveProcessesForDistro",
+            "DeleteKeepAliveMarker",
+            "GetProcessCommandLine",
+            "ResolveWslExePath",
+            "ResolveLocalGatewayDistroNameAsync",
+        })
+        {
+            Assert.DoesNotContain(duplicateMethod, source);
+        }
+
+        Assert.Contains("public async Task TryEnsureAsync()", service);
+        Assert.Contains("StopStaleLocalGatewayKeepAliveAsync", service);
+        Assert.Contains("ReadKeepAliveMarkerDistroNames", service);
+        Assert.Contains("ReadSetupStateDistroNameAsync", service);
+        Assert.Contains("StopKeepAliveProcessesForDistro", service);
+        Assert.Contains("DeleteKeepAliveMarker", service);
+        Assert.Contains("GetProcessCommandLine", service);
+        Assert.Contains("ResolveWslExePath", service);
+        Assert.Contains("ResolveLocalGatewayDistroNameAsync", service);
+    }
+
+    [Fact]
     public void McpOnlyStartup_DoesNotRequireGatewayCredentials()
     {
         var source = ReadAppSources();
@@ -222,7 +259,7 @@ public sealed class AppRefactorContractTests
 
         Assert.Contains("RemoveUnavailableGatewayBackStackEntries", source);
         Assert.Contains("ContentFrame.BackStack.RemoveAt(i)", source);
-        Assert.Contains("GatewayNavVisibilityDebouncePolicy.IsGatewayPageTag(tag)", source);
+        Assert.Contains("RemoveBackStackEntries(GatewayNavVisibilityDebouncePolicy.IsGatewayPageTag)", source);
         Assert.Contains("RemoveUnavailableGatewayBackStackEntries();", ExtractMethod(source, "GoBack"));
         Assert.Contains("RemoveUnavailableGatewayBackStackEntries();", ExtractMethod(source, "UpdateGatewayNavVisibility"));
     }
@@ -281,6 +318,29 @@ public sealed class AppRefactorContractTests
 
         Assert.Contains("ms-appx:///OpenClaw.SetupEngine.UI/Assets/Setup/Lobster.png", xaml);
         Assert.DoesNotContain("ms-appx:///Assets/Setup/", xaml);
+    }
+
+    [Fact]
+    public void SetupWelcomePage_RunsExistingConfigDetectionOffUiThread()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "WelcomePage.xaml.cs"));
+        var method = ExtractMethod(source, "StartButtonClickAsync");
+
+        Assert.Contains("StartButton.IsEnabled = false", method);
+        Assert.Contains("CheckingButtonText", method);
+        Assert.Contains("var setupWindow = SetupWindow.Active", method);
+        Assert.Contains("await Task.Run(() => ExistingConfigDetector.Detect", method);
+        Assert.Contains("setupWindow is null or { IsClosed: true } || xamlRoot is null", method);
+        Assert.Contains("setupWindow is { IsClosed: false }", method);
+        Assert.Contains("StartButton.IsEnabled = true", method);
+        AssertInOrder(
+            method,
+            "StartButton.IsEnabled = false",
+            "await Task.Run(() => ExistingConfigDetector.Detect",
+            "setupWindow is null or { IsClosed: true } || xamlRoot is null",
+            "dialog.ShowAsync()",
+            "setupWindow.NavigateToCapabilities()");
     }
 
     [Fact]
@@ -410,11 +470,29 @@ public sealed class AppRefactorContractTests
         Assert.Contains("usable MXC backend", reject);
     }
 
+    [Fact]
+    public void ChatSlashPalette_HiddenNoMatchStateDoesNotTrapKeys()
+    {
+        var source = ReadOpenClawComposerSource();
+
+        Assert.Contains("else if (slashActive && Props.AvailableCommands is null)", source);
+        Assert.Contains("No-match input hides the popup", source);
+        Assert.Contains("ordinary composer text", source);
+        Assert.DoesNotContain("var slashLoading = Props.AvailableCommands is null;", source);
+    }
+
     private static string ReadCoordinatorSource()
     {
         var root = TestRepositoryPaths.GetRepositoryRoot();
         return File.ReadAllText(Path.Combine(
             root, "src", "OpenClaw.Tray.WinUI", "Services", "TrayIconCoordinator.cs"));
+    }
+
+    private static string ReadWslKeepAliveServiceSource()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        return File.ReadAllText(Path.Combine(
+            root, "src", "OpenClaw.Tray.WinUI", "Services", "WslGatewayKeepAliveService.cs"));
     }
 
     private static string ReadAppSources()
@@ -434,6 +512,13 @@ public sealed class AppRefactorContractTests
         var root = TestRepositoryPaths.GetRepositoryRoot();
         return File.ReadAllText(Path.Combine(
             root, "src", "OpenClaw.Tray.WinUI", "Pages", "SandboxPage.xaml.cs"));
+    }
+
+    private static string ReadOpenClawComposerSource()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        return File.ReadAllText(Path.Combine(
+            root, "src", "OpenClaw.Tray.WinUI", "Chat", "OpenClawComposer.cs"));
     }
 
     private static string ExtractMethod(string source, string methodName)

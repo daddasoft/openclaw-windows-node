@@ -13,6 +13,8 @@ Required steps:
 3. Run tray tests:
    - `dotnet test ./tests/OpenClaw.Tray.Tests/OpenClaw.Tray.Tests.csproj --no-restore`
 
+This is the required local closeout subset for agents. CI also builds and runs additional connection, setup, CLI, UI, integration, and E2E suites; see `docs/TEST_COVERAGE.md` for the broader inventory.
+
 If a command fails:
 
 1. Fix the issue.
@@ -22,6 +24,7 @@ If a command fails:
 Notes:
 
 - If a build/test is blocked by an environmental lock (for example running executable locking output assemblies), stop/close the locking process and rerun.
+- If validation is blocked by missing local Windows prerequisites, run `.\scripts\setup-dev.ps1` to install/verify developer and agent prerequisites, then rerun validation. Use `.\scripts\setup-dev.ps1 -CheckOnly` when you only need diagnostics.
 - **First-run gotcha**: `dotnet test --no-restore` silently no-ops in a fresh worktree where the test `bin/` doesn't exist yet (reports "Build succeeded in 0.5s" then exits 0 with no tests run). For first-run validation, either omit `--no-restore` OR run `dotnet build` on the test project first. Subsequent reruns honor `--no-restore` correctly.
 - In linked git worktrees, set `OPENCLAW_REPO_ROOT` to the worktree path before running tests that discover the repository root, for example:
   - `$env:OPENCLAW_REPO_ROOT='D:\github\openclaw-windows-node.<worktree-name>'`
@@ -74,6 +77,17 @@ Start with these docs before changing connection, pairing, node, MCP, or tray UX
 - `docs/MCP_MODE.md` - local MCP server mode and the `EnableNodeMode` / `EnableMcpServer` matrix.
 - `docs/WINDOWS_NODE_TESTING.md` - Windows node capabilities, manual smokes, and gateway-dependent behavior.
 - `docs/ONBOARDING_WIZARD.md` - first-run setup flow, setup-code/bootstrap pairing, and test isolation.
+
+## Architecture Guardrails for Large Refactors
+
+`src\OpenClaw.Tray.WinUI\App.xaml.cs` and `src\OpenClaw.Tray.WinUI\Pages\ConnectionPage.xaml.cs` are active god-file reduction targets. When touching either file:
+
+- Prefer completing a real ownership transfer over moving code to partial classes. A new partial file is not progress unless it introduces a narrower owner, pure projection, policy, service, or tested seam.
+- Keep `App` as the composition root. Shrink it by delegating cohesive behavior to focused services, but do not relocate startup ordering into another god object.
+- Keep `ConnectionPage.xaml.cs` as the WinUI applicator until a pure row/plan/workflow seam exists. Do not move named-control setters into a presenter that just wraps the page.
+- Add characterization tests before moving startup, credential, pairing, node/MCP, tray action, or direct-connect rollback behavior. Source-text contract tests are acceptable for WinUI-only seams, but prefer pure unit tests for policies and projections.
+- Keep PRs small and reviewable: one seam per PR, with a clear invariant protected by tests. Stop and re-plan if a PR moves hundreds of lines without behavior coverage.
+- In PR descriptions and handoffs, name the old owner, new owner, preserved invariant, and validation run so future agents do not reintroduce duplicate paths or grow new god objects.
 
 Important current facts:
 
