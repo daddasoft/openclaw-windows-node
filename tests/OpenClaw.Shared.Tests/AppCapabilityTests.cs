@@ -85,6 +85,45 @@ public class AppCapabilityTests
     }
 
     [Fact]
+    public async Task SettingsSet_WithHandlerErrorPayload_ReturnsCommandError()
+    {
+        var cap = new AppCapability(NullLogger.Instance)
+        {
+            SettingsSetHandler = (_, _) => new { error = "MCP server startup failed" }
+        };
+        var req = new NodeInvokeRequest
+        {
+            Id = "1",
+            Command = "app.settings.set",
+            Args = ParseArgs("{\"name\":\"EnableMcpServer\",\"value\":\"true\"}")
+        };
+
+        var res = await cap.ExecuteAsync(req);
+
+        Assert.False(res.Ok);
+        Assert.Equal("MCP server startup failed", res.Error);
+    }
+
+    [Fact]
+    public async Task SettingsSet_WithHandlerSuccessPayload_ReturnsData()
+    {
+        var cap = new AppCapability(NullLogger.Instance)
+        {
+            SettingsSetHandler = (name, _) => new { name, value = true }
+        };
+        var req = new NodeInvokeRequest
+        {
+            Id = "1",
+            Command = "app.settings.set",
+            Args = ParseArgs("{\"name\":\"EnableMcpServer\",\"value\":\"true\"}")
+        };
+
+        var res = await cap.ExecuteAsync(req);
+
+        Assert.True(res.Ok);
+    }
+
+    [Fact]
     public async Task UnknownCommand_ReturnsError()
     {
         var cap = new AppCapability(NullLogger.Instance);

@@ -144,7 +144,34 @@ public class AppCapability : NodeCapabilityBase
             return Error("Missing required arg: value");
         if (SettingsSetHandler == null)
             return Error("Settings handler not registered");
-        return Success(SettingsSetHandler(name, value));
+
+        var result = SettingsSetHandler(name, value);
+        if (TryGetErrorPayload(result, out var error))
+            return Error(error);
+
+        return Success(result);
+    }
+
+    private static bool TryGetErrorPayload(object? result, out string error)
+    {
+        error = "";
+        if (result == null)
+            return false;
+
+        var property = result.GetType().GetProperty(
+            "error",
+            System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.Public |
+            System.Reflection.BindingFlags.IgnoreCase);
+
+        if (property?.GetValue(result) is not string message ||
+            string.IsNullOrWhiteSpace(message))
+        {
+            return false;
+        }
+
+        error = message;
+        return true;
     }
 
     private NodeInvokeResponse HandleMenu()
