@@ -34,6 +34,9 @@ public class SetupConfigTests : IDisposable
         Assert.Equal("loopback", config.Gateway.Bind);
         Assert.False(config.SkipPermissions);
         Assert.False(config.SkipWizard);
+        Assert.True(config.WindowsNodeContext.Enabled);
+        Assert.Null(config.WindowsNodeContext.WorkspacePath);
+        Assert.Equal(180, config.WindowsNodeContext.TimeoutSeconds);
     }
 
     [Fact]
@@ -389,6 +392,19 @@ public class SetupConfigTests : IDisposable
     {
         var pairing = new PairingConfig();
         Assert.Equal(60, pairing.TimeoutSeconds);
+    }
+
+    [Fact]
+    public void WindowsNodeContextSection_ManagedBlock_ContainsMarkersAndPayload()
+    {
+        var block = WindowsNodeContextSection.ManagedBlock;
+
+        Assert.StartsWith(WindowsNodeContextSection.BeginMarker + "\n", block);
+        Assert.Contains("This WSL gateway may be paired", block);
+        Assert.Contains("exec host=node", block);
+        Assert.DoesNotContain("tools.exec.security full", block);
+        Assert.DoesNotContain("tools.exec.ask off", block);
+        Assert.EndsWith("\n" + WindowsNodeContextSection.EndMarker, block);
     }
 
     [Fact]

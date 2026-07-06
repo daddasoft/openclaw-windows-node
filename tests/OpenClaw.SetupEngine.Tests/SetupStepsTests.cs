@@ -1624,6 +1624,609 @@ public class SetupStepsTests : IDisposable
         Assert.Contains("remove failed", error.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void WindowsNodeContext_CanSkipWhenDisabled()
+    {
+        var ctx = CreateContext(new SetupConfig
+        {
+            WindowsNodeContext = new WindowsNodeContextConfig { Enabled = false }
+        });
+
+        Assert.True(new WindowsNodeBootstrapContextStep().CanSkip(ctx));
+    }
+
+    [Fact]
+    public void WindowsNodeContext_BuildApplyScript_UsesAbsolutePathAndMinimalShape()
+    {
+        var script = WindowsNodeBootstrapContextStep.BuildApplyScript("/home/openclaw/.openclaw/workspace");
+
+        Assert.Contains("set -o pipefail", script);
+        Assert.Contains("workspace='/home/openclaw/.openclaw/workspace'", script);
+        Assert.Contains("AGENTS_SYMLINK:$agents", script);
+        Assert.Contains("mkdir -p \"$workspace\"", script);
+        Assert.Contains(": > \"$agents\"", script);
+        Assert.Contains("WINDOWS_NODE_CONTEXT_BOOTSTRAP_FALLBACK", script);
+        Assert.Contains("awk -v BEGIN_M=\"$begin_marker\" -v END_M=\"$end_marker\"", script);
+        Assert.Contains("printf '%s' \"$block_b64\" | base64 -d >> \"$tmp\"", script);
+        Assert.Contains("mktemp \"$workspace/.AGENTS.md.openclaw.XXXXXX\"", script);
+        Assert.Contains("chmod --reference=\"$agents\" \"$tmp\"", script);
+        Assert.Contains("sub(/\\r$/, \"\", marker_line)", script);
+        Assert.Contains("WINDOWS_NODE_CONTEXT_MARKERS_MALFORMED", script);
+        Assert.Contains("WINDOWS_NODE_CONTEXT_READY", script);
+        // Must not depend on node or carry an embedded JS payload.
+        Assert.DoesNotContain(" node ", script);
+        Assert.DoesNotContain(" node -", script);
+        Assert.DoesNotContain("apply_js_b64", script);
+        Assert.DoesNotContain("openclaw setup", script);
+        Assert.DoesNotContain("openclaw config get", script);
+        Assert.DoesNotContain("AGENTS_MISSING_AFTER_SETUP", script);
+        Assert.DoesNotContain("$HOME", script);
+        Assert.DoesNotContain("case \"$candidate\"", script);
+        Assert.DoesNotContain("<<'NODE'", script);
+        Assert.DoesNotContain("OPENCLAW_GATEWAY_TOKEN", script);
+    }
+
+    [Fact]
+    public void WindowsNodeContext_BuildRollbackScript_UsesAbsolutePathAndMinimalShape()
+    {
+        var script = WindowsNodeBootstrapContextStep.BuildRollbackScript("/home/openclaw/.openclaw/workspace");
+
+        Assert.Contains("set -o pipefail", script);
+        Assert.Contains("workspace='/home/openclaw/.openclaw/workspace'", script);
+        Assert.Contains("awk -v BEGIN_M=\"$begin_marker\" -v END_M=\"$end_marker\"", script);
+        Assert.Contains("mktemp \"$workspace/.AGENTS.md.openclaw.XXXXXX\"", script);
+        Assert.Contains("chmod --reference=\"$agents\" \"$tmp\"", script);
+        Assert.Contains("sub(/\\r$/, \"\", marker_line)", script);
+        Assert.Contains("WINDOWS_NODE_CONTEXT_ABSENT", script);
+        Assert.Contains("WINDOWS_NODE_CONTEXT_REMOVED", script);
+        Assert.Contains("AGENTS_SYMLINK_ROLLBACK_SKIPPED:$agents", script);
+        Assert.Contains("exit 5", script);
+        // Must not depend on node or carry an embedded JS payload.
+        Assert.DoesNotContain(" node ", script);
+        Assert.DoesNotContain(" node -", script);
+        Assert.DoesNotContain("rollback_js_b64", script);
+        Assert.DoesNotContain("openclaw setup", script);
+        Assert.DoesNotContain("openclaw config get", script);
+        Assert.DoesNotContain("rm -f \"$agents\"", script);
+        Assert.DoesNotContain("$HOME", script);
+        Assert.DoesNotContain("case \"$candidate\"", script);
+        Assert.DoesNotContain("<<'NODE'", script);
+    }
+
+    [Theory]
+    [InlineData("/home/openclaw/.openclaw/workspace", "/home/openclaw", "/home/openclaw/.openclaw/workspace")]
+    [InlineData("~", "/home/openclaw", "/home/openclaw")]
+    [InlineData("~/.openclaw/custom workspace", "/home/openclaw", "/home/openclaw/.openclaw/custom workspace")]
+    [InlineData("relative/path", "/home/openclaw", "/home/openclaw/relative/path")]
+    [InlineData("", "/home/openclaw", "/home/openclaw/.openclaw/workspace")]
+    [InlineData("null", "/home/openclaw", "/home/openclaw/.openclaw/workspace")]
+    [InlineData("undefined", "/home/openclaw", "/home/openclaw/.openclaw/workspace")]
+    [InlineData("/abs/path", "/home/openclaw/", "/abs/path")]
+    [InlineData("~/x", "/home/openclaw/", "/home/openclaw/x")]
+    public void WindowsNodeContext_ExpandLinuxPath_ResolvesCorrectly(string input, string home, string expected)
+    {
+        Assert.Equal(expected, WindowsNodeBootstrapContextStep.ExpandLinuxPath(input, home));
+    }
+
+    [Theory]
+    [InlineData("\"/home/openclaw/.openclaw/workspace\"\n", "/home/openclaw/.openclaw/workspace")]
+    [InlineData("Config warnings:\n- plugins.entries.device-pair\n\"/home/openclaw/.openclaw/workspace\"\n", "/home/openclaw/.openclaw/workspace")]
+    [InlineData("\"~/.openclaw/workspace\"\n", "~/.openclaw/workspace")]
+    [InlineData("/home/openclaw/.openclaw/workspace\n", "/home/openclaw/.openclaw/workspace")]
+    [InlineData("null\n", null)]
+    [InlineData("", null)]
+    public void WindowsNodeContext_ExtractWorkspaceFromConfigOutput_ParsesValues(string stdout, string? expected)
+    {
+        Assert.Equal(expected, WindowsNodeBootstrapContextStep.ExtractWorkspaceFromConfigOutput(stdout));
+    }
+
+    [Theory]
+    [InlineData("[{\"id\":\"main\",\"workspace\":\"/home/openclaw/main\",\"isDefault\":true}]", "/home/openclaw/main")]
+    [InlineData("Warning\n[\n  {\"id\":\"other\",\"workspace\":\"/home/openclaw/other\",\"isDefault\":false},\n  {\"id\":\"primary\",\"workspace\":\"/home/openclaw/primary\",\"isDefault\":true}\n]\n", "/home/openclaw/primary")]
+    [InlineData("[{\"id\":\"main\",\"workspace\":\"~/main\"}]", "~/main")]
+    [InlineData("not json", null)]
+    public void WindowsNodeContext_ExtractDefaultAgentWorkspace_ParsesCanonicalAgentsList(string stdout, string? expected)
+    {
+        Assert.Equal(expected, WindowsNodeBootstrapContextStep.ExtractDefaultAgentWorkspaceFromAgentsOutput(stdout));
+    }
+
+    [Fact]
+    public async Task WindowsNodeContext_Execute_RunsInWslAsConfiguredUserAndResolvesWorkspace()
+    {
+        var commands = new FakeCommandRunner(
+            _ => Fail("unexpected RunAsync"),
+            (_, command, _) =>
+            {
+                if (command.Contains("getent passwd"))
+                    return Ok("/home/openclaw\n");
+                if (command.Contains("openclaw agents list --json"))
+                    return Ok(AgentsListJson("/home/openclaw/.openclaw/workspace"));
+                if (command.Contains("openclaw setup"))
+                    return Ok("");
+                if (command.Contains("openclaw config get agents.defaults.workspace"))
+                    return Ok("\"~/.openclaw/workspace\"\n");
+                if (command.Contains("WINDOWS_NODE_CONTEXT_READY"))
+                    return Ok(string.Join("\n",
+                        "WINDOWS_NODE_CONTEXT_BOOTSTRAP_FALLBACK:/home/openclaw/.openclaw/workspace/AGENTS.md",
+                        "WINDOWS_NODE_CONTEXT_WORKSPACE:/home/openclaw/.openclaw/workspace",
+                        "WINDOWS_NODE_CONTEXT_READY",
+                        ""));
+                return Fail($"unexpected wsl command: {command}");
+            });
+        var ctx = CreateContext(commands: commands);
+
+        var result = await new WindowsNodeBootstrapContextStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Message);
+        Assert.Equal(5, commands.WslCalls.Count);
+        Assert.All(commands.WslCalls, c =>
+        {
+            Assert.Equal("OpenClawGateway", c.DistroName);
+            Assert.Equal("openclaw", c.User);
+        });
+        Assert.Contains("getent passwd", commands.WslCalls[0].Command);
+        Assert.Contains("openclaw agents list --json", commands.WslCalls[1].Command);
+        Assert.Contains("openclaw config get agents.defaults.workspace", commands.WslCalls[2].Command);
+        Assert.Contains("openclaw setup --help", commands.WslCalls[3].Command);
+        Assert.Contains("openclaw setup --baseline --workspace '/home/openclaw/.openclaw/workspace'", commands.WslCalls[3].Command);
+        Assert.Contains("openclaw setup --workspace '/home/openclaw/.openclaw/workspace'", commands.WslCalls[3].Command);
+        Assert.Contains("workspace='/home/openclaw/.openclaw/workspace'", commands.WslCalls[4].Command);
+        // getent uses $(id -un) command-substitution and no $vars, so argv path is safe.
+        Assert.False(commands.WslCalls[0].InputViaStdin);
+        // agents list + config get + openclaw setup scripts reference $PATH via WslPathPrefix,
+        // which wsl.exe would rewrite on the argv path — see docs/WSL_EXE_ARGV_PITFALL.md.
+        Assert.True(commands.WslCalls[1].InputViaStdin);
+        Assert.True(commands.WslCalls[2].InputViaStdin);
+        Assert.True(commands.WslCalls[3].InputViaStdin);
+        // Apply script uses $workspace etc., must use stdin.
+        Assert.True(commands.WslCalls[4].InputViaStdin);
+        var state = await WindowsNodeBootstrapContextStep.ReadInstallStateAsync(ctx, CancellationToken.None);
+        Assert.Contains(state.Targets, target =>
+            target.DistroName == "OpenClawGateway" &&
+            target.User == "openclaw" &&
+            target.WorkspacePath == "/home/openclaw/.openclaw/workspace");
+    }
+
+    [Fact]
+    public async Task WindowsNodeContext_Execute_ResolvesRelativeConfiguredWorkspaceFromGatewayUserHome()
+    {
+        var commands = new FakeCommandRunner(
+            _ => Fail("unexpected RunAsync"),
+            (_, command, _) =>
+            {
+                if (command.Contains("getent passwd"))
+                    return Ok("/home/openclaw\n");
+                if (command.Contains("openclaw agents list --json"))
+                    return Ok(AgentsListJson("/home/openclaw/relative/workspace"));
+                if (command.Contains("openclaw setup"))
+                    return Ok("");
+                if (command.Contains("openclaw config get agents.defaults.workspace"))
+                    return Ok("\"relative/workspace\"\n");
+                if (command.Contains("workspace='/home/openclaw/relative/workspace'"))
+                    return Ok("WINDOWS_NODE_CONTEXT_READY\n");
+                return Fail($"unexpected wsl command: {command}");
+            });
+        var ctx = CreateContext(commands: commands);
+
+        var result = await new WindowsNodeBootstrapContextStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Message);
+        Assert.Contains(commands.WslCalls,
+            c => c.Command.Contains("openclaw setup --workspace '/home/openclaw/relative/workspace'"));
+        Assert.Contains(commands.WslCalls,
+            c => c.Command.Contains("workspace='/home/openclaw/relative/workspace'"));
+        Assert.DoesNotContain(commands.WslCalls, c => c.Command == "pwd -P");
+    }
+
+    [Fact]
+    public async Task WindowsNodeContext_Execute_UsesDefaultOnlyWhenWorkspaceKeyIsAbsent()
+    {
+        var commands = new FakeCommandRunner(
+            _ => Fail("unexpected RunAsync"),
+            (_, command, _) =>
+            {
+                if (command.Contains("getent passwd"))
+                    return Ok("/home/openclaw\n");
+                if (command.Contains("openclaw agents list --json"))
+                    return Ok(AgentsListJson("/home/openclaw/.openclaw/workspace"));
+                if (command.Contains("openclaw config get agents.defaults.workspace"))
+                    return new CommandResult(
+                        1,
+                        "",
+                        "Config path not found: agents.defaults.workspace. Run openclaw config validate to inspect config shape.",
+                        TimeSpan.Zero,
+                        TimedOut: false);
+                if (command.Contains("openclaw setup --workspace '/home/openclaw/.openclaw/workspace'"))
+                    return Ok();
+                if (command.Contains("workspace='/home/openclaw/.openclaw/workspace'"))
+                    return Ok("WINDOWS_NODE_CONTEXT_READY\n");
+                return Fail($"unexpected wsl command: {command}");
+            });
+        var ctx = CreateContext(commands: commands);
+
+        var result = await new WindowsNodeBootstrapContextStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Message);
+        Assert.Contains(commands.WslCalls,
+            c => c.Command.Contains("openclaw setup --workspace '/home/openclaw/.openclaw/workspace'"));
+    }
+
+    [Fact]
+    public async Task WindowsNodeContext_Execute_DoesNotPersistDefaultWhenWorkspaceLookupFails()
+    {
+        var commands = new FakeCommandRunner(
+            _ => Fail("unexpected RunAsync"),
+            (_, command, _) =>
+            {
+                if (command.Contains("getent passwd"))
+                    return Ok("/home/openclaw\n");
+                if (command.Contains("openclaw agents list --json"))
+                    return Ok(AgentsListJson("/home/openclaw/.openclaw/workspace"));
+                if (command.Contains("openclaw config get agents.defaults.workspace"))
+                    return Fail("gateway config is temporarily unavailable");
+                return Fail($"unexpected wsl command: {command}");
+            });
+        var ctx = CreateContext(commands: commands);
+
+        var result = await new WindowsNodeBootstrapContextStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.Contains("Could not resolve OpenClaw default workspace path", result.Message);
+        Assert.DoesNotContain(commands.WslCalls, c => c.Command.Contains("openclaw setup"));
+    }
+
+    [Fact]
+    public async Task WindowsNodeContext_Execute_DoesNotPersistDefaultForMalformedWorkspaceOutput()
+    {
+        var commands = new FakeCommandRunner(
+            _ => Fail("unexpected RunAsync"),
+            (_, command, _) =>
+            {
+                if (command.Contains("getent passwd"))
+                    return Ok("/home/openclaw\n");
+                if (command.Contains("openclaw agents list --json"))
+                    return Ok(AgentsListJson("/home/openclaw/.openclaw/workspace"));
+                if (command.Contains("openclaw config get agents.defaults.workspace"))
+                    return Ok("Config warning without a value\n");
+                return Fail($"unexpected wsl command: {command}");
+            });
+        var ctx = CreateContext(commands: commands);
+
+        var result = await new WindowsNodeBootstrapContextStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.DoesNotContain(commands.WslCalls, c => c.Command.Contains("openclaw setup"));
+    }
+
+    [Fact]
+    public async Task WindowsNodeContext_Execute_UsesEffectiveDefaultAgentWorkspaceWithoutRewritingDefaults()
+    {
+        var commands = new FakeCommandRunner(
+            _ => Fail("unexpected RunAsync"),
+            (_, command, _) =>
+            {
+                if (command.Contains("getent passwd"))
+                    return Ok("/home/openclaw\n");
+                if (command.Contains("openclaw agents list --json"))
+                    return Ok(AgentsListJson("/home/openclaw/main-agent"));
+                if (command.Contains("openclaw config get agents.defaults.workspace"))
+                    return Ok("\"~/.openclaw/workspace\"\n");
+                if (command.Contains("workspace='/home/openclaw/main-agent'"))
+                    return Ok("WINDOWS_NODE_CONTEXT_READY\n");
+                return Fail($"unexpected wsl command: {command}");
+            });
+        var ctx = CreateContext(commands: commands);
+
+        var result = await new WindowsNodeBootstrapContextStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Message);
+        Assert.DoesNotContain(commands.WslCalls, c => c.Command.Contains("openclaw setup"));
+        Assert.Contains(commands.WslCalls, c => c.Command.Contains("workspace='/home/openclaw/main-agent'"));
+    }
+
+    [Fact]
+    public async Task WindowsNodeContext_Execute_FailsWhenEffectiveAgentWorkspaceLookupFails()
+    {
+        var commands = new FakeCommandRunner(
+            _ => Fail("unexpected RunAsync"),
+            (_, command, _) =>
+            {
+                if (command.Contains("getent passwd"))
+                    return Ok("/home/openclaw\n");
+                if (command.Contains("openclaw agents list --json"))
+                    return Fail("agents unavailable");
+                return Fail($"unexpected wsl command: {command}");
+            });
+        var ctx = CreateContext(commands: commands);
+        var priorTarget = new WindowsNodeContextTarget("prior-distro", "openclaw", "/prior/workspace");
+        await WindowsNodeBootstrapContextStep.RecordAppliedTargetAsync(
+            ctx,
+            priorTarget,
+            CancellationToken.None);
+
+        var step = new WindowsNodeBootstrapContextStep();
+        var result = await step.ExecuteAsync(ctx, CancellationToken.None);
+        var callsAfterExecute = commands.WslCalls.Count;
+        await step.RollbackAsync(ctx, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.Contains("Could not resolve OpenClaw agent workspace path", result.Message);
+        Assert.DoesNotContain(commands.WslCalls, c => c.Command.Contains("openclaw config get"));
+        Assert.DoesNotContain(commands.WslCalls, c => c.Command.Contains("openclaw setup"));
+        Assert.Equal(callsAfterExecute, commands.WslCalls.Count);
+        var state = await WindowsNodeBootstrapContextStep.ReadInstallStateAsync(ctx, CancellationToken.None);
+        Assert.Equal([priorTarget], state.Targets);
+    }
+
+    [Fact]
+    public async Task WindowsNodeContext_Execute_RemovesNewStateWhenSymlinkCheckMakesNoChange()
+    {
+        var commands = new FakeCommandRunner(
+            _ => Fail("unexpected RunAsync"),
+            (_, command, _) =>
+            {
+                if (command.Contains("getent passwd"))
+                    return Ok("/home/openclaw\n");
+                if (command.Contains("openclaw agents list --json"))
+                    return Ok(AgentsListJson("/home/openclaw/.openclaw/workspace"));
+                if (command.Contains("openclaw config get agents.defaults.workspace"))
+                    return Ok("\"~/.openclaw/workspace\"\n");
+                if (command.Contains("openclaw setup"))
+                    return Ok();
+                if (command.Contains("AGENTS_SYMLINK:$agents"))
+                    return new CommandResult(2, "", "AGENTS_SYMLINK", TimeSpan.Zero, TimedOut: false);
+                return Fail($"unexpected wsl command: {command}");
+            });
+        var ctx = CreateContext(commands: commands);
+
+        var step = new WindowsNodeBootstrapContextStep();
+        var result = await step.ExecuteAsync(ctx, CancellationToken.None);
+        var callsAfterExecute = commands.WslCalls.Count;
+        await step.RollbackAsync(ctx, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.False(File.Exists(WindowsNodeBootstrapContextStep.InstallStatePath(ctx)));
+        Assert.Equal(callsAfterExecute, commands.WslCalls.Count);
+    }
+
+    [Fact]
+    public async Task WindowsNodeContext_Execute_UsesExplicitWorkspaceOverride()
+    {
+        var commands = new FakeCommandRunner(
+            _ => Fail("unexpected RunAsync"),
+            (_, command, _) =>
+            {
+                if (command.Contains("getent passwd"))
+                    return Ok("/home/openclaw\n");
+                if (command.Contains("openclaw setup --workspace"))
+                    return Ok("");
+                if (command.Contains("workspace='/custom/abs/path'"))
+                    return Ok("WINDOWS_NODE_CONTEXT_READY\n");
+                return Fail($"unexpected wsl command: {command}");
+            });
+        var ctx = CreateContext(new SetupConfig
+        {
+            WindowsNodeContext = new WindowsNodeContextConfig { WorkspacePath = "/custom/abs/path" }
+        }, commands);
+
+        var result = await new WindowsNodeBootstrapContextStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Message);
+        // No config-get call when override is set.
+        Assert.DoesNotContain(commands.WslCalls, c => c.Command.Contains("openclaw config get"));
+        // Absolute path threads through to BOTH the setup command and the apply script
+        // (verified by the apply script asserting workspace='/custom/abs/path').
+        Assert.Contains(commands.WslCalls, c => c.Command.Contains("openclaw setup --workspace '/custom/abs/path'"));
+    }
+
+    [Fact]
+    public async Task WindowsNodeContext_Execute_OverrideWithTilde_ExpandsBeforePassingToSetup()
+    {
+        // Regression: a ~/foo override must be expanded once so that the same
+        // absolute path goes to `openclaw setup --workspace` and the apply script.
+        var commands = new FakeCommandRunner(
+            _ => Fail("unexpected RunAsync"),
+            (_, command, _) =>
+            {
+                if (command.Contains("getent passwd"))
+                    return Ok("/home/openclaw\n");
+                if (command.Contains("openclaw setup --workspace"))
+                    return Ok("");
+                if (command.Contains("workspace='/home/openclaw/custom-ws'"))
+                    return Ok("WINDOWS_NODE_CONTEXT_READY\n");
+                return Fail($"unexpected wsl command: {command}");
+            });
+        var ctx = CreateContext(new SetupConfig
+        {
+            WindowsNodeContext = new WindowsNodeContextConfig { WorkspacePath = "~/custom-ws" }
+        }, commands);
+
+        var result = await new WindowsNodeBootstrapContextStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Message);
+        Assert.Contains(commands.WslCalls,
+            c => c.Command.Contains("openclaw setup --workspace '/home/openclaw/custom-ws'"));
+        Assert.DoesNotContain(commands.WslCalls,
+            c => c.Command.Contains("--workspace '~/custom-ws'"));
+    }
+
+    [Fact]
+    public async Task WindowsNodeContext_Rollback_RunsRollbackScriptViaStdin()
+    {
+        var commands = new FakeCommandRunner(
+            _ => Fail("unexpected RunAsync"),
+            (_, command, _) =>
+            {
+                if (command.Contains("getent passwd"))
+                    return Ok("/home/openclaw\n");
+                if (command.Contains("openclaw agents list --json"))
+                    return Ok(AgentsListJson("/home/openclaw/.openclaw/workspace"));
+                if (command.Contains("WINDOWS_NODE_CONTEXT_REMOVED"))
+                    return Ok("WINDOWS_NODE_CONTEXT_REMOVED\n");
+                return Fail($"unexpected wsl command: {command}");
+            });
+        var ctx = CreateContext(commands: commands);
+        await WindowsNodeBootstrapContextStep.RecordAppliedTargetAsync(
+            ctx,
+            new WindowsNodeContextTarget("recorded-distro", "recorded-user", "/recorded/workspace"),
+            CancellationToken.None);
+
+        await new WindowsNodeBootstrapContextStep().RollbackAsync(ctx, CancellationToken.None);
+
+        Assert.NotEmpty(commands.WslCalls);
+        // Last call is the rollback script and must use stdin.
+        Assert.Contains("WINDOWS_NODE_CONTEXT_REMOVED", commands.WslCalls[^1].Command);
+        Assert.True(commands.WslCalls[^1].InputViaStdin);
+        var rollback = Assert.Single(commands.WslCalls);
+        Assert.Equal("recorded-distro", rollback.DistroName);
+        Assert.Equal("recorded-user", rollback.User);
+        Assert.Contains("workspace='/recorded/workspace'", rollback.Command);
+        Assert.False(File.Exists(WindowsNodeBootstrapContextStep.InstallStatePath(ctx)));
+    }
+
+    [Fact]
+    public async Task WindowsNodeContext_Rollback_PropagatesCleanupFailureAndKeepsStateForRetry()
+    {
+        var commands = new FakeCommandRunner(
+            _ => Fail("unexpected RunAsync"),
+            (_, command, _) => command.Contains("WINDOWS_NODE_CONTEXT_REMOVED")
+                ? Fail("cannot update AGENTS.md")
+                : Fail($"unexpected wsl command: {command}"));
+        var ctx = CreateContext(commands: commands);
+        await WindowsNodeBootstrapContextStep.RecordAppliedTargetAsync(
+            ctx,
+            new WindowsNodeContextTarget("recorded-distro", "recorded-user", "/recorded/workspace"),
+            CancellationToken.None);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new WindowsNodeBootstrapContextStep().RollbackAsync(ctx, CancellationToken.None));
+
+        Assert.Contains("cannot update AGENTS.md", error.Message);
+        Assert.True(File.Exists(WindowsNodeBootstrapContextStep.InstallStatePath(ctx)));
+    }
+
+    [Fact]
+    public async Task WindowsNodeContext_Rollback_RemovesExistingTargetStateAfterCleanup()
+    {
+        var commands = new FakeCommandRunner(
+            _ => Fail("unexpected RunAsync"),
+            (_, command, _) =>
+            {
+                if (command.Contains("getent passwd"))
+                    return Ok("/home/openclaw\n");
+                if (command.Contains("openclaw agents list --json"))
+                    return Ok(AgentsListJson("/home/openclaw/.openclaw/workspace"));
+                if (command.Contains("openclaw config get agents.defaults.workspace"))
+                    return Ok("\"~/.openclaw/workspace\"\n");
+                if (command.Contains("openclaw setup"))
+                    return Ok();
+                if (command.Contains("WINDOWS_NODE_CONTEXT_READY"))
+                    return Ok("WINDOWS_NODE_CONTEXT_READY\n");
+                if (command.Contains("WINDOWS_NODE_CONTEXT_REMOVED"))
+                    return Ok("WINDOWS_NODE_CONTEXT_REMOVED\n");
+                return Fail($"unexpected wsl command: {command}");
+            });
+        var ctx = CreateContext(commands: commands);
+        var target = new WindowsNodeContextTarget(
+            "OpenClawGateway",
+            "openclaw",
+            "/home/openclaw/.openclaw/workspace");
+        await WindowsNodeBootstrapContextStep.RecordAppliedTargetAsync(ctx, target, CancellationToken.None);
+        var step = new WindowsNodeBootstrapContextStep();
+        Assert.True((await step.ExecuteAsync(ctx, CancellationToken.None)).IsSuccess);
+
+        await step.RollbackAsync(ctx, CancellationToken.None);
+
+        Assert.False(File.Exists(WindowsNodeBootstrapContextStep.InstallStatePath(ctx)));
+    }
+
+    [Fact]
+    public async Task WindowsNodeContext_Rollback_TreatsMissingRecordedDistroAsCleaned()
+    {
+        var commands = new FakeCommandRunner(
+            _ => Fail("unexpected RunAsync"),
+            (_, command, _) => command.Contains("WINDOWS_NODE_CONTEXT_REMOVED")
+                ? new CommandResult(1, "", "WSL_E_DISTRO_NOT_FOUND", TimeSpan.Zero, TimedOut: false)
+                : Fail($"unexpected wsl command: {command}"));
+        var ctx = CreateContext(commands: commands);
+        await WindowsNodeBootstrapContextStep.RecordAppliedTargetAsync(
+            ctx,
+            new WindowsNodeContextTarget("missing-distro", "openclaw", "/recorded/workspace"),
+            CancellationToken.None);
+
+        await new WindowsNodeBootstrapContextStep().RollbackAsync(ctx, CancellationToken.None);
+
+        Assert.False(File.Exists(WindowsNodeBootstrapContextStep.InstallStatePath(ctx)));
+    }
+
+    [Fact]
+    public async Task WindowsNodeContext_Rollback_CleansLegacyEffectiveWorkspaceWithoutStateFile()
+    {
+        var commands = new FakeCommandRunner(
+            _ => Fail("unexpected RunAsync"),
+            (_, command, _) =>
+            {
+                if (command.Contains("getent passwd"))
+                    return Ok("/home/openclaw\n");
+                if (command.Contains("openclaw agents list --json"))
+                    return Ok(AgentsListJson("/home/openclaw/legacy-main"));
+                if (command.Contains("WINDOWS_NODE_CONTEXT_REMOVED"))
+                    return Ok("WINDOWS_NODE_CONTEXT_REMOVED\n");
+                return Fail($"unexpected wsl command: {command}");
+            });
+        var ctx = CreateContext(commands: commands);
+
+        await new WindowsNodeBootstrapContextStep().RollbackAsync(ctx, CancellationToken.None);
+
+        Assert.Contains(commands.WslCalls, call => call.Command.Contains("getent passwd"));
+        Assert.Contains(commands.WslCalls, call => call.Command.Contains("openclaw agents list --json"));
+        Assert.Contains(commands.WslCalls, call => call.Command.Contains("workspace='/home/openclaw/legacy-main'"));
+    }
+
+    [Fact]
+    public async Task WindowsNodeContext_Execute_FailsWhenHomeUnresolvable()
+    {
+        var commands = new FakeCommandRunner(
+            _ => Fail("unexpected RunAsync"),
+            (_, command, _) =>
+            {
+                if (command.Contains("getent passwd"))
+                    return new CommandResult(1, "", "", TimeSpan.Zero, TimedOut: false);
+                return Fail($"unexpected wsl command: {command}");
+            });
+        var ctx = CreateContext(commands: commands);
+
+        var result = await new WindowsNodeBootstrapContextStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.Contains("Could not resolve Linux home directory", result.Message);
+    }
+
+    [Fact]
+    public async Task WindowsNodeContext_Execute_FailsWithoutReadyMarker()
+    {
+        var commands = new FakeCommandRunner(
+            _ => Fail("unexpected RunAsync"),
+            (_, command, _) =>
+            {
+                if (command.Contains("getent passwd"))
+                    return Ok("/home/openclaw\n");
+                if (command.Contains("openclaw agents list --json"))
+                    return Ok(AgentsListJson("/home/openclaw/.openclaw/workspace"));
+                if (command.Contains("openclaw setup"))
+                    return Ok("");
+                if (command.Contains("openclaw config get agents.defaults.workspace"))
+                    return Ok("\"~/.openclaw/workspace\"\n");
+                return Fail("apply script failed");
+            });
+        var ctx = CreateContext(commands: commands);
+
+        var result = await new WindowsNodeBootstrapContextStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.Contains("Windows node context injection failed", result.Message);
+    }
+
     private static CommandResult Ok(string stdout = "", string stderr = "")
         => new(0, stdout, stderr, TimeSpan.Zero, TimedOut: false);
 
@@ -1635,6 +2238,9 @@ public class SetupStepsTests : IDisposable
 
     private static CommandResult TimedOut()
         => new(-1, "", "", TimeSpan.FromSeconds(30), TimedOut: true);
+
+    private static string AgentsListJson(string workspace, string id = "main", bool isDefault = true)
+        => JsonSerializer.Serialize(new[] { new { id, workspace, isDefault } });
 
     private static string NulSeparated(string value)
         => string.Join("\0", value.ToCharArray()) + "\0";
@@ -1656,7 +2262,7 @@ public class SetupStepsTests : IDisposable
     {
         public List<(string Executable, string[] Arguments)> Calls { get; } = [];
         public List<(string Executable, string[] Arguments, string? StdinInput)> DetailedCalls { get; } = [];
-        public List<(string DistroName, string Command, TimeSpan Timeout)> WslCalls { get; } = [];
+        public List<(string DistroName, string Command, TimeSpan Timeout, string? User, bool InputViaStdin)> WslCalls { get; } = [];
 
         public Task<CommandResult> RunAsync(
             string executable,
@@ -1678,12 +2284,13 @@ public class SetupStepsTests : IDisposable
             TimeSpan timeout,
             IReadOnlyDictionary<string, string>? environment = null,
             CancellationToken ct = default,
-            string? user = null)
+            string? user = null,
+            bool inputViaStdin = false)
         {
+            WslCalls.Add((distroName, command, timeout, user, inputViaStdin));
             if (runInWsl == null)
                 throw new NotSupportedException("RunInWslAsync is not expected in these tests.");
 
-            WslCalls.Add((distroName, command, timeout));
             return Task.FromResult(runInWsl(distroName, command, timeout));
         }
     }

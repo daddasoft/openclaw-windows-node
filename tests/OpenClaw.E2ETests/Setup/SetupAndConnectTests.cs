@@ -99,6 +99,15 @@ public class SetupAndConnectTests
         Assert.Contains("default=openclaw", wslConf.Stdout);
         Assert.Contains("useWindowsTimezone=true", wslConf.Stdout);
 
+        var agentsContext = await _fixture.RunInWslAsync(
+            "cat /home/openclaw/.openclaw/workspace/AGENTS.md",
+            TimeSpan.FromSeconds(15));
+        AssertCommandSucceeded(agentsContext, "read managed Windows node context");
+        Assert.Contains("<!-- BEGIN OPENCLAW WINDOWS NODE CONTEXT: managed by OpenClaw Windows setup -->", agentsContext.Stdout);
+        Assert.Contains("exec host=node", agentsContext.Stdout);
+        Assert.Contains("<!-- END OPENCLAW WINDOWS NODE CONTEXT -->", agentsContext.Stdout);
+        Assert.DoesNotContain("tools.exec.security full", agentsContext.Stdout);
+
         var openClawJsonProbe = await _fixture.RunInWslAsync(
             "paths=$(find /home/openclaw/.openclaw /opt/openclaw /etc/openclaw -type f -name openclaw.json 2>/dev/null | sort); if [ -z \"$paths\" ]; then echo 'OPENCLAW_JSON_PATH:<not-found>'; else for path in $paths; do echo OPENCLAW_JSON_PATH:$path; cat \"$path\"; done; fi",
             TimeSpan.FromSeconds(15));
@@ -152,6 +161,41 @@ public class SetupAndConnectTests
         var identityDir = Path.Combine(_fixture.DataDir, "gateways", gateway.ActiveId);
         Assert.True(Directory.Exists(identityDir), $"Expected identity directory: {identityDir}");
         Assert.Contains(Directory.EnumerateFiles(identityDir), path => Path.GetFileName(path).Contains("device-key", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [E2EFact]
+    public async Task FullSetup_WindowsNodeContext_RemainsIdempotentAfterCrlfEdit()
+    {
+        const string agents = "/home/openclaw/.openclaw/workspace/AGENTS.md";
+        const string beginMarker = "<!-- BEGIN OPENCLAW WINDOWS NODE CONTEXT: managed by OpenClaw Windows setup -->";
+        const string endMarker = "<!-- END OPENCLAW WINDOWS NODE CONTEXT -->";
+        var convert = await _fixture.RunInWslAsync(
+            $"tmp=$(mktemp); {{ printf 'CRLF_SENTINEL\\r\\n'; awk '{{ printf \"%s\\r\\n\", $0 }}' {agents}; }} > \"$tmp\"; mv \"$tmp\" {agents}",
+            TimeSpan.FromSeconds(15),
+            inputViaStdin: true);
+        AssertCommandSucceeded(convert, "convert AGENTS.md to CRLF");
+
+        var config = SetupConfig.LoadFromFile(_fixture.ConfigPath);
+        using var logger = new SetupLogger(filePath: null);
+        using var journal = new TransactionJournal(filePath: null, logger);
+        var context = new SetupContext(
+            config,
+            logger,
+            journal,
+            new CommandRunner(logger),
+            CancellationToken.None,
+            _fixture.DataDir,
+            _fixture.LocalAppDataRoot);
+
+        var result = await new WindowsNodeBootstrapContextStep().ExecuteAsync(context, CancellationToken.None);
+        Assert.True(result.IsSuccess, result.Message);
+
+        var probe = await _fixture.RunInWslAsync(
+            $"awk 'BEGIN {{ b=0; e=0 }} {{ line=$0; sub(/\\r$/, \"\", line); if (line == \"{beginMarker}\") b++; if (line == \"{endMarker}\") e++ }} END {{ print b, e }}' {agents}; grep -q $'CRLF_SENTINEL\\r$' {agents}",
+            TimeSpan.FromSeconds(15),
+            inputViaStdin: true);
+        AssertCommandSucceeded(probe, "verify CRLF context replacement");
+        Assert.Contains("1 1", probe.Stdout);
     }
 
     [E2EFact]
