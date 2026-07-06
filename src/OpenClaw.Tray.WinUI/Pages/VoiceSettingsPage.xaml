@@ -40,14 +40,15 @@
                                     ToolTipService.ToolTip="Refresh assistant status">
                                 <FontIcon Glyph="&#xE72C;" FontSize="14"/>
                             </Button>
-                            <Button x:Name="AssistantStartButton" Click="OnAssistantStartClick"
-                                    Style="{StaticResource AccentButtonStyle}">
+                            <Button x:Uid="VoiceSettingsPage_AssistantStartButton" x:Name="AssistantStartButton"
+                                    Click="OnAssistantStartClick" Style="{StaticResource AccentButtonStyle}">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <FontIcon Glyph="&#xE768;" FontSize="14"/>
                                     <TextBlock x:Uid="VoiceSettingsPage_AssistantStartButtonText" Text="Start"/>
                                 </StackPanel>
                             </Button>
-                            <Button x:Name="AssistantStopButton" Click="OnAssistantStopClick">
+                            <Button x:Uid="VoiceSettingsPage_AssistantStopButton" x:Name="AssistantStopButton"
+                                    Click="OnAssistantStopClick">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <FontIcon Glyph="&#xE71A;" FontSize="14"/>
                                     <TextBlock x:Uid="VoiceSettingsPage_AssistantStopButtonText" Text="Stop"/>
@@ -192,7 +193,7 @@
                     BorderThickness="1" CornerRadius="8" Padding="16">
                 <StackPanel Spacing="8">
                     <TextBlock x:Uid="VoiceSettingsPage_LanguageHeader" x:Name="LanguageHeaderText" Text="Language" Style="{StaticResource BodyStrongTextBlockStyle}"/>
-                    <ComboBox x:Name="LanguageCombo"
+                    <ComboBox x:Uid="VoiceSettingsPage_LanguageCombo" x:Name="LanguageCombo"
                               SelectionChanged="OnLanguageChanged" Width="200">
                         <ComboBoxItem x:Uid="VoiceSettingsPage_LangAuto" Content="Auto-detect" Tag="auto"/>
                         <ComboBoxItem x:Uid="VoiceSettingsPage_LangEn"   Content="English"     Tag="en"/>
