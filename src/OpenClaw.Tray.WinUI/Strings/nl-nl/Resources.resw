@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root xmlns:ns1="urn:schemas-microsoft-com:xml-msdata" xmlns:xs="http://www.w3.org/2001/XMLSchema">
   <xs:schema id="root">
     <xs:element name="root" ns1:IsDataSet="true">
@@ -367,6 +367,9 @@
   </data>
   <data name="Update_Message_Skipped_Debug" xml:space="preserve">
     <value>Updatecontroles zijn uitgeschakeld in debug-builds.</value>
+  </data>
+  <data name="Update_Message_Skipped_Dev" xml:space="preserve">
+    <value>Updatecontroles zijn uitgeschakeld in ontwikkelbuilds.</value>
   </data>
   <data name="Update_OK" xml:space="preserve">
     <value>OK</value>
@@ -844,156 +847,6 @@ Gebruik een van deze opties:
   </data>
   <data name="Toast_ActivityStreamTipButton" xml:space="preserve">
     <value>Activiteitenstroom openen</value>
-  </data>
-  <data name="Setup_Title" xml:space="preserve">
-    <value>OpenClaw Instellen</value>
-  </data>
-  <data name="Setup_StepConnect" xml:space="preserve">
-    <value>Stap 1 van 3 — Verbinden</value>
-  </data>
-  <data name="Setup_ConnectTitle" xml:space="preserve">
-    <value>Verbind met uw gateway</value>
-  </data>
-  <data name="Setup_ConnectDescription" xml:space="preserve">
-    <value>Voer op uw gateway-host (Mac/Linux) deze opdracht uit om een installatiecode te krijgen:</value>
-  </data>
-  <data name="Setup_SetupCodeHeader" xml:space="preserve">
-    <value>Installatiecode</value>
-  </data>
-  <data name="Setup_SetupCodePlaceholder" xml:space="preserve">
-    <value>Plak de installatiecode van uw gateway-dashboard</value>
-  </data>
-  <data name="Setup_PasteSetupButton" xml:space="preserve">
-    <value>Setupcode / QR plakken</value>
-  </data>
-  <data name="Setup_ImportQrButton" xml:space="preserve">
-    <value>QR-afbeelding importeren...</value>
-  </data>
-  <data name="Setup_QrDecoded" xml:space="preserve">
-    <value>✅ QR-afbeelding gedecodeerd — klik op Verbinding testen</value>
-  </data>
-  <data name="Setup_QrDecodeFailed" xml:space="preserve">
-    <value>❌ Geen geldige setup-QR-code gevonden in die afbeelding.</value>
-  </data>
-  <data name="Setup_ClipboardUnsupported" xml:space="preserve">
-    <value>❌ Het klembord bevat geen setupcodetekst of QR-afbeelding.</value>
-  </data>
-  <data name="Setup_ManualEntryToggle" xml:space="preserve">
-    <value>Of voer URL en token handmatig in ▾</value>
-  </data>
-  <data name="Setup_ManualEntryToggleHide" xml:space="preserve">
-    <value>Handmatige invoer verbergen ▴</value>
-  </data>
-  <data name="Setup_GatewayUrlHeader" xml:space="preserve">
-    <value>Gateway-URL</value>
-  </data>
-  <data name="Setup_GatewayUrlPlaceholder" xml:space="preserve">
-    <value>ws://192.168.1.x:18789</value>
-  </data>
-  <data name="Setup_GatewayUrlHint" xml:space="preserve">
-    <value>💡 Accepteert ws://, wss://, http:// of https://</value>
-  </data>
-  <data name="Setup_TokenHeader" xml:space="preserve">
-    <value>Gateway-token</value>
-  </data>
-  <data name="Setup_TokenPlaceholder" xml:space="preserve">
-    <value>Plak hier uw token</value>
-  </data>
-  <data name="Setup_TestButton" xml:space="preserve">
-    <value>Verbinding testen</value>
-  </data>
-  <data name="Setup_Testing" xml:space="preserve">
-    <value>⏳ Verbinden met gateway...</value>
-  </data>
-  <data name="Setup_Connected" xml:space="preserve">
-    <value>✅ Verbonden!</value>
-  </data>
-  <data name="Setup_PairingRequired" xml:space="preserve">
-    <value>✅ Gateway bereikt! Apparaat moet worden goedgekeurd voor koppeling.
-
-Voer op uw gateway-host (Mac/Linux) uit:
-
-  openclaw devices approve {0}</value>
-  </data>
-  <data name="Setup_TokenMismatch" xml:space="preserve">
-    <value>❌ Token komt niet overeen.
-
-💡 Controleer het gateway-verificatietoken:
-  cat ~/.openclaw/openclaw.json | grep token</value>
-  </data>
-  <data name="Setup_OriginNotAllowed" xml:space="preserve">
-    <value>❌ Oorsprong niet toegestaan.
-
-💡 Voeg deze machine toe aan gateway.controlUi.allowedOrigins.</value>
-  </data>
-  <data name="Setup_RateLimited" xml:space="preserve">
-    <value>❌ Te veel verzoeken. Wacht een minuut en probeer opnieuw.</value>
-  </data>
-  <data name="Setup_TimedOut" xml:space="preserve">
-    <value>❌ Time-out. Controleer de URL en of de gateway draait.</value>
-  </data>
-  <data name="Setup_TokenRequired" xml:space="preserve">
-    <value>❌ Voer een token in</value>
-  </data>
-  <data name="Setup_TestFirst" xml:space="preserve">
-    <value>⚠️ Test eerst de verbinding</value>
-  </data>
-  <data name="Setup_CodeDecoded" xml:space="preserve">
-    <value>✅ Installatiecode gedecodeerd — druk op Verbinding testen</value>
-  </data>
-  <data name="Setup_NodeModeTitle" xml:space="preserve">
-    <value>Knooppuntmodus inschakelen (optioneel)</value>
-  </data>
-  <data name="Setup_NodeModeDescription" xml:space="preserve">
-    <value>Knooppuntmodus laat uw Windows-machine taken uitvoeren voor OpenClaw — zoals schermopname, cameratoegang en canvas-tekenen.</value>
-  </data>
-  <data name="Setup_NodeModeSecurityTitle" xml:space="preserve">
-    <value>Schakel knooppuntmodus alleen in voor gateways en agents die u vertrouwt</value>
-  </data>
-  <data name="Setup_NodeModeSecurityMessage" xml:space="preserve">
-    <value>Goedgekeurde agents kunnen lokale opdrachten uitvoeren en toegang krijgen tot ingeschakelde oppervlakken zoals scherm, camera, locatie, browser en canvas. U kunt capaciteitsgroepen later uitschakelen in Instellingen.</value>
-  </data>
-  <data name="Setup_NodeModeToggle" xml:space="preserve">
-    <value>Knooppuntmodus inschakelen</value>
-  </data>
-  <data name="Setup_DeviceIdLoading" xml:space="preserve">
-    <value>Apparaat-ID: laden...</value>
-  </data>
-  <data name="Setup_DeviceIdFallback" xml:space="preserve">
-    <value>Apparaat-ID: (wordt gegenereerd bij eerste verbinding)</value>
-  </data>
-  <data name="Setup_CopyDeviceId" xml:space="preserve">
-    <value>📋 Apparaat-ID kopiëren</value>
-  </data>
-  <data name="Setup_DeviceIdCopied" xml:space="preserve">
-    <value>✅ Gekopieerd!</value>
-  </data>
-  <data name="Setup_ApproveInstructions" xml:space="preserve">
-    <value>Om dit knooppunt goed te keuren, voer uit op uw gateway-host:</value>
-  </data>
-  <data name="Setup_ApproveHint" xml:space="preserve">
-    <value>💡 U kunt de installatie nu voltooien — koppeling gaat op de achtergrond door. U ontvangt een melding wanneer goedgekeurd.</value>
-  </data>
-  <data name="Setup_DoneTitle" xml:space="preserve">
-    <value>🎉 Alles is klaar!</value>
-  </data>
-  <data name="Setup_DoneDescription" xml:space="preserve">
-    <value>OpenClaw Tray zal verbinding maken met uw gateway en beginnen met monitoren.</value>
-  </data>
-  <data name="Setup_BackButton" xml:space="preserve">
-    <value>Vorige</value>
-  </data>
-  <data name="Setup_NextButton" xml:space="preserve">
-    <value>Volgende</value>
-  </data>
-  <data name="Setup_FinishButton" xml:space="preserve">
-    <value>Voltooien</value>
-  </data>
-  <data name="Setup_StepNodeMode" xml:space="preserve">
-    <value>Stap 2 van 3 — Knooppuntmodus</value>
-  </data>
-  <data name="Setup_StepDone" xml:space="preserve">
-    <value>Stap 3 van 3 — Gereed</value>
   </data>
   <data name="SettingsDeveloperModeHeader.Text" xml:space="preserve">
     <value>ONTWIKKELAARSMODUS</value>
@@ -3106,6 +2959,15 @@ Voer op uw gateway-host (Mac/Linux) uit:
   <data name="Chat_Composer_Reasoning_Maximum" xml:space="preserve">
     <value>Maximaal</value>
   </data>
+  <data name="Chat_Composer_Accessibility_Session" xml:space="preserve">
+    <value>Sessie</value>
+  </data>
+  <data name="Chat_Composer_Accessibility_Model" xml:space="preserve">
+    <value>Taalmodel</value>
+  </data>
+  <data name="Chat_Composer_Accessibility_Reasoning" xml:space="preserve">
+    <value>Redenering</value>
+  </data>
   <data name="Chat_Composer_Placeholder_Connected" xml:space="preserve">
     <value>Bericht aan assistent (Enter om te verzenden)</value>
   </data>
@@ -3141,6 +3003,18 @@ Voer op uw gateway-host (Mac/Linux) uit:
   </data>
   <data name="Chat_Composer_AssistantWorking" xml:space="preserve">
     <value>Assistent is bezig…</value>
+  </data>
+  <data name="Chat_Composer_QueuedCountFormat" xml:space="preserve">
+    <value>In wachtrij ({0})</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageAutomationFormat" xml:space="preserve">
+    <value>Bericht in wachtrij: {0}</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageFailedAutomationFormat" xml:space="preserve">
+    <value>Bericht in wachtrij mislukt: {0}</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageFailed" xml:space="preserve">
+    <value>Mislukt</value>
   </data>
   <data name="Chat_Assistant_Action_Copy" xml:space="preserve">
     <value>Bericht kopiëren</value>
@@ -3403,6 +3277,12 @@ Opdrachten worden geblokkeerd zolang sandboxing niet beschikbaar is, omdat strik
   </data>
   <data name="Chat_Notification_SendFailed" xml:space="preserve">
     <value>Verzenden mislukt</value>
+  </data>
+  <data name="Chat_Error_SendReturnedStatusFormat" xml:space="preserve">
+    <value>Gateway heeft verzendstatus '{0}' geretourneerd.</value>
+  </data>
+  <data name="Chat_Error_SendFailedFormat" xml:space="preserve">
+    <value>Verzenden mislukt: {0}</value>
   </data>
   <data name="Chat_Notification_AbortFailed" xml:space="preserve">
     <value>Afbreken mislukt</value>
@@ -4724,6 +4604,9 @@ Opdrachten worden geblokkeerd zolang sandboxing niet beschikbaar is, omdat strik
   <data name="SessionsPage_All.Text" xml:space="preserve">
     <value>Alle</value>
   </data>
+  <data name="SessionsPage_ShowCompleted.Header" xml:space="preserve">
+    <value>Voltooide sessies tonen</value>
+  </data>
   <data name="SessionsPage_GatewayDisconnected.Title" xml:space="preserve">
     <value>Gateway losgekoppeld</value>
   </data>
@@ -5450,6 +5333,9 @@ Controleer of de gateway actief is.</value>
   </data>
   <data name="ConnectionPage_OpenDashboard" xml:space="preserve">
     <value>Dashboard openen</value>
+  </data>
+  <data name="ConnectionPage_GatewayOptionsA11y" xml:space="preserve">
+    <value>Opties voor {0}</value>
   </data>
   <data name="ConnectionPage_DisconnectAction" xml:space="preserve">
     <value>Verbinding verbreken</value>
@@ -6869,5 +6755,53 @@ Het binaire bestand wxc-exec is niet gevonden. {1} Als dit een ontwikkelaarsbuil
   </data>
   <data name="SettingsPage_GatewayInfoLabel_Uptime.Text" xml:space="preserve">
     <value>Uptime</value>
+  </data>
+  <data name="PermissionsPage_NewRuleAction.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Regelactie</value>
+  </data>
+  <data name="SandboxPage_UnavailablePrimaryButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Sandboxactie</value>
+  </data>
+  <data name="SandboxPage_PresetLockedButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Vergrendelde voorinstelling: Geen internet, geen klembord, geen standaardgebruikersmappen</value>
+  </data>
+  <data name="SandboxPage_PresetBalancedButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Aanbevolen voorinstelling: Internet aan, alleen-lezen voor Documenten, Downloads en Bureaublad</value>
+  </data>
+  <data name="SandboxPage_PresetPermissiveButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Onbeveiligde voorinstelling: Internet aan, lezen en schrijven voor Documenten, Downloads en Bureaublad</value>
+  </data>
+  <data name="SandboxPage_DocsAccessCombo.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Toegangsniveau voor Documenten</value>
+  </data>
+  <data name="SandboxPage_DownloadsAccessCombo.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Toegangsniveau voor Downloads</value>
+  </data>
+  <data name="SandboxPage_DesktopAccessCombo.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Toegangsniveau voor Bureaublad</value>
+  </data>
+  <data name="SettingsPage_NotificationSoundComboBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Meldingsgeluid</value>
+  </data>
+  <data name="VoiceSettingsPage_AssistantRefreshButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Status van spraakassistent vernieuwen</value>
+  </data>
+  <data name="VoiceSettingsPage_AssistantStartButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Spraakassistent starten</value>
+  </data>
+  <data name="VoiceSettingsPage_AssistantStopButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Spraakassistent stoppen</value>
+  </data>
+  <data name="VoiceSettingsPage_LanguageCombo.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Spraaktaal</value>
+  </data>
+  <data name="HubWindow_MainNavigation.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Hoofdnavigatie</value>
+  </data>
+  <data name="JsonPreviewSplitter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Formaat van JSON-voorbeeld wijzigen</value>
+  </data>
+  <data name="JsonPreviewSplitter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.LocalizedControlType" xml:space="preserve">
+    <value>scheidingslijn</value>
   </data>
 </root>

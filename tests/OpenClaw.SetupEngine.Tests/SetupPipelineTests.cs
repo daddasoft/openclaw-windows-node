@@ -60,14 +60,32 @@ public class SetupPipelineTests
     {
         var steps = SetupStepFactory.BuildDefaultSteps();
 
-        Assert.Equal(18, steps.Count);
+        Assert.Equal(20, steps.Count);
         Assert.IsType<PreflightOsStep>(steps[0]);
         Assert.IsType<PreflightWslStep>(steps[1]);
         Assert.IsType<CleanupStaleDistroStep>(steps[2]);
         Assert.IsType<CleanupStaleGatewayStep>(steps[3]);
         Assert.Contains(steps, s => s is ValidateWslLockdownStep);
+        var caSyncIndex = steps.FindIndex(s => s is SyncWindowsCaCertsStep);
+        var cliInstallIndex = steps.FindIndex(s => s is InstallCliStep);
+        Assert.Equal(cliInstallIndex - 1, caSyncIndex);
         Assert.Contains(steps, s => s is RunGatewayWizardStep);
+        var pairNodeIndex = steps.FindIndex(s => s is PairNodeStep);
+        Assert.IsType<VerifyEndToEndStep>(steps[pairNodeIndex + 1]);
+        var wizardIndex = steps.FindIndex(s => s is RunGatewayWizardStep);
+        Assert.IsType<WindowsNodeBootstrapContextStep>(steps[wizardIndex + 1]);
         Assert.IsType<StartKeepaliveStep>(steps[^1]);
+    }
+
+    [Fact]
+    public void BuildWizardOnlySteps_FinalizesWindowsNodeContextAfterWizard()
+    {
+        var steps = SetupStepFactory.BuildWizardOnlySteps();
+
+        Assert.Collection(
+            steps,
+            step => Assert.IsType<RunGatewayWizardStep>(step),
+            step => Assert.IsType<WindowsNodeBootstrapContextStep>(step));
     }
 
     [Fact]
@@ -205,6 +223,26 @@ public class SetupPipelineTests
 
         await pipeline.RunAsync(ctx);
         Assert.False(rollbackCalled);
+    }
+
+    [Fact]
+    public async Task RunAsync_StepFails_WithRollbackOverrideDisabled_NoRollback()
+    {
+        var rollbackCalled = false;
+        var config = new SetupConfig { RollbackOnFailure = true };
+        var ctx = CreateContext(config);
+        var pipeline = new SetupPipeline([
+            new MockStep(
+                "refresh",
+                (_, _) => Task.FromResult(StepResult.Fail("refresh failed")),
+                (_, _) => { rollbackCalled = true; return Task.CompletedTask; }),
+        ], rollbackOnFailureOverride: false);
+
+        var result = await pipeline.RunAsync(ctx);
+
+        Assert.Equal(PipelineOutcome.Failed, result.Outcome);
+        Assert.False(rollbackCalled);
+        Assert.True(config.RollbackOnFailure);
     }
 
     [Fact]

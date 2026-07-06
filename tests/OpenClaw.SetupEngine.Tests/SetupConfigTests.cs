@@ -3,6 +3,7 @@ using System.Runtime.Versioning;
 
 namespace OpenClaw.SetupEngine.Tests;
 
+[Collection(EnvironmentVariableCollection.Name)]
 public class SetupConfigTests : IDisposable
 {
     private readonly string _tempDir;
@@ -33,6 +34,9 @@ public class SetupConfigTests : IDisposable
         Assert.Equal("loopback", config.Gateway.Bind);
         Assert.False(config.SkipPermissions);
         Assert.False(config.SkipWizard);
+        Assert.True(config.WindowsNodeContext.Enabled);
+        Assert.Null(config.WindowsNodeContext.WorkspacePath);
+        Assert.Equal(180, config.WindowsNodeContext.TimeoutSeconds);
     }
 
     [Fact]
@@ -205,7 +209,7 @@ public class SetupConfigTests : IDisposable
         var settingsPath = Path.Combine(_tempDir, "settings.json");
         File.WriteAllText(settingsPath, """{"CustomKey": "custom_value", "EnableNodeMode": false, "AutoStart": true, "NodeCameraEnabled": false}""");
 
-        var traySettings = new TraySettingsConfig { EnableNodeMode = true, AutoStart = false };
+        var traySettings = new TraySettingsConfig { EnableNodeMode = true, AutoStart = false, NodeCameraEnabled = false };
         traySettings.MergeIntoSettingsFile(settingsPath);
 
         var result = JsonDocument.Parse(File.ReadAllText(settingsPath));
@@ -213,6 +217,96 @@ public class SetupConfigTests : IDisposable
         Assert.False(result.RootElement.GetProperty("AutoStart").GetBoolean());
         Assert.False(result.RootElement.GetProperty("NodeCameraEnabled").GetBoolean());
         Assert.Equal("custom_value", result.RootElement.GetProperty("CustomKey").GetString());
+    }
+
+    [Fact]
+    public void TraySettingsConfig_ApplyCapabilities_MapsSetupCapabilitiesToRuntimeNodeSettings()
+    {
+        var caps = new CapabilitiesConfig
+        {
+            System = false,
+            Canvas = true,
+            Screen = true,
+            Camera = false,
+            Location = false,
+            Browser = false,
+            Device = true,
+            Tts = true,
+            Stt = false,
+        };
+
+        var traySettings = new TraySettingsConfig();
+        traySettings.ApplyCapabilities(caps);
+
+        Assert.False(traySettings.NodeSystemRunEnabled);
+        Assert.True(traySettings.NodeCanvasEnabled);
+        Assert.True(traySettings.NodeScreenEnabled);
+        Assert.False(traySettings.NodeCameraEnabled);
+        Assert.False(traySettings.NodeLocationEnabled);
+        Assert.False(traySettings.NodeBrowserProxyEnabled);
+        Assert.True(traySettings.NodeTtsEnabled);
+        Assert.False(traySettings.NodeSttEnabled);
+    }
+
+    [Fact]
+    public void SetupReviewSummary_UsesActiveSetupConfig()
+    {
+        var oldData = Environment.GetEnvironmentVariable("OPENCLAW_TRAY_DATA_DIR");
+        var oldLocalData = Environment.GetEnvironmentVariable("OPENCLAW_TRAY_LOCAL_DATA_DIR");
+        try
+        {
+            Environment.SetEnvironmentVariable("OPENCLAW_TRAY_DATA_DIR", Path.Combine(_tempDir, "roaming"));
+            Environment.SetEnvironmentVariable("OPENCLAW_TRAY_LOCAL_DATA_DIR", Path.Combine(_tempDir, "local"));
+            var config = new SetupConfig
+            {
+                DistroName = "CustomClaw",
+                BaseDistro = "Debian",
+                GatewayPort = 19999,
+                Gateway = { Bind = "lan", InstallUrl = "https://example.test/install.sh" }
+            };
+
+            var summary = SetupReviewSummaryBuilder.Build(config);
+
+            Assert.Contains("Debian", summary.DistroTitle);
+            Assert.Contains("CustomClaw", summary.DistroDescription);
+            Assert.Contains("19999", summary.GatewayEndpoint);
+            Assert.Contains("LAN bind enabled", summary.GatewayDescription);
+            Assert.Contains("example.test", summary.InstallerDescription);
+            Assert.Contains("CustomClaw", summary.ExactCommands);
+            Assert.Contains("19999", summary.ExactCommands);
+            Assert.Equal("CustomClaw · LAN:19999", summary.CompletionGatewaySummary);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENCLAW_TRAY_DATA_DIR", oldData);
+            Environment.SetEnvironmentVariable("OPENCLAW_TRAY_LOCAL_DATA_DIR", oldLocalData);
+        }
+    }
+
+    [Fact]
+    public void SetupConfig_UsesBundledDefaultConfig_IsRuntimeOnly()
+    {
+        var config = new SetupConfig { UsesBundledDefaultConfig = true };
+        var path = Path.Combine(_tempDir, "config.json");
+
+        File.WriteAllText(path, JsonSerializer.Serialize(config, SetupConfig.JsonWriteOptions));
+        var roundTripped = SetupConfig.LoadFromFile(path);
+
+        Assert.False(roundTripped.UsesBundledDefaultConfig);
+    }
+
+    [Fact]
+    public void TraySettingsConfig_UpdateAutoStartInSettingsFile_PreservesCapabilitySettings()
+    {
+        var settingsPath = Path.Combine(_tempDir, "settings.json");
+        File.WriteAllText(settingsPath, """{"AutoStart": false, "NodeCameraEnabled": false, "NodeSystemRunEnabled": false}""");
+
+        TraySettingsConfig.UpdateAutoStartInSettingsFile(settingsPath, autoStart: true);
+
+        var result = JsonDocument.Parse(File.ReadAllText(settingsPath));
+        Assert.True(result.RootElement.GetProperty("AutoStart").GetBoolean());
+        Assert.False(result.RootElement.GetProperty("NodeCameraEnabled").GetBoolean());
+        Assert.False(result.RootElement.GetProperty("NodeSystemRunEnabled").GetBoolean());
     }
 
     [Fact]
@@ -226,6 +320,18 @@ public class SetupConfigTests : IDisposable
         Assert.Contains("settings.json is corrupt", ex.Message);
         Assert.Equal("{not json", File.ReadAllText(settingsPath));
         Assert.Single(Directory.EnumerateFiles(_tempDir, "settings.json.corrupt-*.bak"));
+    }
+
+    [Fact]
+    public void TraySettingsConfig_CorruptExistingFile_BackupNamesDoNotCollide()
+    {
+        var settingsPath = Path.Combine(_tempDir, "settings.json");
+        File.WriteAllText(settingsPath, "{not json");
+
+        Assert.Throws<InvalidDataException>(() => new TraySettingsConfig().MergeIntoSettingsFile(settingsPath));
+        Assert.Throws<InvalidDataException>(() => TraySettingsConfig.UpdateAutoStartInSettingsFile(settingsPath, autoStart: true));
+
+        Assert.Equal(2, Directory.EnumerateFiles(_tempDir, "settings.json.corrupt-*.bak").Count());
     }
 
     [Fact]
@@ -286,6 +392,19 @@ public class SetupConfigTests : IDisposable
     {
         var pairing = new PairingConfig();
         Assert.Equal(60, pairing.TimeoutSeconds);
+    }
+
+    [Fact]
+    public void WindowsNodeContextSection_ManagedBlock_ContainsMarkersAndPayload()
+    {
+        var block = WindowsNodeContextSection.ManagedBlock;
+
+        Assert.StartsWith(WindowsNodeContextSection.BeginMarker + "\n", block);
+        Assert.Contains("This WSL gateway may be paired", block);
+        Assert.Contains("exec host=node", block);
+        Assert.DoesNotContain("tools.exec.security full", block);
+        Assert.DoesNotContain("tools.exec.ask off", block);
+        Assert.EndsWith("\n" + WindowsNodeContextSection.EndMarker, block);
     }
 
     [Fact]

@@ -275,7 +275,36 @@ jobs:
         -r win-x64
         --verbosity normal
         --results-directory TestResults\TrayUI
-        --logger trx;LogFileName=OpenClaw.Tray.UITests.trx"
+        --logger trx;LogFileName=OpenClaw.Tray.UITests.trx
+        --filter Category!=Accessibility"
+
+    # Accessibility Insights CI pass: scans each page in the real app process.
+    - name: Run Accessibility Tests (Axe.Windows)
+      id: a11y
+      run: >
+        dotnet test tests/OpenClaw.Tray.UITests
+        --no-build
+        -c Debug
+        -r win-x64
+        --verbosity normal
+        --results-directory TestResults\Accessibility
+        --logger "trx;LogFileName=Accessibility.trx"
+        --filter Category=Accessibility
+
+    - name: Accessibility test summary
+      if: always() && steps.a11y.outcome != 'skipped'
+      shell: pwsh
+      run: |
+        if ("${{ steps.a11y.outcome }}" -eq "failure") {
+          "### :x: Accessibility violations detected" >> $env:GITHUB_STEP_SUMMARY
+          "" >> $env:GITHUB_STEP_SUMMARY
+          "Axe.Windows scans found WCAG violations in one or more pages." >> $env:GITHUB_STEP_SUMMARY
+          "See the `Accessibility.trx` artifact for details." >> $env:GITHUB_STEP_SUMMARY
+        } else {
+          "### :white_check_mark: Accessibility scans passed" >> $env:GITHUB_STEP_SUMMARY
+          "" >> $env:GITHUB_STEP_SUMMARY
+          "All pages passed Axe.Windows accessibility validation." >> $env:GITHUB_STEP_SUMMARY
+        }
 
     - name: Upload Test Results
       if: always()

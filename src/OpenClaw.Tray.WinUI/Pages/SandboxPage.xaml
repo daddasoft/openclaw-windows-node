@@ -27,6 +27,7 @@
                 <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
                     <TextBlock x:Uid="SandboxPage_NodeSandboxIsOn" x:Name="SandboxStatusTitle"
                                Text="Node sandbox is on"
+                               AutomationProperties.AutomationId="SandboxPageMarker"
                                Style="{StaticResource TitleTextBlockStyle}"
                                TextWrapping="Wrap" />
                     <TextBlock x:Uid="SandboxPage_ProgramsTheAgentRuns" x:Name="SandboxStatusSubtext"
@@ -54,7 +55,9 @@
                  scope-clarity InfoBar and the separate "How sandboxing works"
                  ContentDialog — the architectural breakdown of which execution
                  paths are contained vs not is inline, on-demand. -->
-            <Expander HorizontalAlignment="Stretch"
+            <Expander x:Name="ScopeExpander"
+                      AutomationProperties.LabeledBy="{Binding ElementName=ScopeExpanderLabel}"
+                      HorizontalAlignment="Stretch"
                       HorizontalContentAlignment="Stretch"
                       IsExpanded="False">
                 <Expander.Header>
@@ -68,7 +71,7 @@
                                   Glyph="&#xE946;"
                                   VerticalAlignment="Center" />
                         <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
-                            <TextBlock x:Uid="SandboxPage_WhatGetsContained" Text="What gets contained"
+                            <TextBlock x:Uid="SandboxPage_WhatGetsContained" x:Name="ScopeExpanderLabel" Text="What gets contained"
                                        Style="{StaticResource BodyStrongTextBlockStyle}" />
                             <TextBlock x:Uid="SandboxPage_SeeWhichCommandsThis" Text="See which commands this page covers — and which need different controls."
                                        Style="{StaticResource CaptionTextBlockStyle}"
@@ -125,7 +128,8 @@
                     <StackPanel Spacing="8" Margin="0,4,0,12">
                         <TextBlock x:Name="UnavailableActionMessage" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button x:Name="UnavailablePrimaryButton" Click="OnUnavailableActionClick" Style="{ThemeResource AccentButtonStyle}" />
+                            <Button x:Uid="SandboxPage_UnavailablePrimaryButton" x:Name="UnavailablePrimaryButton"
+                                    Click="OnUnavailableActionClick" Style="{ThemeResource AccentButtonStyle}" />
                             <HyperlinkButton x:Uid="SandboxPage_LearnMoreAboutMXC" Content="Learn more about MXC sandboxing"
                                              NavigateUri="https://github.com/microsoft/mxc" />
                         </StackPanel>
@@ -154,7 +158,7 @@
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
 
-                        <Button x:Name="PresetLockedButton"
+                        <Button x:Uid="SandboxPage_PresetLockedButton" x:Name="PresetLockedButton"
                                 Grid.Column="0"
                                 HorizontalAlignment="Stretch"
                                 HorizontalContentAlignment="Stretch"
@@ -175,7 +179,7 @@
                             </StackPanel>
                         </Button>
 
-                        <Button x:Name="PresetBalancedButton"
+                        <Button x:Uid="SandboxPage_PresetBalancedButton" x:Name="PresetBalancedButton"
                                 Grid.Column="1"
                                 HorizontalAlignment="Stretch"
                                 HorizontalContentAlignment="Stretch"
@@ -196,7 +200,7 @@
                             </StackPanel>
                         </Button>
 
-                        <Button x:Name="PresetPermissiveButton"
+                        <Button x:Uid="SandboxPage_PresetPermissiveButton" x:Name="PresetPermissiveButton"
                                 Grid.Column="2"
                                 HorizontalAlignment="Stretch"
                                 HorizontalContentAlignment="Stretch"
@@ -253,7 +257,7 @@
                             </Grid.RowDefinitions>
 
                             <TextBlock x:Uid="SandboxPage_Documents" Grid.Row="0" Grid.Column="0" Text="Documents" VerticalAlignment="Center"/>
-                            <ComboBox x:Name="DocsAccessCombo" Grid.Row="0" Grid.Column="1"
+                            <ComboBox x:Uid="SandboxPage_DocsAccessCombo" x:Name="DocsAccessCombo" Grid.Row="0" Grid.Column="1"
                                       HorizontalAlignment="Stretch"
                                       SelectionChanged="OnDocsAccessChanged">
                                 <ComboBoxItem x:Uid="SandboxPage_Blocked" Content="Blocked" Tag="None" />
@@ -262,7 +266,7 @@
                             </ComboBox>
 
                             <TextBlock x:Uid="SandboxPage_Downloads" Grid.Row="1" Grid.Column="0" Text="Downloads" VerticalAlignment="Center"/>
-                            <ComboBox x:Name="DownloadsAccessCombo" Grid.Row="1" Grid.Column="1"
+                            <ComboBox x:Uid="SandboxPage_DownloadsAccessCombo" x:Name="DownloadsAccessCombo" Grid.Row="1" Grid.Column="1"
                                       HorizontalAlignment="Stretch"
                                       SelectionChanged="OnDownloadsAccessChanged">
                                 <ComboBoxItem x:Uid="SandboxPage_Blocked2" Content="Blocked" Tag="None" />
@@ -271,7 +275,7 @@
                             </ComboBox>
 
                             <TextBlock x:Uid="SandboxPage_Desktop" Grid.Row="2" Grid.Column="0" Text="Desktop" VerticalAlignment="Center"/>
-                            <ComboBox x:Name="DesktopAccessCombo" Grid.Row="2" Grid.Column="1"
+                            <ComboBox x:Uid="SandboxPage_DesktopAccessCombo" x:Name="DesktopAccessCombo" Grid.Row="2" Grid.Column="1"
                                       HorizontalAlignment="Stretch"
                                       SelectionChanged="OnDesktopAccessChanged">
                                 <ComboBoxItem x:Uid="SandboxPage_Blocked3" Content="Blocked" Tag="None" />

@@ -232,20 +232,17 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
     // crash log, exec approvals, and the single-instance mutex name all derive from it.
     private static readonly string? DataDirOverride =
         Environment.GetEnvironmentVariable("OPENCLAW_TRAY_DATA_DIR") is { Length: > 0 } v ? v : null;
-    private static readonly string DataPath = DataDirOverride
-        ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "OpenClawTray");
+    private static readonly string DataPath = AppIdentity.ResolveLocalDataDirectory();
     private static readonly string DeepLinkPipeName =
         DeepLinkSecurityPolicy.BuildCurrentUserScopedPipeName(DataPath);
-    // Operator/node identity store. In normal installs this is %APPDATA%\OpenClawTray.
+    // Operator/node identity store. Normal installs use the build variant's roaming data folder.
     // Isolated test/dev runs set OPENCLAW_TRAY_DATA_DIR to the direct OpenClaw data
     // folder, and SetupEngine/GatewayRegistry write per-gateway identities there.
     private static readonly string IdentityDataPath = DataDirOverride
         ?? Path.Combine(
             Environment.GetEnvironmentVariable("OPENCLAW_TRAY_APPDATA_DIR")
                 ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "OpenClawTray");
+            AppIdentity.DataDirectoryName);
     private readonly AppCrashLogger _crashLogger = new(Path.Combine(DataPath, "crash.log"));
     private static readonly AppRunMarker s_runMarker = new(Path.Combine(DataPath, "run.marker"));
 
@@ -331,6 +328,13 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
         _crashLogger.Log("UnhandledException", e.Exception);
         e.Handled = true; // Try to prevent crash
     }
+
+    /// <summary>
+    /// Returns true if <paramref name="arg"/> is a deep link for this build variant.
+    /// Release and dev schemes stay disjoint so one install cannot steal the other's activation.
+    /// </summary>
+    private static bool IsDeepLinkArg(string arg) =>
+        DeepLinkParser.ParseDeepLink(arg, AppIdentity.ProtocolScheme) != null;
 
     private void OnDomainUnhandledException(object sender, System.UnhandledExceptionEventArgs e)
     {
@@ -424,17 +428,17 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
         // two test runs against the same data dir would otherwise pick different
         // mutex names — and `Math.Abs(int.MinValue)` overflows. Use a stable
         // SHA-256 prefix instead.
-        // NOTE: The bare "OpenClawTray" mutex name is also referenced by
-        // installer.iss `AppMutex=` for install/uninstall race coordination
-        // (round 2, Scott #5). The suffixed test-isolation variant is
+        // NOTE: The build variant's bare mutex name is also referenced by
+        // installer.iss `AppMutex=` for install/uninstall race coordination.
+        // The suffixed test-isolation variant is
         // intentionally not covered by AppMutex — production installs only
         // ever use the unsuffixed name.
-        var mutexName = "OpenClawTray";
+        var mutexName = AppIdentity.MutexBaseName;
         if (DataDirOverride is not null)
         {
             var hash = System.Security.Cryptography.SHA256.HashData(
                 System.Text.Encoding.UTF8.GetBytes(DataDirOverride));
-            mutexName = $"OpenClawTray-{Convert.ToHexString(hash, 0, 4)}";
+            mutexName = $"{AppIdentity.MutexBaseName}-{Convert.ToHexString(hash, 0, 4)}";
         }
         _mutex = new Mutex(true, mutexName, out bool createdNew);
         var ownsMutex = createdNew;
@@ -456,10 +460,10 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
         {
             // Forward deep link args to running instance (command-line or protocol activation)
             var deepLink = protocolUri
-                ?? (_startupArgs.Length > 1 && _startupArgs[1].StartsWith("openclaw://", StringComparison.OrdinalIgnoreCase)
+                ?? (_startupArgs.Length > 1 && IsDeepLinkArg(_startupArgs[1])
                     ? _startupArgs[1] : null)
                 ?? (string.Equals(_postSetupLaunch, "chat", StringComparison.OrdinalIgnoreCase)
-                    ? "openclaw://chat" : null);
+                    ? $"{AppIdentity.ProtocolScheme}://chat" : null);
             if (deepLink != null)
             {
                 SendDeepLinkToRunningInstance(deepLink);
@@ -539,8 +543,9 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
             useSshTunnel = _settings.UseSshTunnel
         });
 
-        // Register URI scheme on first run
-        DeepLinkHandler.RegisterUriScheme();
+        // Isolated test instances must not replace the user's installed protocol handler.
+        if (DataDirOverride is null)
+            DeepLinkHandler.RegisterUriScheme();
 
         // Anchor the WinUI runtime so transient windows (UpdateDialog,
         // setup wizard, etc.) don't terminate the process when closed.
@@ -720,7 +725,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
 
         // Process startup deep link (command-line or MSIX protocol activation)
         var startupDeepLink = _pendingProtocolUri
-            ?? (_startupArgs.Length > 1 && _startupArgs[1].StartsWith("openclaw://", StringComparison.OrdinalIgnoreCase)
+            ?? (_startupArgs.Length > 1 && IsDeepLinkArg(_startupArgs[1])
                 ? _startupArgs[1] : null);
         if (!setupShownDuringStartup && startupDeepLink != null)
         {
@@ -728,7 +733,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
         }
         else if (!setupShownDuringStartup && string.Equals(_postSetupLaunch, "chat", StringComparison.OrdinalIgnoreCase))
         {
-            await HandleDeepLinkAsync("openclaw://chat");
+            await HandleDeepLinkAsync($"{AppIdentity.ProtocolScheme}://chat");
         }
 
         Logger.Info("Application started (WinUI 3)");
@@ -1262,7 +1267,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
         var root = _keepAliveWindow?.Content as FrameworkElement;
         if (root?.XamlRoot == null)
         {
-            Logger.Warn($"Cannot confirm deep link action without XAML root: {DeepLinkSecurityPolicy.RedactForLog($"openclaw://{result.Path}")}");
+            Logger.Warn($"Cannot confirm deep link action without XAML root: {DeepLinkSecurityPolicy.RedactForLog($"{AppIdentity.ProtocolScheme}://{result.Path}")}");
             return false;
         }
 
@@ -2742,6 +2747,8 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
         // if the user enabled "Read responses aloud".
         if (notification.IsChat && !string.IsNullOrEmpty(notification.Message))
         {
+            var speechText = ChatNotificationSpeechText.Resolve(notification);
+
             // Suppress TTS/voice overlay when the user has aborted the response.
             if (ChatProvider?.IsResponseSuppressed == true)
                 return;
@@ -2762,7 +2769,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
             // TTS: read response aloud whenever the toggle is on (any chat surface).
             if (_settings?.VoiceTtsEnabled == true)
             {
-                _ = (_chatCoordinator?.SpeakResponseAsync(notification.Message) ?? Task.CompletedTask);
+                _ = (_chatCoordinator?.SpeakResponseAsync(speechText) ?? Task.CompletedTask);
             }
         }
 
@@ -3699,28 +3706,42 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
         await EnsureSetupWindowAsync();
     }
 
-    private async Task<(SetupWindow? Window, bool CreatedNew)> EnsureSetupWindowAsync()
+    private async Task<(SetupWindow? Window, bool CreatedNew)> EnsureSetupWindowAsync(bool startAtGatewayInstalledMilestone = false)
     {
         if (_settings == null)
             return (null, false);
 
-        if (_setupWindow != null)
+        while (_setupWindow != null)
         {
             var existingSetupWindow = _setupWindow;
             await existingSetupWindow.WaitForInitialContentReadyAsync();
-            if (ReferenceEquals(_setupWindow, existingSetupWindow) && !existingSetupWindow.IsClosed)
-                existingSetupWindow.BringToFrontForSetupLaunch();
-            return (existingSetupWindow, false);
+            if (!existingSetupWindow.IsClosed)
+            {
+                if (ReferenceEquals(_setupWindow, existingSetupWindow))
+                    existingSetupWindow.BringToFrontForSetupLaunch();
+                return (existingSetupWindow, false);
+            }
+
+            await existingSetupWindow.CleanupCompleted;
+            if (ReferenceEquals(_setupWindow, existingSetupWindow))
+                _setupWindow = null;
         }
 
         try
         {
-            var setupWindow = new SetupWindow();
+            var setupWindow = new SetupWindow(
+                startAtGatewayInstalledMilestone: startAtGatewayInstalledMilestone,
+                dataDir: AppIdentity.ResolveRoamingDataDirectory(),
+                localDataDir: AppIdentity.ResolveSetupLocalDataDirectory(),
+                distroNameOverride: AppIdentity.SetupDistroName,
+                gatewayPortOverride: AppIdentity.SetupGatewayPort);
+            setupWindow.Title = AppIdentity.DecorateWindowTitle("OpenClaw Setup");
             _setupWindow = setupWindow;
             setupWindow.AdvancedSetupRequested += OnSetupAdvancedSetupRequested;
             setupWindow.SetupCompleted += OnSetupCompleted;
-            setupWindow.Closed += (_, _) =>
+            setupWindow.Closed += async (_, _) =>
             {
+                await setupWindow.CleanupCompleted;
                 if (ReferenceEquals(_setupWindow, setupWindow))
                     _setupWindow = null;
             };
@@ -3741,27 +3762,20 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
 
     private async Task ShowGatewayWizardAsync()
     {
-        var (setupWindow, createdNew) = await EnsureSetupWindowAsync();
+        var (setupWindow, createdNew) = await EnsureSetupWindowAsync(startAtGatewayInstalledMilestone: true);
         if (setupWindow == null)
             return;
 
-        // Only steer a freshly created setup window to the gateway wizard. An
-        // already-open setup window may be mid-install on ProgressPage, whose
-        // Unloaded handler cancels the running setup pipeline — navigating it
-        // away would abort an in-progress install. In that case leave the
-        // existing window on its current page (already brought to the front).
         if (!createdNew)
         {
-            Logger.Info("Setup window already open; skipping direct gateway wizard navigation to avoid interrupting active setup");
+            if (setupWindow.TryNavigateToGatewayInstalledMilestone())
+                Logger.Info("Setup window already open; switched to direct OpenClaw onboard handoff");
+            else
+                Logger.Info("Setup window already open; leaving current setup page visible to avoid interrupting active setup");
             return;
         }
 
         await setupWindow.WaitForInitialContentReadyAsync();
-        if (ReferenceEquals(_setupWindow, setupWindow) && !setupWindow.IsClosed)
-        {
-            if (!setupWindow.TryNavigateToWizard())
-                Logger.Warn("Setup window is not ready for direct gateway wizard navigation; leaving current setup page visible");
-        }
     }
 
     private void OnSetupAdvancedSetupRequested(object? sender, EventArgs e)
@@ -4229,7 +4243,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
 
     private async Task HandleDeepLinkAsync(string uri)
     {
-        var result = DeepLinkParser.ParseDeepLink(uri);
+        var result = DeepLinkParser.ParseDeepLink(uri, AppIdentity.ProtocolScheme);
         if (result == null)
         {
             Logger.Warn($"Rejected invalid deep link: {DeepLinkSecurityPolicy.RedactForLog(uri)}");
@@ -4330,7 +4344,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
                 return;
             }
 
-            if (DeepLinkParser.ParseDeepLink(uri) == null)
+            if (DeepLinkParser.ParseDeepLink(uri, AppIdentity.ProtocolScheme) == null)
             {
                 Logger.Warn($"Rejected invalid deep link before IPC forwarding: {DeepLinkSecurityPolicy.RedactForLog(uri)}");
                 return;
@@ -4388,6 +4402,14 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
             _globalHotkey = null;
         });
 
+        // Stop chat first so provider event handlers cannot drain client-only
+        // queued prompts while the gateway connection is shutting down.
+        SafeShutdownStep("chat coordinator", () =>
+        {
+            _chatCoordinator?.Dispose();
+            _chatCoordinator = null;
+        });
+
         // Dispose runtime services
         var connectionManager = _connectionManager;
         if (connectionManager != null)
@@ -4398,12 +4420,6 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
             });
             _connectionManager = null;
         }
-
-        SafeShutdownStep("chat coordinator", () =>
-        {
-            _chatCoordinator?.Dispose();
-            _chatCoordinator = null;
-        });
 
         var nodeService = _nodeService;
         if (nodeService != null)

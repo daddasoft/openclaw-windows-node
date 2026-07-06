@@ -51,6 +51,7 @@
     <Compile Include="..\..\src\OpenClaw.Tray.WinUI\Services\DiagnosticsLogTailReader.cs" Link="Services\DiagnosticsLogTailReader.cs" />
     <Compile Include="..\..\src\OpenClaw.Tray.WinUI\Services\DiagnosticsBundleBuilder.cs" Link="Services\DiagnosticsBundleBuilder.cs" />
     <Compile Include="..\..\src\OpenClaw.Tray.WinUI\Services\SettingsManager.cs" Link="Services\SettingsManager.cs" />
+    <Compile Include="..\..\src\OpenClaw.Tray.WinUI\Services\SessionVisibilityFilter.cs" Link="Services\SessionVisibilityFilter.cs" />
     <Compile Include="..\..\src\OpenClaw.Tray.WinUI\Services\OnboardingChatBootstrapper.cs" Link="Services\OnboardingChatBootstrapper.cs" />
     <Compile Include="..\..\src\OpenClaw.Tray.WinUI\Services\StartupSetupState.cs" Link="Services\StartupSetupState.cs" />
     <Compile Include="..\..\src\OpenClaw.Tray.WinUI\Services\SetupExistingGatewayClassifier.cs" Link="Services\SetupExistingGatewayClassifier.cs" />
@@ -72,6 +73,7 @@
     <Compile Include="..\..\src\OpenClaw.Tray.WinUI\Services\ToastActivationRouter.cs" Link="Services\ToastActivationRouter.cs" />
     <Compile Include="..\..\src\OpenClaw.Tray.WinUI\Services\AppNotificationService.cs" Link="Services\AppNotificationService.cs" />
     <Compile Include="..\..\src\OpenClaw.Tray.WinUI\Services\AppNotificationMapper.cs" Link="Services\AppNotificationMapper.cs" />
+    <Compile Include="..\..\src\OpenClaw.Tray.WinUI\Services\ChatNotificationSpeechText.cs" Link="Services\ChatNotificationSpeechText.cs" />
     <Compile Include="..\..\src\OpenClaw.Tray.WinUI\Services\AppNotificationPublisher.cs" Link="Services\AppNotificationPublisher.cs" />
     <Compile Include="..\..\src\OpenClaw.Tray.WinUI\Services\ConnectionStatusPresenter.cs" Link="Services\ConnectionStatusPresenter.cs" />
     <Compile Include="..\..\src\OpenClaw.Tray.WinUI\Services\McpRuntimeStatePolicy.cs" Link="Services\McpRuntimeStatePolicy.cs" />
@@ -82,6 +84,7 @@
     <Compile Include="..\..\src\OpenClaw.Tray.WinUI\Helpers\GatewayDashboardUrlBuilder.cs" Link="Helpers\GatewayDashboardUrlBuilder.cs" />
     <Compile Include="..\..\src\OpenClaw.Tray.WinUI\Helpers\CommandCenterTextHelper.cs" Link="Helpers\CommandCenterTextHelper.cs" />
     <Compile Include="..\..\src\OpenClaw.Tray.WinUI\Helpers\Win32FilePickerHelper.cs" Link="Helpers\Win32FilePickerHelper.cs" />
+    <Compile Include="..\..\src\OpenClaw.Tray.WinUI\AppIdentity.cs" Link="AppIdentity.cs" />
     <Compile Include="..\..\src\OpenClaw.Tray.WinUI\Services\TrayStateSnapshot.cs" Link="Services\TrayStateSnapshot.cs" />
     <Compile Include="..\..\src\OpenClaw.Tray.WinUI\Services\TrayTooltipBuilder.cs" Link="Services\TrayTooltipBuilder.cs" />
     <Compile Include="..\..\src\OpenClaw.Tray.WinUI\Services\TrayMenuSnapshot.cs" Link="Services\TrayMenuSnapshot.cs" />

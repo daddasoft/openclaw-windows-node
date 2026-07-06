@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root xmlns:ns1="urn:schemas-microsoft-com:xml-msdata" xmlns:xs="http://www.w3.org/2001/XMLSchema">
   <xs:schema id="root">
     <xs:element name="root" ns1:IsDataSet="true">
@@ -366,6 +366,9 @@
   </data>
   <data name="Update_Message_Skipped_Debug" xml:space="preserve">
     <value>调试版本已禁用更新检查。</value>
+  </data>
+  <data name="Update_Message_Skipped_Dev" xml:space="preserve">
+    <value>开发版本已禁用更新检查。</value>
   </data>
   <data name="Update_OK" xml:space="preserve">
     <value>确定</value>
@@ -843,156 +846,6 @@
   </data>
   <data name="Toast_ActivityStreamTipButton" xml:space="preserve">
     <value>打开活动流</value>
-  </data>
-  <data name="Setup_Title" xml:space="preserve">
-    <value>OpenClaw 设置</value>
-  </data>
-  <data name="Setup_StepConnect" xml:space="preserve">
-    <value>第 1 步（共 3 步）— 连接</value>
-  </data>
-  <data name="Setup_ConnectTitle" xml:space="preserve">
-    <value>连接到您的网关</value>
-  </data>
-  <data name="Setup_ConnectDescription" xml:space="preserve">
-    <value>在您的网关主机（Mac/Linux）上运行以下命令获取设置码：</value>
-  </data>
-  <data name="Setup_SetupCodeHeader" xml:space="preserve">
-    <value>设置码</value>
-  </data>
-  <data name="Setup_SetupCodePlaceholder" xml:space="preserve">
-    <value>粘贴来自网关仪表板的设置码</value>
-  </data>
-  <data name="Setup_PasteSetupButton" xml:space="preserve">
-    <value>粘贴设置码 / QR</value>
-  </data>
-  <data name="Setup_ImportQrButton" xml:space="preserve">
-    <value>导入 QR 图片...</value>
-  </data>
-  <data name="Setup_QrDecoded" xml:space="preserve">
-    <value>✅ QR 图片已解码 — 请点击"测试连接"</value>
-  </data>
-  <data name="Setup_QrDecodeFailed" xml:space="preserve">
-    <value>❌ 无法在该图片中找到有效的设置 QR 码。</value>
-  </data>
-  <data name="Setup_ClipboardUnsupported" xml:space="preserve">
-    <value>❌ 剪贴板不包含设置码文本或 QR 图片。</value>
-  </data>
-  <data name="Setup_ManualEntryToggle" xml:space="preserve">
-    <value>或手动输入 URL 和令牌 ▾</value>
-  </data>
-  <data name="Setup_ManualEntryToggleHide" xml:space="preserve">
-    <value>隐藏手动输入 ▴</value>
-  </data>
-  <data name="Setup_GatewayUrlHeader" xml:space="preserve">
-    <value>网关地址</value>
-  </data>
-  <data name="Setup_GatewayUrlPlaceholder" xml:space="preserve">
-    <value>ws://192.168.1.x:18789</value>
-  </data>
-  <data name="Setup_GatewayUrlHint" xml:space="preserve">
-    <value>💡 支持 ws://、wss://、http:// 或 https://</value>
-  </data>
-  <data name="Setup_TokenHeader" xml:space="preserve">
-    <value>网关令牌</value>
-  </data>
-  <data name="Setup_TokenPlaceholder" xml:space="preserve">
-    <value>在此粘贴您的令牌</value>
-  </data>
-  <data name="Setup_TestButton" xml:space="preserve">
-    <value>测试连接</value>
-  </data>
-  <data name="Setup_Testing" xml:space="preserve">
-    <value>⏳ 正在连接网关...</value>
-  </data>
-  <data name="Setup_Connected" xml:space="preserve">
-    <value>✅ 连接成功！</value>
-  </data>
-  <data name="Setup_PairingRequired" xml:space="preserve">
-    <value>✅ 已连接到网关！设备需要配对批准。
-
-在您的网关主机（Mac/Linux）上运行：
-
-  openclaw devices approve {0}</value>
-  </data>
-  <data name="Setup_TokenMismatch" xml:space="preserve">
-    <value>❌ 令牌不匹配。
-
-💡 检查网关认证令牌：
-  cat ~/.openclaw/openclaw.json | grep token</value>
-  </data>
-  <data name="Setup_OriginNotAllowed" xml:space="preserve">
-    <value>❌ 来源不被允许。
-
-💡 将此机器添加到 gateway.controlUi.allowedOrigins。</value>
-  </data>
-  <data name="Setup_RateLimited" xml:space="preserve">
-    <value>❌ 请求过于频繁。请等待一分钟后重试。</value>
-  </data>
-  <data name="Setup_TimedOut" xml:space="preserve">
-    <value>❌ 连接超时。请检查 URL 和网关是否正在运行。</value>
-  </data>
-  <data name="Setup_TokenRequired" xml:space="preserve">
-    <value>❌ 请输入令牌</value>
-  </data>
-  <data name="Setup_TestFirst" xml:space="preserve">
-    <value>⚠️ 请先测试连接</value>
-  </data>
-  <data name="Setup_CodeDecoded" xml:space="preserve">
-    <value>✅ 设置码已解码 — 请点击"测试连接"</value>
-  </data>
-  <data name="Setup_NodeModeTitle" xml:space="preserve">
-    <value>启用节点模式（可选）</value>
-  </data>
-  <data name="Setup_NodeModeDescription" xml:space="preserve">
-    <value>节点模式允许您的 Windows 电脑为 OpenClaw 执行任务 — 如屏幕截图、摄像头访问和画布绘制。</value>
-  </data>
-  <data name="Setup_NodeModeSecurityTitle" xml:space="preserve">
-    <value>仅为您信任的网关和代理启用节点模式</value>
-  </data>
-  <data name="Setup_NodeModeSecurityMessage" xml:space="preserve">
-    <value>已批准的代理可以运行本地命令，并可能访问已启用的设备表面，例如屏幕、摄像头、位置、浏览器和画布。您稍后可以在设置中禁用能力组。</value>
-  </data>
-  <data name="Setup_NodeModeToggle" xml:space="preserve">
-    <value>启用节点模式</value>
-  </data>
-  <data name="Setup_DeviceIdLoading" xml:space="preserve">
-    <value>设备 ID：加载中...</value>
-  </data>
-  <data name="Setup_DeviceIdFallback" xml:space="preserve">
-    <value>设备 ID：（将在首次连接时生成）</value>
-  </data>
-  <data name="Setup_CopyDeviceId" xml:space="preserve">
-    <value>📋 复制设备 ID</value>
-  </data>
-  <data name="Setup_DeviceIdCopied" xml:space="preserve">
-    <value>✅ 已复制！</value>
-  </data>
-  <data name="Setup_ApproveInstructions" xml:space="preserve">
-    <value>要批准此节点，请在网关主机上运行：</value>
-  </data>
-  <data name="Setup_ApproveHint" xml:space="preserve">
-    <value>💡 您可以现在完成设置 — 配对将在后台继续。获得批准后会收到通知。</value>
-  </data>
-  <data name="Setup_DoneTitle" xml:space="preserve">
-    <value>🎉 一切就绪！</value>
-  </data>
-  <data name="Setup_DoneDescription" xml:space="preserve">
-    <value>OpenClaw 托盘将连接到您的网关并开始监控。</value>
-  </data>
-  <data name="Setup_BackButton" xml:space="preserve">
-    <value>上一步</value>
-  </data>
-  <data name="Setup_NextButton" xml:space="preserve">
-    <value>下一步</value>
-  </data>
-  <data name="Setup_FinishButton" xml:space="preserve">
-    <value>完成</value>
-  </data>
-  <data name="Setup_StepNodeMode" xml:space="preserve">
-    <value>第 2 步（共 3 步）— 节点模式</value>
-  </data>
-  <data name="Setup_StepDone" xml:space="preserve">
-    <value>第 3 步（共 3 步）— 完成</value>
   </data>
   <data name="SettingsDeveloperModeHeader.Text" xml:space="preserve">
     <value>开发者模式</value>
@@ -3105,6 +2958,15 @@
   <data name="Chat_Composer_Reasoning_Maximum" xml:space="preserve">
     <value>最大</value>
   </data>
+  <data name="Chat_Composer_Accessibility_Session" xml:space="preserve">
+    <value>会话</value>
+  </data>
+  <data name="Chat_Composer_Accessibility_Model" xml:space="preserve">
+    <value>模型</value>
+  </data>
+  <data name="Chat_Composer_Accessibility_Reasoning" xml:space="preserve">
+    <value>推理</value>
+  </data>
   <data name="Chat_Composer_Placeholder_Connected" xml:space="preserve">
     <value>给助手发送消息（按 Enter 发送）</value>
   </data>
@@ -3140,6 +3002,18 @@
   </data>
   <data name="Chat_Composer_AssistantWorking" xml:space="preserve">
     <value>助手正在工作…</value>
+  </data>
+  <data name="Chat_Composer_QueuedCountFormat" xml:space="preserve">
+    <value>已排队 ({0})</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageAutomationFormat" xml:space="preserve">
+    <value>已排队消息：{0}</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageFailedAutomationFormat" xml:space="preserve">
+    <value>已排队消息失败：{0}</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageFailed" xml:space="preserve">
+    <value>失败</value>
   </data>
   <data name="Chat_Assistant_Action_Copy" xml:space="preserve">
     <value>复制消息</value>
@@ -3402,6 +3276,12 @@
   </data>
   <data name="Chat_Notification_SendFailed" xml:space="preserve">
     <value>发送失败</value>
+  </data>
+  <data name="Chat_Error_SendReturnedStatusFormat" xml:space="preserve">
+    <value>网关返回发送状态“{0}”。</value>
+  </data>
+  <data name="Chat_Error_SendFailedFormat" xml:space="preserve">
+    <value>发送失败：{0}</value>
   </data>
   <data name="Chat_Notification_AbortFailed" xml:space="preserve">
     <value>中止失败</value>
@@ -4723,6 +4603,9 @@
   <data name="SessionsPage_All.Text" xml:space="preserve">
     <value>全部</value>
   </data>
+  <data name="SessionsPage_ShowCompleted.Header" xml:space="preserve">
+    <value>显示已完成的会话</value>
+  </data>
   <data name="SessionsPage_GatewayDisconnected.Title" xml:space="preserve">
     <value>网关已断开</value>
   </data>
@@ -5449,6 +5332,9 @@
   </data>
   <data name="ConnectionPage_OpenDashboard" xml:space="preserve">
     <value>打开仪表板</value>
+  </data>
+  <data name="ConnectionPage_GatewayOptionsA11y" xml:space="preserve">
+    <value>{0} 的选项</value>
   </data>
   <data name="ConnectionPage_DisconnectAction" xml:space="preserve">
     <value>断开连接</value>
@@ -6868,5 +6754,53 @@
   </data>
   <data name="SettingsPage_GatewayInfoLabel_Uptime.Text" xml:space="preserve">
     <value>Uptime</value>
+  </data>
+  <data name="PermissionsPage_NewRuleAction.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>规则操作</value>
+  </data>
+  <data name="SandboxPage_UnavailablePrimaryButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>沙盒操作</value>
+  </data>
+  <data name="SandboxPage_PresetLockedButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>锁定预设：无互联网、无剪贴板、无标准用户文件夹</value>
+  </data>
+  <data name="SandboxPage_PresetBalancedButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>推荐预设：启用互联网，文档、下载和桌面为只读</value>
+  </data>
+  <data name="SandboxPage_PresetPermissiveButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>不受保护预设：启用互联网，可读写文档、下载和桌面</value>
+  </data>
+  <data name="SandboxPage_DocsAccessCombo.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>文档访问级别</value>
+  </data>
+  <data name="SandboxPage_DownloadsAccessCombo.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>下载访问级别</value>
+  </data>
+  <data name="SandboxPage_DesktopAccessCombo.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>桌面访问级别</value>
+  </data>
+  <data name="SettingsPage_NotificationSoundComboBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>通知声音</value>
+  </data>
+  <data name="VoiceSettingsPage_AssistantRefreshButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>刷新语音助手状态</value>
+  </data>
+  <data name="VoiceSettingsPage_AssistantStartButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>启动语音助手</value>
+  </data>
+  <data name="VoiceSettingsPage_AssistantStopButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>停止语音助手</value>
+  </data>
+  <data name="VoiceSettingsPage_LanguageCombo.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>语音语言</value>
+  </data>
+  <data name="HubWindow_MainNavigation.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>主导航</value>
+  </data>
+  <data name="JsonPreviewSplitter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>调整 JSON 预览大小</value>
+  </data>
+  <data name="JsonPreviewSplitter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.LocalizedControlType" xml:space="preserve">
+    <value>分隔条</value>
   </data>
 </root>

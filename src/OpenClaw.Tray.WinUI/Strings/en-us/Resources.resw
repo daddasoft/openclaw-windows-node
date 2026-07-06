@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:element name="root" msdata:IsDataSet="true">
@@ -394,6 +394,9 @@
   </data>
   <data name="Update_Message_Skipped_Debug" xml:space="preserve">
     <value>Update checks are disabled in debug builds.</value>
+  </data>
+  <data name="Update_Message_Skipped_Dev" xml:space="preserve">
+    <value>Update checks are disabled in development builds.</value>
   </data>
   <data name="Update_OK" xml:space="preserve">
     <value>OK</value>
@@ -886,157 +889,6 @@ Use one of these options:
   </data>
   <data name="Toast_ActivityStreamTipButton" xml:space="preserve">
     <value>Open Activity Stream</value>
-  </data>
-  <!-- ==================== SetupWizardWindow (C# code) ==================== -->
-  <data name="Setup_Title" xml:space="preserve">
-    <value>OpenClaw Setup</value>
-  </data>
-  <data name="Setup_StepConnect" xml:space="preserve">
-    <value>Step 1 of 3 — Connect</value>
-  </data>
-  <data name="Setup_ConnectTitle" xml:space="preserve">
-    <value>Connect to your gateway</value>
-  </data>
-  <data name="Setup_ConnectDescription" xml:space="preserve">
-    <value>On your gateway host (Mac/Linux), run this to get a setup code:</value>
-  </data>
-  <data name="Setup_SetupCodeHeader" xml:space="preserve">
-    <value>Setup Code</value>
-  </data>
-  <data name="Setup_SetupCodePlaceholder" xml:space="preserve">
-    <value>Paste the setup code from your gateway dashboard</value>
-  </data>
-  <data name="Setup_PasteSetupButton" xml:space="preserve">
-    <value>Paste setup code / QR</value>
-  </data>
-  <data name="Setup_ImportQrButton" xml:space="preserve">
-    <value>Import QR image...</value>
-  </data>
-  <data name="Setup_QrDecoded" xml:space="preserve">
-    <value>✅ QR image decoded — press Test Connection</value>
-  </data>
-  <data name="Setup_QrDecodeFailed" xml:space="preserve">
-    <value>❌ Could not find a valid setup QR code in that image.</value>
-  </data>
-  <data name="Setup_ClipboardUnsupported" xml:space="preserve">
-    <value>❌ Clipboard does not contain setup code text or a QR image.</value>
-  </data>
-  <data name="Setup_ManualEntryToggle" xml:space="preserve">
-    <value>Or enter URL and token manually ▾</value>
-  </data>
-  <data name="Setup_ManualEntryToggleHide" xml:space="preserve">
-    <value>Hide manual entry ▴</value>
-  </data>
-  <data name="Setup_GatewayUrlHeader" xml:space="preserve">
-    <value>Gateway URL</value>
-  </data>
-  <data name="Setup_GatewayUrlPlaceholder" xml:space="preserve">
-    <value>ws://192.168.1.x:18789</value>
-  </data>
-  <data name="Setup_GatewayUrlHint" xml:space="preserve">
-    <value>💡 Accepts ws://, wss://, http://, or https://</value>
-  </data>
-  <data name="Setup_TokenHeader" xml:space="preserve">
-    <value>Gateway Token</value>
-  </data>
-  <data name="Setup_TokenPlaceholder" xml:space="preserve">
-    <value>Paste your token here</value>
-  </data>
-  <data name="Setup_TestButton" xml:space="preserve">
-    <value>Test Connection</value>
-  </data>
-  <data name="Setup_Testing" xml:space="preserve">
-    <value>⏳ Connecting to gateway...</value>
-  </data>
-  <data name="Setup_Connected" xml:space="preserve">
-    <value>✅ Connected!</value>
-  </data>
-  <data name="Setup_PairingRequired" xml:space="preserve">
-    <value>✅ Gateway reached! Device needs pairing approval.
-
-On your gateway host (Mac/Linux), run:
-
-  openclaw devices approve {0}</value>
-  </data>
-  <data name="Setup_TokenMismatch" xml:space="preserve">
-    <value>❌ Token doesn't match.
-
-💡 Check gateway auth token:
-  cat ~/.openclaw/openclaw.json | grep token</value>
-  </data>
-  <data name="Setup_OriginNotAllowed" xml:space="preserve">
-    <value>❌ Origin not allowed.
-
-💡 Add this machine to gateway.controlUi.allowedOrigins.</value>
-  </data>
-  <data name="Setup_RateLimited" xml:space="preserve">
-    <value>❌ Rate-limited. Wait a minute and try again.</value>
-  </data>
-  <data name="Setup_TimedOut" xml:space="preserve">
-    <value>❌ Timed out. Check the URL and gateway is running.</value>
-  </data>
-  <data name="Setup_TokenRequired" xml:space="preserve">
-    <value>❌ Please enter a token</value>
-  </data>
-  <data name="Setup_TestFirst" xml:space="preserve">
-    <value>⚠️ Please test the connection first</value>
-  </data>
-  <data name="Setup_CodeDecoded" xml:space="preserve">
-    <value>✅ Setup code decoded — press Test Connection</value>
-  </data>
-  <data name="Setup_NodeModeTitle" xml:space="preserve">
-    <value>Enable Node Mode (optional)</value>
-  </data>
-  <data name="Setup_NodeModeDescription" xml:space="preserve">
-    <value>Node Mode lets your Windows machine run tasks for OpenClaw — like screen capture, camera access, and canvas drawing.</value>
-  </data>
-  <data name="Setup_NodeModeSecurityTitle" xml:space="preserve">
-    <value>Only enable Node Mode for gateways and agents you trust</value>
-  </data>
-  <data name="Setup_NodeModeSecurityMessage" xml:space="preserve">
-    <value>Approved agents can run local commands and may access enabled device surfaces such as screen, camera, location, browser, and canvas. You can disable capability groups later in Settings.</value>
-  </data>
-  <data name="Setup_NodeModeToggle" xml:space="preserve">
-    <value>Enable Node Mode</value>
-  </data>
-  <data name="Setup_DeviceIdLoading" xml:space="preserve">
-    <value>Device ID: loading...</value>
-  </data>
-  <data name="Setup_DeviceIdFallback" xml:space="preserve">
-    <value>Device ID: (will be generated on first connect)</value>
-  </data>
-  <data name="Setup_CopyDeviceId" xml:space="preserve">
-    <value>📋 Copy Device ID</value>
-  </data>
-  <data name="Setup_DeviceIdCopied" xml:space="preserve">
-    <value>✅ Copied!</value>
-  </data>
-  <data name="Setup_ApproveInstructions" xml:space="preserve">
-    <value>To approve this node, run on your gateway host:</value>
-  </data>
-  <data name="Setup_ApproveHint" xml:space="preserve">
-    <value>💡 You can finish setup now — pairing will continue in the background. You'll get a notification when approved.</value>
-  </data>
-  <data name="Setup_DoneTitle" xml:space="preserve">
-    <value>🎉 You're all set!</value>
-  </data>
-  <data name="Setup_DoneDescription" xml:space="preserve">
-    <value>OpenClaw Tray will connect to your gateway and start monitoring.</value>
-  </data>
-  <data name="Setup_BackButton" xml:space="preserve">
-    <value>Back</value>
-  </data>
-  <data name="Setup_NextButton" xml:space="preserve">
-    <value>Next</value>
-  </data>
-  <data name="Setup_FinishButton" xml:space="preserve">
-    <value>Finish</value>
-  </data>
-  <data name="Setup_StepNodeMode" xml:space="preserve">
-    <value>Step 2 of 3 — Node Mode</value>
-  </data>
-  <data name="Setup_StepDone" xml:space="preserve">
-    <value>Step 3 of 3 — Done</value>
   </data>
   <!-- ==================== Local MCP server (SettingsWindow) ==================== -->
   <data name="SettingsDeveloperModeHeader.Text" xml:space="preserve">
@@ -3153,6 +3005,15 @@ On your gateway host (Mac/Linux), run:
   <data name="Chat_Composer_Reasoning_Maximum" xml:space="preserve">
     <value>Maximum</value>
   </data>
+  <data name="Chat_Composer_Accessibility_Session" xml:space="preserve">
+    <value>Session</value>
+  </data>
+  <data name="Chat_Composer_Accessibility_Model" xml:space="preserve">
+    <value>Model</value>
+  </data>
+  <data name="Chat_Composer_Accessibility_Reasoning" xml:space="preserve">
+    <value>Reasoning</value>
+  </data>
   <data name="Chat_Composer_Placeholder_Connected" xml:space="preserve">
     <value>Message Assistant (Enter to send)</value>
   </data>
@@ -3188,6 +3049,18 @@ On your gateway host (Mac/Linux), run:
   </data>
   <data name="Chat_Composer_AssistantWorking" xml:space="preserve">
     <value>Assistant is working…</value>
+  </data>
+  <data name="Chat_Composer_QueuedCountFormat" xml:space="preserve">
+    <value>Queued ({0})</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageAutomationFormat" xml:space="preserve">
+    <value>Queued message: {0}</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageFailedAutomationFormat" xml:space="preserve">
+    <value>Queued message failed: {0}</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageFailed" xml:space="preserve">
+    <value>Failed</value>
   </data>
   <data name="Chat_Assistant_Action_Copy" xml:space="preserve">
     <value>Copy message</value>
@@ -3450,6 +3323,12 @@ Commands are blocked while sandboxing is unavailable because strict fallback blo
   </data>
   <data name="Chat_Notification_SendFailed" xml:space="preserve">
     <value>Send failed</value>
+  </data>
+  <data name="Chat_Error_SendReturnedStatusFormat" xml:space="preserve">
+    <value>Gateway returned send status '{0}'.</value>
+  </data>
+  <data name="Chat_Error_SendFailedFormat" xml:space="preserve">
+    <value>Send failed: {0}</value>
   </data>
   <data name="Chat_Notification_AbortFailed" xml:space="preserve">
     <value>Abort failed</value>
@@ -4771,6 +4650,9 @@ Commands are blocked while sandboxing is unavailable because strict fallback blo
   <data name="SessionsPage_All.Text" xml:space="preserve">
     <value>All</value>
   </data>
+  <data name="SessionsPage_ShowCompleted.Header" xml:space="preserve">
+    <value>Show completed</value>
+  </data>
   <data name="SessionsPage_GatewayDisconnected.Title" xml:space="preserve">
     <value>Gateway disconnected</value>
   </data>
@@ -5454,6 +5336,9 @@ Make sure the gateway is running.</value>
   </data>
   <data name="ConnectionPage_OpenDashboard" xml:space="preserve">
     <value>Open dashboard</value>
+  </data>
+  <data name="ConnectionPage_GatewayOptionsA11y" xml:space="preserve">
+    <value>Options for {0}</value>
   </data>
   <data name="ConnectionPage_DisconnectAction" xml:space="preserve">
     <value>Disconnect</value>
@@ -6909,5 +6794,53 @@ Make sure the gateway is running.</value>
   </data>
   <data name="SettingsPage_GatewayInfoLabel_Uptime.Text" xml:space="preserve">
     <value>Uptime</value>
+  </data>
+  <data name="PermissionsPage_NewRuleAction.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Rule action</value>
+  </data>
+  <data name="SandboxPage_UnavailablePrimaryButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Sandbox action</value>
+  </data>
+  <data name="SandboxPage_PresetLockedButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Locked Down preset: No internet, no clipboard, no standard user folders</value>
+  </data>
+  <data name="SandboxPage_PresetBalancedButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Recommended preset: Internet on, read-only on Documents, Downloads, Desktop</value>
+  </data>
+  <data name="SandboxPage_PresetPermissiveButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Unprotected preset: Internet on, read and write on Documents, Downloads, Desktop</value>
+  </data>
+  <data name="SandboxPage_DocsAccessCombo.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Documents access level</value>
+  </data>
+  <data name="SandboxPage_DownloadsAccessCombo.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Downloads access level</value>
+  </data>
+  <data name="SandboxPage_DesktopAccessCombo.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Desktop access level</value>
+  </data>
+  <data name="SettingsPage_NotificationSoundComboBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Notification sound</value>
+  </data>
+  <data name="VoiceSettingsPage_AssistantRefreshButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Refresh voice assistant status</value>
+  </data>
+  <data name="VoiceSettingsPage_AssistantStartButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Start voice assistant</value>
+  </data>
+  <data name="VoiceSettingsPage_AssistantStopButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Stop voice assistant</value>
+  </data>
+  <data name="VoiceSettingsPage_LanguageCombo.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Voice language</value>
+  </data>
+  <data name="HubWindow_MainNavigation.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Main navigation</value>
+  </data>
+  <data name="JsonPreviewSplitter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Resize JSON preview</value>
+  </data>
+  <data name="JsonPreviewSplitter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.LocalizedControlType" xml:space="preserve">
+    <value>splitter</value>
   </data>
 </root>

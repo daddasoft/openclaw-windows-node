@@ -12,6 +12,7 @@
 
             <!-- ───────── Page header ───────── -->
             <TextBlock x:Uid="PermissionsPage_Permissions" Text="Permissions"
+                       AutomationProperties.AutomationId="PermissionsPageMarker"
                        Style="{StaticResource TitleTextBlockStyle}"
                        Margin="0,0,0,2"/>
             <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
@@ -349,7 +350,8 @@
                         <TextBox Grid.Column="0" x:Uid="NewRulePattern" x:Name="NewRulePattern"
                                  PlaceholderText="Command pattern (e.g. echo *)"
                                  FontFamily="Consolas"/>
-                        <ComboBox Grid.Column="1" x:Name="NewRuleAction" MinWidth="100" SelectedIndex="0">
+                        <ComboBox Grid.Column="1" x:Uid="PermissionsPage_NewRuleAction" x:Name="NewRuleAction"
+                                  MinWidth="100" SelectedIndex="0">
                            <ComboBoxItem x:Uid="PermissionsPage_ComboBoxItem_54" Content="Deny" Tag="deny"/>
                            <ComboBoxItem x:Uid="PermissionsPage_ComboBoxItem_55" Content="Allow" Tag="allow"/>
                            <ComboBoxItem x:Uid="PermissionsPage_ComboBoxItem_56" Content="Ask" Tag="prompt"/>

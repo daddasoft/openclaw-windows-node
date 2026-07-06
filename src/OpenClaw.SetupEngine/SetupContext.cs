@@ -24,6 +24,8 @@ public sealed class SetupConfig
     public string? GatewayUrl { get; set; }
     public string? BootstrapToken { get; set; }
     public Dictionary<string, string>? WizardAnswers { get; set; }
+    [JsonIgnore]
+    public bool UsesBundledDefaultConfig { get; set; }
 
     // Nested config sections — everything is configurable
     public WslConfig Wsl { get; set; } = new();
@@ -31,6 +33,7 @@ public sealed class SetupConfig
     public CapabilitiesConfig Capabilities { get; set; } = new();
     public TraySettingsConfig Settings { get; set; } = new();
     public PairingConfig Pairing { get; set; } = new();
+    public WindowsNodeContextConfig WindowsNodeContext { get; set; } = new();
 
     public string EffectiveGatewayUrl => GatewayUrl ?? $"ws://localhost:{GatewayPort}";
 
@@ -191,9 +194,7 @@ public sealed class TraySettingsConfig
             }
             catch (JsonException ex)
             {
-                var backupPath = settingsPath + $".corrupt-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}.bak";
-                File.Copy(settingsPath, backupPath, overwrite: false);
-                throw new InvalidDataException($"settings.json is corrupt; backed up to {backupPath}", ex);
+                throw BackupCorruptSettingsFile(settingsPath, ex);
             }
         }
 
@@ -201,10 +202,6 @@ public sealed class TraySettingsConfig
         {
             ["EnableNodeMode"] = EnableNodeMode,
             ["AutoStart"] = AutoStart,
-        };
-
-        var initialDefaults = new Dictionary<string, object>
-        {
             ["NodeSystemRunEnabled"] = NodeSystemRunEnabled,
             ["NodeCanvasEnabled"] = NodeCanvasEnabled,
             ["NodeScreenEnabled"] = NodeScreenEnabled,
@@ -225,12 +222,61 @@ public sealed class TraySettingsConfig
         foreach (var kvp in setupOwnedSettings)
             settings[kvp.Key] = kvp.Value;
 
-        foreach (var kvp in initialDefaults)
-            settings.TryAdd(kvp.Key, kvp.Value);
+        Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
+        var json = JsonSerializer.Serialize(settings, SetupConfig.JsonWriteOptions);
+        AtomicFile.WriteAllText(settingsPath, json);
+    }
+
+    public static void UpdateAutoStartInSettingsFile(string settingsPath, bool autoStart)
+    {
+        Dictionary<string, JsonElement>? existing = null;
+
+        if (File.Exists(settingsPath))
+        {
+            try
+            {
+                var content = File.ReadAllText(settingsPath);
+                existing = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(content, SetupConfig.JsonOptions);
+            }
+            catch (JsonException ex)
+            {
+                throw BackupCorruptSettingsFile(settingsPath, ex);
+            }
+        }
+
+        var settings = new Dictionary<string, object>();
+        if (existing != null)
+        {
+            foreach (var kvp in existing)
+                settings[kvp.Key] = kvp.Value;
+        }
+
+        settings["AutoStart"] = autoStart;
 
         Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
         var json = JsonSerializer.Serialize(settings, SetupConfig.JsonWriteOptions);
         AtomicFile.WriteAllText(settingsPath, json);
+    }
+
+    public void ApplyCapabilities(CapabilitiesConfig capabilities)
+    {
+        // Device info has no independent runtime setting; it is always registered
+        // when node mode is enabled.
+        NodeSystemRunEnabled = capabilities.System;
+        NodeCanvasEnabled = capabilities.Canvas;
+        NodeScreenEnabled = capabilities.Screen;
+        NodeCameraEnabled = capabilities.Camera;
+        NodeLocationEnabled = capabilities.Location;
+        NodeBrowserProxyEnabled = capabilities.Browser;
+        NodeTtsEnabled = capabilities.Tts;
+        NodeSttEnabled = capabilities.Stt;
+    }
+
+    private static InvalidDataException BackupCorruptSettingsFile(string settingsPath, JsonException ex)
+    {
+        var backupPath = settingsPath + $".corrupt-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfffffff}-{Guid.NewGuid():N}.bak";
+        File.Copy(settingsPath, backupPath, overwrite: false);
+        return new InvalidDataException($"settings.json is corrupt; backed up to {backupPath}", ex);
     }
 }
 
@@ -241,6 +287,15 @@ public sealed class PairingConfig
     // TODO: Wire OperatorScopes/NodeScopes/CliScopes into pairing requests
     // when the gateway protocol supports scoped token issuance.
     public int TimeoutSeconds { get; set; } = 60;
+}
+
+// ─── Windows Node Context Injection ───
+
+public sealed class WindowsNodeContextConfig
+{
+    public bool Enabled { get; set; } = true;
+    public string? WorkspacePath { get; set; }
+    public int TimeoutSeconds { get; set; } = 180;
 }
 
 // ─── Step Result ───
@@ -283,7 +338,14 @@ public sealed class SetupContext
     // WSL PATH prefix using configured user
     public string WslPathPrefix => WslConstants.GetPathPrefix(Config.Wsl.User);
 
-    public SetupContext(SetupConfig config, SetupLogger logger, TransactionJournal journal, ICommandRunner commands, CancellationToken ct)
+    public SetupContext(
+        SetupConfig config,
+        SetupLogger logger,
+        TransactionJournal journal,
+        ICommandRunner commands,
+        CancellationToken ct,
+        string? dataDir = null,
+        string? localDataDir = null)
     {
         Config = config;
         Logger = logger;
@@ -291,8 +353,8 @@ public sealed class SetupContext
         Commands = commands;
         CancellationToken = ct;
 
-        DataDir = ResolveDataDir();
-        LocalDataDir = ResolveLocalDataDir();
+        DataDir = dataDir ?? ResolveDataDir();
+        LocalDataDir = localDataDir ?? ResolveLocalDataDir();
 
         DistroName = config.DistroName;
         GatewayUrl = config.EffectiveGatewayUrl;

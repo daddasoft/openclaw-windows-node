@@ -75,6 +75,8 @@ public record OpenClawChatTimelineProps(
 public class OpenClawChatTimeline : Component<OpenClawChatTimelineProps>
 {
     const double FollowThreshold = 60;
+    const int FollowToBottomMaxStabilizationPasses = 4;
+    const double FollowToBottomExtentEpsilon = 0.5;
 
     /// <summary>
     /// Static scroll-offset store shared across all timeline instances so that
@@ -466,7 +468,7 @@ public class OpenClawChatTimeline : Component<OpenClawChatTimelineProps>
 
         var scrollViewRef = UseRef<Microsoft.UI.Xaml.Controls.ScrollViewer?>(null);
         var isFollowingRef = UseRef(true);
-        var contentRef = UseRef<Microsoft.UI.Xaml.Controls.StackPanel?>(null);
+        var contentRef = UseRef<FrameworkElement?>(null);
         var prevEntryCountRef = UseRef(0);
         var prevSessionIdRef = UseRef<string?>(null);
         var prevFirstEntryIdRef = UseRef<string?>(null);
@@ -509,7 +511,10 @@ public class OpenClawChatTimeline : Component<OpenClawChatTimelineProps>
         if (prevShowToolCallsRef.Current != showToolCalls)
         {
             prevShowToolCallsRef.Current = showToolCalls;
-            contentRef.Current?.Children.Clear();
+            if (contentRef.Current is ItemsRepeater repeater)
+                repeater.ItemsSource = Array.Empty<object>();
+            else if (contentRef.Current is StackPanel stackPanel)
+                stackPanel.Children.Clear();
         }
 
         // Hover state — set of entry ids currently under the pointer. Used to
@@ -636,15 +641,27 @@ public class OpenClawChatTimeline : Component<OpenClawChatTimelineProps>
         void QueueScrollToBottom(Microsoft.UI.Xaml.Controls.ScrollViewer sv, string? sessionId, bool disableAnimation)
         {
             isFollowingRef.Current = true;
-            sv.DispatcherQueue.TryEnqueue(() =>
+
+            void QueuePass(int pass, double previousScrollableHeight, bool passDisableAnimation)
             {
-                var bottom = sv.ScrollableHeight;
-                sv.ChangeView(null, bottom, null, disableAnimation);
-                lastVerticalOffsetRef.Current = bottom;
-                lastScrollableHeightRef.Current = sv.ScrollableHeight;
-                isFollowingRef.Current = true;
-                StoreSessionOffset(sessionId, bottom);
-            });
+                sv.DispatcherQueue.TryEnqueue(() =>
+                {
+                    sv.UpdateLayout();
+                    var bottom = sv.ScrollableHeight;
+                    sv.ChangeView(null, bottom, null, passDisableAnimation);
+                    lastVerticalOffsetRef.Current = bottom;
+                    lastScrollableHeightRef.Current = sv.ScrollableHeight;
+                    isFollowingRef.Current = true;
+                    StoreSessionOffset(sessionId, bottom);
+
+                    var extentStable = Math.Abs(bottom - previousScrollableHeight) <= FollowToBottomExtentEpsilon;
+                    var atBottom = sv.ScrollableHeight - sv.VerticalOffset <= FollowThreshold;
+                    if (pass < FollowToBottomMaxStabilizationPasses && (!extentStable || !atBottom))
+                        QueuePass(pass + 1, sv.ScrollableHeight, passDisableAnimation: true);
+                });
+            }
+
+            QueuePass(0, double.NaN, disableAnimation);
         }
 
         void QueuePreservePrependOffset(Microsoft.UI.Xaml.Controls.ScrollViewer sv, string? sessionId, double oldOffset, double oldScrollableHeight)
@@ -1128,6 +1145,7 @@ public class OpenClawChatTimeline : Component<OpenClawChatTimelineProps>
             // bubbleRadius wraps both so they read as one message.
             var bubbleChildren = new List<Element>();
             foreach (var ae in attachmentElements) bubbleChildren.Add(ae);
+            var entryMeta = MetaFor(entry.Id);
             if (hasMessage)
             {
                 // Resolve HC + selection brush once per render method call
@@ -1179,7 +1197,6 @@ public class OpenClawChatTimeline : Component<OpenClawChatTimelineProps>
                             ApplyPlainSelectableInlines(t, messageText);
                         }));
             }
-
             Element content;
             if (bubbleChildren.Count > 0)
             {
@@ -1222,7 +1239,6 @@ public class OpenClawChatTimeline : Component<OpenClawChatTimelineProps>
             Element footer = Empty();
             if (endsBurst && showTimestamps)
             {
-                var entryMeta = MetaFor(entry.Id);
                 var timeStr = FormatTime(entryMeta?.Timestamp);
                 var rightInset = showUserAvatar ? (36 + bubbleSideMargin) : 0;
                 rightInset += (int)bubblePadding.Right;
@@ -1283,6 +1299,7 @@ public class OpenClawChatTimeline : Component<OpenClawChatTimelineProps>
             // collapsed multi-step summary) is rendered INSIDE the bubble's
             // content area — directly below the assistant text with a small
             // top gap — so it visually reads as a child of the bubble.
+            var assistantEntryMeta = MetaFor(entry.Id);
             Element bubbleContent = overrideBubbleContent ?? SafeMarkdownText(entry.Text);
             if (nestedTool != null)
             {
@@ -1315,12 +1332,11 @@ public class OpenClawChatTimeline : Component<OpenClawChatTimelineProps>
             Element footer = Empty();
             if (endsBurst && showTimestamps && !suppressFooter)
             {
-                var entryMeta = MetaFor(entry.Id);
-                var timeStr = FormatTime(entryMeta?.Timestamp);
-                var modelStr = entryMeta?.Model ?? defaultModel;
+                var timeStr = FormatTime(assistantEntryMeta?.Timestamp);
+                var modelStr = assistantEntryMeta?.Model ?? defaultModel;
                 footer = BuildAssistantFooter(assistantSender, timeStr, modelStr,
-                    entryMeta?.InputTokens, entryMeta?.OutputTokens,
-                    entryMeta?.ResponseTokens, entryMeta?.ContextPercent,
+                    assistantEntryMeta?.InputTokens, assistantEntryMeta?.OutputTokens,
+                    assistantEntryMeta?.ResponseTokens, assistantEntryMeta?.ContextPercent,
                     chatStampFg, entry.Id, entry.Text ?? "",
                     entry.Id == latestAssistantEntryId ? Props.DefaultUsageSummary : null);
                 var leftInset = showAssistAvatar ? (36 + bubbleSideMargin) : 0;
@@ -2490,12 +2506,12 @@ public class OpenClawChatTimeline : Component<OpenClawChatTimelineProps>
                     Grid([GridSize.Star()], [GridSize.Auto, GridSize.Auto, GridSize.Auto, GridSize.Auto],
                         loadMoreButton.Grid(row: 0, column: 0),
                         Border(Empty()).Height(20).Grid(row: 1, column: 0),
-                        VStack(2, timelineRows).Set(sp =>
+                        VirtualVStack(2, timelineRows).Set(host =>
                         {
-                            if (contentRef.Current != sp)
+                            if (contentRef.Current != host)
                             {
-                                contentRef.Current = (Microsoft.UI.Xaml.Controls.StackPanel)sp;
-                                sp.SizeChanged += (_, _) =>
+                                contentRef.Current = host;
+                                host.SizeChanged += (_, _) =>
                                 {
                                     if (scrollViewRef.Current is not { } sv) return;
 

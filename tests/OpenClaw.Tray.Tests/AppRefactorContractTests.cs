@@ -315,9 +315,9 @@ public sealed class AppRefactorContractTests
             method,
             "_deepLinkCts.Cancel()",
             "global hotkey",
+            "chat coordinator",
             "gateway client",
             "connectionManager.DisposeAsync()",
-            "chat coordinator",
             "node service",
             "nodeService.DisposeAsync()",
             "standalone voice service",
@@ -335,27 +335,305 @@ public sealed class AppRefactorContractTests
         var source = ReadAppSources();
         var root = TestRepositoryPaths.GetRepositoryRoot();
         var setupWindow = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "SetupWindow.xaml.cs"));
+        var welcomePage = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "WelcomePage.xaml.cs"));
+        var wizardPage = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "WizardPage.xaml.cs"));
+        var progressPage = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "ProgressPage.xaml.cs"));
+        var updateCoordinator = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.Tray.WinUI", "Services", "UpdateCoordinator.cs"));
+        var cliUninstall = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.Tray.WinUI", "CliUninstallHandler.cs"));
+        var setupProgram = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine", "Program.cs"));
+        var settingsPage = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.Tray.WinUI", "Pages", "SettingsPage.xaml.cs"));
+        var settingsManager = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.Tray.WinUI", "Services", "SettingsManager.cs"));
+        var keepAlivePolicy = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.Tray.WinUI", "Services", "WslKeepAlivePolicy.cs"));
+        var setupClassifier = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.Tray.WinUI", "Services", "SetupExistingGatewayClassifier.cs"));
 
-        Assert.Contains("new SetupWindow()", source);
+        Assert.Contains("var setupWindow = new SetupWindow(", source);
+        Assert.Contains("dataDir: AppIdentity.ResolveRoamingDataDirectory()", source);
+        Assert.Contains("localDataDir: AppIdentity.ResolveSetupLocalDataDirectory()", source);
+        Assert.Contains("distroNameOverride: AppIdentity.SetupDistroName", source);
+        Assert.Contains("gatewayPortOverride: AppIdentity.SetupGatewayPort", source);
+        Assert.Contains("SetupRunLock.TryAcquire(_dataDir", setupWindow);
+        Assert.Contains("new SetupContext(", progressPage);
+        Assert.Contains("step is not RunGatewayWizardStep", progressPage);
+        Assert.Contains("config.SkipWizard || step is not WindowsNodeBootstrapContextStep", progressPage);
+        Assert.Contains("_dataDir,", progressPage);
+        Assert.Contains("_localDataDir);", progressPage);
+        Assert.Contains("setupWindow?.DataDir ?? SetupContext.ResolveDataDir()", welcomePage);
+        Assert.Contains("SetupWindow.Active?.DataDir ?? SetupContext.ResolveDataDir()", wizardPage);
+        Assert.Contains("await CompleteSetupAsync(generation)", wizardPage);
+        Assert.Contains("ApplyWindowsNodeContextAsync", wizardPage);
+        Assert.Contains("var pipeline = new SetupPipeline(", setupWindow);
+        Assert.Contains("[new WindowsNodeBootstrapContextStep()]", setupWindow);
+        Assert.Contains("rollbackOnFailureOverride: false", setupWindow);
+        AssertInOrder(
+            setupWindow,
+            "_lifetimeCts.Cancel()",
+            "await contextApplyTask",
+            "_setupLock?.Dispose()");
+        Assert.Contains("distroNameOverride: _config.DistroName", wizardPage);
+        Assert.Contains("if (AppIdentity.IsDev)", updateCoordinator);
+        Assert.Contains("Skipping release-channel update check in development build", updateCoordinator);
+        Assert.Contains("\"Update_Message_Skipped_Dev\"", updateCoordinator);
+        Assert.Contains("\"--data-dir\", AppIdentity.ResolveRoamingDataDirectory()", cliUninstall);
+        Assert.Contains("\"--local-data-dir\", AppIdentity.ResolveSetupLocalDataDirectory()", cliUninstall);
+        Assert.Contains("\"--distro-name\", AppIdentity.SetupDistroName", cliUninstall);
+        Assert.Contains("\"--autostart-name\", AppIdentity.AutoStartRegistryName", cliUninstall);
+        Assert.Contains("AppIdentity.SetupDistroName", settingsPage);
+        Assert.Contains("AppIdentity.SetupGatewayUrl", settingsManager);
+        Assert.Contains("AppIdentity.SetupDistroName", keepAlivePolicy);
+        Assert.Contains("AppIdentity.SetupDistroName", setupClassifier);
+        Assert.Contains("TrayArtifactCleanup.Run(ctx, preserveLogs, autoStartName, startupTaskName)", setupProgram);
         Assert.Contains("setupWindow.SetupCompleted += OnSetupCompleted", source);
         Assert.Contains("ShowGatewayWizardAsync", source);
-        Assert.Contains("setupWindow.TryNavigateToWizard()", source);
+        Assert.Contains("EnsureSetupWindowAsync(startAtGatewayInstalledMilestone: true)", source);
+        Assert.Contains("startAtGatewayInstalledMilestone", setupWindow);
+        Assert.Contains("_persistStartupPreferenceOnComplete = false", setupWindow);
+        Assert.Contains("_showStartupPreferenceOnComplete = false", setupWindow);
+        Assert.Contains("CanNavigateToGatewayInstalledMilestone", setupWindow);
+        Assert.Contains("RootFrame.Content is not ProgressPage { IsPipelineRunning: true }", setupWindow);
+        Assert.Contains("RootFrame.Content is not WizardPage", setupWindow);
+        Assert.Contains("TryNavigateToGatewayInstalledMilestone", setupWindow);
+        Assert.Contains("setupWindow.TryNavigateToGatewayInstalledMilestone()", source);
+        AssertInOrder(
+            setupWindow,
+            "SetupRunLock.TryAcquire",
+            "if (startAtGatewayInstalledMilestone)",
+            "NavigateToGatewayInstalledMilestone()");
         Assert.Contains("CanNavigateToWizard", setupWindow);
-        // Direct onboarding must not hijack an already-open setup window: it
-        // only navigates a freshly created window so it cannot cancel an
-        // in-progress install running on ProgressPage.
+        // Direct onboarding may reuse an already-open idle setup window, but
+        // must not cancel an in-progress install running on ProgressPage.
         Assert.Contains("EnsureSetupWindowAsync", source);
         Assert.Contains("if (!createdNew)", source);
         Assert.Contains("RestartAfterSetupAsync", source);
         Assert.Contains("\"--post-setup-restart\"", source);
         Assert.Contains("\"--wait-for-pid\"", source);
         Assert.Contains("\"--post-setup-launch\"", source);
-        Assert.Contains("? \"openclaw://chat\" : null", source);
+        Assert.Contains("$\"{AppIdentity.ProtocolScheme}://chat\"", source);
         Assert.Contains("WaitForRestartSourceIfRequested(Environment.GetCommandLineArgs())", source);
         AssertInOrder(source, "WaitForRestartSourceIfRequested(Environment.GetCommandLineArgs())", "_mutex = new Mutex");
+        Assert.DoesNotContain("setupWindow.TryNavigateToWizard()", source);
         Assert.DoesNotContain("ResolveSetupEngineUiPath", source);
         Assert.DoesNotContain("OpenClaw.SetupEngine.UI.exe", source);
         Assert.DoesNotContain("Process.GetProcessesByName(\"OpenClaw.SetupEngine.UI\")", source);
+        Assert.False(File.Exists(Path.Combine(root, "src", "OpenClaw.Tray.WinUI", "Windows", "SetupWizardWindow.cs")));
+    }
+
+    [Fact]
+    public void GatewayInstalledMilestone_ShowsInlineStatusIfWizardCannotStart()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var xaml = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "ProgressPage.xaml"));
+        var code = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "ProgressPage.xaml.cs"));
+        var onBoard = ExtractMethod(code, "Onboard_Click");
+
+        Assert.Contains("x:Name=\"MilestoneStatusText\"", xaml);
+        Assert.Contains("SetupWindow.Active?.TryNavigateToWizard() == true", onBoard);
+        Assert.Contains("AutomationProperties.LiveSetting=\"Assertive\"", xaml);
+        Assert.Contains("MilestoneStatusText.Text", onBoard);
+        Assert.DoesNotContain("NavigateToWizard();", onBoard);
+    }
+
+    [Fact]
+    public void SetupCompletion_PersistsStartupChoiceBeforeRestart()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "SetupWindow.xaml.cs"));
+        var method = ExtractMethod(source, "RequestSetupCompleted");
+
+        Assert.Contains("if (_persistStartupPreferenceOnComplete)", method);
+        Assert.Contains("_config.Settings.AutoStart = enableAutoStart", method);
+        Assert.Contains("TraySettingsConfig.UpdateAutoStartInSettingsFile", method);
+        AssertInOrder(
+            method,
+            "if (_persistStartupPreferenceOnComplete)",
+            "_config.Settings.AutoStart = enableAutoStart",
+            "TraySettingsConfig.UpdateAutoStartInSettingsFile",
+            "handler.Invoke");
+    }
+
+    [Fact]
+    public void SetupWindowOwnership_WaitsForCleanupBeforeAllowingAnotherRun()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var app = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.Tray.WinUI", "App.xaml.cs"));
+        var setupWindow = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "SetupWindow.xaml.cs"));
+
+        Assert.Contains("public Task CleanupCompleted => _cleanupCompleted.Task", setupWindow);
+        AssertInOrder(
+            setupWindow,
+            "_lifetimeCts.Cancel()",
+            "await contextApplyTask",
+            "catch (OperationCanceledException)",
+            "_setupLock?.Dispose()",
+            "_cleanupCompleted.TrySetResult(true)");
+        Assert.Contains("rollbackOnFailureOverride: false", setupWindow);
+        AssertInOrder(
+            app,
+            "while (_setupWindow != null)",
+            "await existingSetupWindow.WaitForInitialContentReadyAsync()",
+            "if (!existingSetupWindow.IsClosed)",
+            "await existingSetupWindow.CleanupCompleted",
+            "_setupWindow = null",
+            "new SetupWindow(");
+        AssertInOrder(
+            app,
+            "setupWindow.Closed += async",
+            "await setupWindow.CleanupCompleted",
+            "_setupWindow = null");
+    }
+
+    [Fact]
+    public void CompletePage_UsesCompletionArgsForStartupPreference()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var setupWindow = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "SetupWindow.xaml.cs"));
+        var complete = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CompletePage.xaml.cs"));
+        var navigate = ExtractMethod(setupWindow, "NavigateToComplete");
+
+        Assert.Contains("DefaultAutoStart: true", navigate);
+        Assert.Contains("ShowStartupPreference: _showStartupPreferenceOnComplete", navigate);
+        Assert.Contains("StartupToggle.IsOn = args.DefaultAutoStart", complete);
+        Assert.Contains("StartupRow.Visibility = args.ShowStartupPreference ? Visibility.Visible : Visibility.Collapsed", complete);
+        Assert.Contains("StartupRow.Visibility == Visibility.Visible && StartupToggle.IsOn", complete);
+        Assert.DoesNotContain("StartupToggle.IsOn = true", complete);
+    }
+
+    [Fact]
+    public void CapabilitiesPage_PersistsSelectedProfileIntoRuntimeNodeSettings()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml.cs"));
+        var method = ExtractMethod(source, "WriteCapabilities");
+
+        Assert.Contains("config.Settings.ApplyCapabilities(caps)", method);
+        AssertInOrder(
+            method,
+            "prop?.SetValue(caps, toggle.IsOn)",
+            "config.Settings.ApplyCapabilities(caps)");
+        Assert.Contains("_config.UsesBundledDefaultConfig", source);
+        Assert.Contains("_treatBundledAllOnAsPlaceholder ? 1 : 2", source);
+        Assert.Contains("return -1", source);
+    }
+
+    [Fact]
+    public void CapabilitiesPage_PermissionProbeFaultsShowInlineWarning()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml.cs"));
+        var click = ExtractMethod(source, "PrimaryClickAsync");
+        var build = ExtractMethod(source, "BuildPermissionRows");
+
+        Assert.Contains("!permissionsTask.IsCompletedSuccessfully", click);
+        Assert.Contains("catch (Exception ex)", build);
+        Assert.Contains("new InfoBar", build);
+        Assert.Contains("Couldn't read Windows permission status", build);
+        Assert.Contains("Review permissions later in Settings", build);
+    }
+
+    [Fact]
+    public void CapabilitiesPage_RefreshesPermissionStateWhenSetupIsReactivated()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml.cs"));
+        var activated = ExtractMethod(source, "SetupWindow_Activated");
+        var refresh = ExtractMethod(source, "RefreshPermissionRowsAsync");
+
+        Assert.Contains("_setupWindow.Activated += SetupWindow_Activated", source);
+        Assert.Contains("_setupWindow.Activated -= SetupWindow_Activated", source);
+        Assert.Contains("WindowActivationState.Deactivated", activated);
+        Assert.Contains("RefreshPermissionRowsAsync(_permissionsTask)", activated);
+        AssertInOrder(refresh, "await previousRefresh", "await BuildPermissionRows()");
+    }
+
+    [Fact]
+    public void CapabilitiesPage_ExposesExplicitCustomCapabilitySetsForReview()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml.cs"));
+        var xaml = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml"));
+        var detectProfile = ExtractMethod(source, "DetectProfileIndex");
+
+        Assert.Contains("x:Name=\"CapabilityExpander\"", xaml);
+        Assert.Contains("\"Custom capabilities (review)\"", source);
+        Assert.Contains("CapabilityExpander.IsExpanded = true", source);
+        Assert.Contains("_treatBundledAllOnAsPlaceholder ? 1 : 2", detectProfile);
+        Assert.Contains("return -1", detectProfile);
+        Assert.Contains("toggle.Toggled += Capability_Toggled", source);
+        AssertInOrder(
+            source,
+            "_treatBundledAllOnAsPlaceholder = _config.UsesBundledDefaultConfig",
+            "_suppressProfile = true",
+            "ApplyProfile(1)",
+            "_suppressProfile = false",
+            "_treatBundledAllOnAsPlaceholder = false");
+        AssertInOrder(
+            ExtractMethod(source, "Capability_Toggled"),
+            "DetectProfileIndex()",
+            "ProfileRadio.SelectedIndex = profileIndex",
+            "UpdateCapabilityProfilePresentation(profileIndex)");
+    }
+
+    [Fact]
+    public void CapabilitiesPage_DisclosesAlwaysOnDeviceStatusWithoutOfferingFalseToggle()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml.cs"));
+        var xaml = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml"));
+
+        Assert.DoesNotContain("(\"Device\", \"Device\"", source);
+        Assert.DoesNotContain("[\"Canvas\", \"Screen\", \"Device\"]", source);
+        Assert.Contains("_config.Capabilities.Device = true", source);
+        Assert.Contains("Basic device info and status stay available while Node Mode is on.", xaml);
+    }
+
+    [Fact]
+    public void WizardSecondaryButton_DoesNotSkipEntireWizardInErrorState()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "WizardPage.xaml.cs"));
+        var method = ExtractMethod(source, "SecondaryClickAsync");
+
+        Assert.DoesNotContain("_errorState", method);
+        Assert.DoesNotContain("SkipWizardAsync", method);
+        Assert.Contains("SendCurrentAnswerAsync(skip: true)", method);
+    }
+
+    [Fact]
+    public void WizardCompletion_AppliesWindowsNodeContextBeforeSummary()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "WizardPage.xaml.cs"));
+        var complete = ExtractMethod(source, "CompleteSetupAsync");
+        var skip = ExtractMethod(source, "SkipWizardAsync");
+        var primary = ExtractMethod(source, "PrimaryClickAsync");
+        var finalizationError = ExtractMethod(source, "ShowFinalizationError");
+
+        AssertInOrder(
+            complete,
+            "ApplyWindowsNodeContextAsync",
+            "if (!contextResult.IsSuccess)",
+            "NavigateToComplete(true");
+        Assert.Contains("await CompleteSetupAsync(generation)", skip);
+        Assert.Contains("_errorState = false", skip);
+        AssertInOrder(
+            primary,
+            "if (_finalizationErrorState)",
+            "_errorState = false",
+            "await CompleteSetupAsync(_operationGeneration)",
+            "await StartWizardAsync()");
+        Assert.Contains("ShowFinalizationError", complete);
+        Assert.Contains("Retry Windows integration", finalizationError);
+    }
+
+    [Fact]
+    public void WizardConnect_UsesActiveGatewayRecordUrl()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "WizardPage.xaml.cs"));
+        var method = ExtractMethod(source, "ConnectClientAsync");
+
+        Assert.Contains("GatewayClientEndpointResolver.Resolve(record)", method);
+        Assert.Contains("new OpenClawGatewayClient(gatewayUrl, token", method);
+        Assert.DoesNotContain("config.EffectiveGatewayUrl", method);
     }
 
     [Fact]
@@ -438,7 +716,7 @@ public sealed class AppRefactorContractTests
                 .OrderBy(Path.GetFileName)
                 .Select(File.ReadAllText));
 
-        Assert.Contains("ms-appx:///OpenClaw.SetupEngine.UI/Assets/Setup/Lobster.png", xaml);
+        Assert.Contains("ms-appx:///OpenClaw.SetupEngine.UI/Assets/Setup/OpenClawMascot.png", xaml);
         Assert.DoesNotContain("ms-appx:///Assets/Setup/", xaml);
     }
 
@@ -449,20 +727,36 @@ public sealed class AppRefactorContractTests
         var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "WelcomePage.xaml.cs"));
         var method = ExtractMethod(source, "StartButtonClickAsync");
 
-        Assert.Contains("StartButton.IsEnabled = false", method);
+        Assert.Contains("InstallButton.IsEnabled = false", method);
+        Assert.Contains("InstallTitle.Text = CheckingButtonText", method);
         Assert.Contains("CheckingButtonText", method);
         Assert.Contains("var setupWindow = SetupWindow.Active", method);
         Assert.Contains("await Task.Run(() => ExistingConfigDetector.Detect", method);
         Assert.Contains("setupWindow is null or { IsClosed: true } || xamlRoot is null", method);
         Assert.Contains("setupWindow is { IsClosed: false }", method);
-        Assert.Contains("StartButton.IsEnabled = true", method);
+        Assert.Contains("InstallTitle.Text = InstallButtonText", method);
+        Assert.Contains("InstallButton.IsEnabled = true", method);
         AssertInOrder(
             method,
-            "StartButton.IsEnabled = false",
+            "InstallButton.IsEnabled = false",
             "await Task.Run(() => ExistingConfigDetector.Detect",
             "setupWindow is null or { IsClosed: true } || xamlRoot is null",
             "dialog.ShowAsync()",
             "setupWindow.NavigateToCapabilities()");
+    }
+
+    [Fact]
+    public void WizardErrorState_UsesMoreOptionsAndPreservesTranscriptOnGatewayRestart()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "WizardPage.xaml.cs"));
+        var showError = ExtractMethod(source, "ShowError");
+        var restart = ExtractMethod(source, "RestartGatewayAsync");
+
+        Assert.Contains("SecondaryButton.Visibility = Visibility.Collapsed", showError);
+        Assert.Contains("ShowRecoveryActions()", showError);
+        Assert.DoesNotContain("SecondaryButton.Content = \"Skip wizard\"", showError);
+        Assert.Contains("StartWizardAsync(clearTranscript: false)", restart);
     }
 
     [Fact]
@@ -647,7 +941,7 @@ public sealed class AppRefactorContractTests
     {
         var match = Regex.Match(
             source,
-            $@"(?m)^\s*(?:private|protected|public|internal)\s+(?:async\s+)?(?:Task(?:<[^>]+>)?|System\.Threading\.Tasks\.Task|void|bool|string\??|IntPtr|OpenClaw\.Connection\.GatewayCredential\?)\s+{Regex.Escape(methodName)}\s*\(");
+            $@"(?m)^\s*(?:private|protected|public|internal)\s+(?:async\s+)?(?:Task(?:<[^>]+>)?|System\.Threading\.Tasks\.Task|void|bool|int|string\??|IntPtr|OpenClaw\.Connection\.GatewayCredential\?)\s+{Regex.Escape(methodName)}\s*\(");
         Assert.True(match.Success, $"Could not find method {methodName}.");
 
         var brace = source.IndexOf('{', match.Index);

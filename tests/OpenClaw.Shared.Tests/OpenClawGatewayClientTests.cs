@@ -133,6 +133,15 @@ public class OpenClawGatewayClientTests
             return (ChatHistoryInfo)method!.Invoke(null, new object[] { document.RootElement.Clone(), sessionKey })!;
         }
 
+        public ChatSendResult ParseChatSendResponse(string responseJson)
+        {
+            using var document = JsonDocument.Parse(responseJson);
+            var method = typeof(OpenClawGatewayClient).GetMethod(
+                "ParseChatSendResult",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+            return (ChatSendResult)method!.Invoke(null, new object[] { document.RootElement.Clone() })!;
+        }
+
         public long ExtractChatTimestampMs(string payloadJson)
         {
             using var document = JsonDocument.Parse(payloadJson);
@@ -822,6 +831,38 @@ public class OpenClawGatewayClientTests
     }
 
     [Fact]
+    public void ProcessRawMessage_SessionMessageWithOpenClawMetadata_EmitsMessageIdentity()
+    {
+        var helper = new GatewayClientTestHelper();
+        ChatMessageInfo? received = null;
+        helper.Client.ChatMessageReceived += (_, message) => received = message;
+
+        helper.ProcessRawMessage("""
+        {
+          "type": "event",
+          "event": "session.message",
+          "payload": {
+            "sessionKey": "main",
+            "message": {
+              "role": "user",
+              "content": "queued spam message",
+              "timestamp": 1781631273567,
+              "__openclaw": {
+                "id": "msg-user-a",
+                "seq": 42
+              }
+            },
+            "state": "final"
+          }
+        }
+        """);
+
+        Assert.NotNull(received);
+        Assert.Equal("msg-user-a", received!.OpenClawId);
+        Assert.Equal(42, received.OpenClawSeq);
+    }
+
+    [Fact]
     public void ProcessRawMessage_SessionMessageWithContentBlocks_EmitsChatMessage()
     {
         var helper = new GatewayClientTestHelper();
@@ -930,6 +971,32 @@ public class OpenClawGatewayClientTests
     }
 
     [Fact]
+    public void ParseChatHistoryPayload_OpenClawMetadata_PreservesMessageIdentity()
+    {
+        var helper = new GatewayClientTestHelper();
+
+        var history = helper.ParseChatHistoryPayload("""
+        {
+          "messages": [
+            {
+              "role": "user",
+              "content": "a",
+              "timestamp": 1,
+              "__openclaw": {
+                "id": "msg-history-a",
+                "seq": 7
+              }
+            }
+          ]
+        }
+        """);
+
+        var message = Assert.Single(history.Messages);
+        Assert.Equal("msg-history-a", message.OpenClawId);
+        Assert.Equal(7, message.OpenClawSeq);
+    }
+
+    [Fact]
     public void ProcessRawMessage_SessionMessageWithMalformedMessage_DropsFrame()
     {
         var logger = new TestLogger();
@@ -988,6 +1055,37 @@ public class OpenClawGatewayClientTests
         {
             Assert.Null(notification);
         }
+    }
+
+    [Fact]
+    public void ProcessRawMessage_SessionMessageAssistantNotification_PreservesFullMessage()
+    {
+        var helper = new GatewayClientTestHelper();
+        OpenClawNotification? notification = null;
+        helper.Client.NotificationReceived += (_, value) => notification = value;
+
+        var fullMessage = new string('x', 240);
+
+        helper.ProcessRawMessage($$"""
+        {
+          "type": "event",
+          "event": "session.message",
+          "payload": {
+            "sessionKey": "agent:main:whatsapp:direct:+15551234567",
+            "message": {
+              "role": "assistant",
+              "content": "{{fullMessage}}",
+              "timestamp": 1781631280633
+            },
+            "state": "final"
+          }
+        }
+        """);
+
+        Assert.NotNull(notification);
+        Assert.True(notification!.IsChat);
+        Assert.Equal(fullMessage[..200] + "…", notification.Message);
+        Assert.Equal(fullMessage, notification.FullMessage);
     }
 
     [Fact]
@@ -1193,6 +1291,54 @@ public class OpenClawGatewayClientTests
 
         var result = await task;
         Assert.Equal("run-1", result.RunId);
+    }
+
+    [Fact]
+    public void ParseChatSendResponse_ReadsQueueAckStatus()
+    {
+        var helper = new GatewayClientTestHelper();
+
+        var result = helper.ParseChatSendResponse("""
+        {
+            "type": "res",
+            "id": "chat-1",
+            "ok": true,
+            "payload": {
+                "runId": "run-1",
+                "sessionKey": "main",
+                "status": "started"
+            },
+            "meta": { "cached": true }
+        }
+        """);
+
+        Assert.Equal("run-1", result.RunId);
+        Assert.Equal("main", result.SessionKey);
+        Assert.Equal("started", result.Status);
+        Assert.True(result.Cached);
+        Assert.False(result.IsTerminalFailure);
+    }
+
+    [Fact]
+    public void ParseChatSendResponse_ReadsTerminalFailureStatus()
+    {
+        var helper = new GatewayClientTestHelper();
+
+        var result = helper.ParseChatSendResponse("""
+        {
+            "type": "res",
+            "id": "chat-1",
+            "ok": true,
+            "payload": {
+                "status": "failed",
+                "error": { "message": "model unavailable" }
+            }
+        }
+        """);
+
+        Assert.Equal("failed", result.Status);
+        Assert.Equal("model unavailable", result.Error);
+        Assert.True(result.IsTerminalFailure);
     }
 
     [Fact]
