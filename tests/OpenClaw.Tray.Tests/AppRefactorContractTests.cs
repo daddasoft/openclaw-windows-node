@@ -306,6 +306,19 @@ public sealed class AppRefactorContractTests
     }
 
     [Fact]
+    public void PermissionsPage_ExecPolicyRemoveButtons_HaveAccessibleNames()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var xaml = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.Tray.WinUI", "Pages", "PermissionsPage.xaml"));
+        var codeBehind = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.Tray.WinUI", "Pages", "PermissionsPage.xaml.cs"));
+
+        Assert.Contains("AutomationProperties.Name=\"{Binding RemoveRuleAutomationName}\"", xaml);
+        Assert.Contains("AutomationProperties.AutomationId=\"{Binding RemoveRuleAutomationId}\"", xaml);
+        Assert.Contains("RemoveRuleAutomationName = $\"Remove rule {r.Pattern}\"", codeBehind);
+        Assert.Contains("RemoveRuleAutomationId = $\"RemoveExecPolicyRuleButton_{r.Index}\"", codeBehind);
+    }
+
+    [Fact]
     public void Shutdown_Order_PreservesAwaitedTeardownBeforeExit()
     {
         var source = ReadAppSources();
@@ -598,6 +611,29 @@ public sealed class AppRefactorContractTests
     }
 
     [Fact]
+    public void WizardProgressPolling_UsesStepIdForTimeoutClassification()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "WizardPage.xaml.cs"));
+
+        Assert.Contains("WizardTimeouts.ForStep(title, message, _stepId)", source);
+    }
+
+    [Fact]
+    public void WizardResetInputs_RemovesOverflowMoreButton()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "WizardPage.xaml.cs"));
+        var reset = ExtractMethod(source, "ResetInputs");
+
+        // The "More ▾" overflow button is a sibling of SelectOptions in the shared
+        // StackPanel, so ResetInputs must remove it between steps or it leaks forward.
+        Assert.Contains("_moreOptionsButton", reset);
+        Assert.Contains("morePanel.Children.Remove(_moreOptionsButton)", reset);
+        Assert.Contains("_moreOptionsButton = null", reset);
+    }
+
+    [Fact]
     public void WizardCompletion_AppliesWindowsNodeContextBeforeSummary()
     {
         var root = TestRepositoryPaths.GetRepositoryRoot();
@@ -725,9 +761,9 @@ public sealed class AppRefactorContractTests
     {
         var root = TestRepositoryPaths.GetRepositoryRoot();
         var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "WelcomePage.xaml.cs"));
-        var method = ExtractMethod(source, "StartButtonClickAsync");
+        var method = ExtractMethod(source, "StartInstallAsync");
 
-        Assert.Contains("InstallButton.IsEnabled = false", method);
+        Assert.Contains("NextButton.IsEnabled = false", method);
         Assert.Contains("InstallTitle.Text = CheckingButtonText", method);
         Assert.Contains("CheckingButtonText", method);
         Assert.Contains("var setupWindow = SetupWindow.Active", method);
@@ -735,10 +771,10 @@ public sealed class AppRefactorContractTests
         Assert.Contains("setupWindow is null or { IsClosed: true } || xamlRoot is null", method);
         Assert.Contains("setupWindow is { IsClosed: false }", method);
         Assert.Contains("InstallTitle.Text = InstallButtonText", method);
-        Assert.Contains("InstallButton.IsEnabled = true", method);
+        Assert.Contains("NextButton.IsEnabled = true", method);
         AssertInOrder(
             method,
-            "InstallButton.IsEnabled = false",
+            "NextButton.IsEnabled = false",
             "await Task.Run(() => ExistingConfigDetector.Detect",
             "setupWindow is null or { IsClosed: true } || xamlRoot is null",
             "dialog.ShowAsync()",

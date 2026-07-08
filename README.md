@@ -27,6 +27,8 @@ This monorepo contains the Windows hub, shared client libraries, and CLI utiliti
 | **OpenClaw.Cli** | CLI validator for WebSocket connect/send/probe using tray settings |
 | **OpenClaw.WinNode.Cli** | `winnode` CLI for invoking local Windows node/MCP capabilities |
 | **OpenClaw.SetupEngine** | Local gateway setup, WSL installation, and setup-code support |
+| **OpenClaw.SetupEngine.UI** | WinUI setup wizard pages hosted by the tray app |
+| **OpenClawTray.FunctionalUI** | In-repo declarative WinUI helper used by native chat and newer UI surfaces |
 
 ## 🚀 Quick Start
 
@@ -108,6 +110,9 @@ dotnet build src/OpenClaw.Tray.WinUI -r win-x64 -p:PackageMsix=true    # x64 MSI
 
 # Run isolated from your normal tray settings so multiple worktrees can run together
 .\run-app-local.ps1 -Isolated
+
+# Opt into side-by-side dev identity (separate mutex, protocol, gateway distro, and port)
+.\run-app-local.ps1 -Dev -Isolated
 
 # Alpha update testing from a Release build
 .\run-app-local.ps1 -Configuration Release -Isolated -UpdateChannel alpha
@@ -398,21 +403,8 @@ Shared library containing:
 ## Development
 
 ### Project Structure
-```
-openclaw-windows-node/
-├── src/
-│   ├── OpenClaw.Shared/           # Shared gateway library
-│   └── OpenClaw.Tray.WinUI/       # System tray app (WinUI 3)
-├── tests/
-│   ├── OpenClaw.Shared.Tests/     # Shared library tests
-│   └── OpenClaw.Tray.Tests/       # Tray app helper tests
-├── docs/
-│   └── images/                    # Screenshots
-├── openclaw-windows-node.slnx     # Solution file
-├── README.md
-├── LICENSE
-└── .gitignore
-```
+
+See [DEVELOPMENT.md](DEVELOPMENT.md#project-structure) for the complete and current `src/` and `tests/` project inventory.
 
 ### Configuration
 
