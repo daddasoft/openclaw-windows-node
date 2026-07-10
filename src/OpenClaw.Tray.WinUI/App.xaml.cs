@@ -3693,6 +3693,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
             EffectiveGatewayUrl = activeGateway?.Url ?? _settings?.GatewayUrl,
             EffectiveBrowserControlPort = activeGateway?.BrowserControlPort,
             HasActiveGatewayRecord = activeGateway != null,
+            ActiveGatewayHasSharedToken = !string.IsNullOrWhiteSpace(activeGateway?.SharedGatewayToken),
             ActiveGatewaySshTunnel = activeGateway?.SshTunnel
         };
     }
