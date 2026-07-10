@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using OpenClaw.Connection;
 using OpenClaw.Shared;
+using OpenClawTray.Controls;
 using OpenClawTray.Helpers;
 using OpenClawTray.Services;
 using System;
@@ -54,7 +55,8 @@ public sealed class PairingApprovalDialog : WindowEx
     {
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
 
-        Title = LocalizationHelper.GetString("PairingApproval_WindowTitle");
+        var windowTitle = $"{AppIdentity.DisplayName} - {LocalizationHelper.GetString("PairingApproval_WindowTitle")}";
+        Title = windowTitle;
         this.SetWindowSize(460, 460);
         this.CenterOnScreen();
         this.SetIcon("Assets\\openclaw.ico");
@@ -65,12 +67,12 @@ public sealed class PairingApprovalDialog : WindowEx
         var titleBar = new Grid { Height = 48, Padding = new Thickness(16, 0, 140, 0) };
         titleBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         titleBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var titleIcon = new TextBlock { Text = "🦞", FontSize = 16, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+        var titleIcon = new BrandMark { MarkSize = 16, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
         Grid.SetColumn(titleIcon, 0);
         titleBar.Children.Add(titleIcon);
         var titleText = new TextBlock
         {
-            Text = LocalizationHelper.GetString("PairingApproval_WindowTitle"),
+            Text = windowTitle,
             FontSize = 13,
             VerticalAlignment = VerticalAlignment.Center,
             Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],

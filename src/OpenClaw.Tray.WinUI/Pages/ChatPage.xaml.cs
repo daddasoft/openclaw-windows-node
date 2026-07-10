@@ -33,6 +33,8 @@ public sealed partial class ChatPage : Page
     private bool _webViewInitialized;
     private bool _webViewMode;
     private bool _pageActive;
+    private readonly SemaphoreSlim _speakerMuteGate = new(1, 1);
+    private int _voiceSettingsDialogOpen;
     private bool _navigationStarted;
     private CancellationTokenSource? _navigationCts;
     private global::Windows.Foundation.TypedEventHandler<CoreWebView2, CoreWebView2NavigationCompletedEventArgs>? _navCompletedHandler;
@@ -232,7 +234,7 @@ public sealed partial class ChatPage : Page
 
         var app = App.Current as App;
         var provider = ResolveChatProvider(app);
-        Func<string, Task>? readAloud = app is null ? null : app.SpeakChatTextAsync;
+        Func<string, Task>? readAloud = app is null ? null : ReadChatTextAloudAsync;
 
         // Consume a pending session-key hand-off from SessionsPage or a
         // notification toast so the chat root mounts with that thread selected.
@@ -292,8 +294,8 @@ public sealed partial class ChatPage : Page
             onVoiceRequest: VoiceTranscribeAsync,
             onAttachClick: OnAttachClicked,
             onSettingsClick: () => _hub?.NavigateTo("voice"),
-            onSpeakerMuteChanged: muted => (App.Current as App)?.SetChatSpeakerMuted(muted),
-            initialMuted: CurrentApp.Settings?.VoiceTtsEnabled == false,
+            onSpeakerMuteChanged: muted => _ = OnSpeakerMuteChangedAsync(muted),
+            initialMuted: ShouldStartSpeakerMuted(CurrentApp.Settings),
             suppressAutoDispose: true);
         _mountedProvider = provider;
         _mountedThreadId = threadIdToMount;
@@ -332,7 +334,9 @@ public sealed partial class ChatPage : Page
 
     private sealed class AccessibilityChatDataProvider : IChatDataProvider
     {
-        private const string ThreadId = "accessibility-main";
+        private const string DefaultThreadId = "accessibility-main";
+        private const string MainThreadId = "agent:main:main";
+        private const string ForkThreadId = "agent:main:fork";
         private static readonly ChatDataSnapshot Snapshot = CreateSnapshot();
 
         public string DisplayName => "Accessibility test chat";
@@ -387,15 +391,15 @@ public sealed partial class ChatPage : Page
 
         private static ChatDataSnapshot CreateSnapshot()
         {
-            var timeline = ChatTimelineState.Initial() with
+            static ChatTimelineState CreateTimeline(string id) => ChatTimelineState.Initial() with
             {
                 Entries = ChatTimelineState.Initial().Entries
                     .Add(new ChatTimelineItem(
-                        "accessibility-user",
+                        $"accessibility-user-{id}",
                         ChatTimelineItemKind.User,
                         "Verify the native chat surface."))
                     .Add(new ChatTimelineItem(
-                        "accessibility-assistant",
+                        $"accessibility-assistant-{id}",
                         ChatTimelineItemKind.Assistant,
                         "The timeline and composer are ready.")),
                 NextId = 3,
@@ -403,22 +407,42 @@ public sealed partial class ChatPage : Page
             };
 
             return new ChatDataSnapshot(
-                [new ChatThread
-                {
-                    Id = ThreadId,
-                    Title = "Accessibility session",
-                    Status = ChatThreadStatus.Running,
-                    Activity = ChatActivity.Idle,
-                    Model = "test-model",
-                }],
+                [
+                    new ChatThread
+                    {
+                        Id = DefaultThreadId,
+                        Title = "Accessibility session",
+                        Status = ChatThreadStatus.Running,
+                        Activity = ChatActivity.Idle,
+                        Model = "test-model",
+                    },
+                    new ChatThread
+                    {
+                        Id = MainThreadId,
+                        Title = $"Route target: {MainThreadId}",
+                        Status = ChatThreadStatus.Running,
+                        Activity = ChatActivity.Idle,
+                        Model = "test-model",
+                    },
+                    new ChatThread
+                    {
+                        Id = ForkThreadId,
+                        Title = $"Route target: {ForkThreadId}",
+                        Status = ChatThreadStatus.Running,
+                        Activity = ChatActivity.Idle,
+                        Model = "test-model",
+                    },
+                ],
                 new Dictionary<string, ChatTimelineState>
                 {
-                    [ThreadId] = timeline,
+                    [DefaultThreadId] = CreateTimeline(DefaultThreadId),
+                    [MainThreadId] = CreateTimeline(MainThreadId),
+                    [ForkThreadId] = CreateTimeline(ForkThreadId),
                 },
-                ThreadId,
+                DefaultThreadId,
                 "Connected (accessibility test)",
                 ["test-model"],
-                new ChatComposeTarget(ThreadId, IsReady: true));
+                new ChatComposeTarget(DefaultThreadId, IsReady: true));
         }
     }
 
@@ -829,7 +853,8 @@ public sealed partial class ChatPage : Page
             await ShowVoiceSettingsDialogAsync(
                 LocalizationHelper.GetString("ChatVoiceDialog_InputOffTitle"),
                 LocalizationHelper.GetString("ChatVoiceDialog_InputOffMessage"),
-                NavigateToVoiceSettings);
+                LocalizationHelper.GetString("ChatVoiceDialog_OpenPermissionsSettings"),
+                NavigateToPermissionsSettings);
             return null;
         }
 
@@ -840,7 +865,8 @@ public sealed partial class ChatPage : Page
             await ShowVoiceSettingsDialogAsync(
                 LocalizationHelper.GetString("ChatVoiceDialog_InputOffTitle"),
                 LocalizationHelper.GetString("ChatVoiceDialog_InputOffMessage"),
-                NavigateToVoiceSettings);
+                LocalizationHelper.GetString("ChatVoiceDialog_OpenPermissionsSettings"),
+                NavigateToPermissionsSettings);
             return null;
         }
 
@@ -850,6 +876,7 @@ public sealed partial class ChatPage : Page
             await ShowVoiceSettingsDialogAsync(
                 LocalizationHelper.GetString("ChatVoiceDialog_ModelRequiredTitle"),
                 LocalizationHelper.GetString("ChatVoiceDialog_ModelRequiredMessage"),
+                LocalizationHelper.GetString("ChatVoiceDialog_OpenVoiceSettings"),
                 NavigateToVoiceSettings);
             return null;
         }
@@ -880,8 +907,80 @@ public sealed partial class ChatPage : Page
         }
     }
 
-    private async Task ShowVoiceSettingsDialogAsync(string title, string message, Action openVoiceSettings)
+    private async Task ReadChatTextAloudAsync(string text)
     {
+        if (!await EnsureTtsReadyForChatAsync())
+            return;
+
+        await CurrentApp.SpeakChatTextAsync(text);
+    }
+
+    private async Task OnSpeakerMuteChangedAsync(bool muted)
+    {
+        if (!await _speakerMuteGate.WaitAsync(0))
+            return;
+
+        try
+        {
+            if (muted)
+            {
+                (App.Current as App)?.SetChatSpeakerMuted(true);
+                return;
+            }
+
+            if (IsTtsReadyForChat())
+            {
+                (App.Current as App)?.SetChatSpeakerMuted(false);
+                return;
+            }
+
+            (App.Current as App)?.SetChatSpeakerMuted(true);
+            _functionalHost?.SetSpeakerMuted(true);
+            await ShowTtsUnavailableDialogAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"Speaker mute change failed: {ex.Message}");
+        }
+        finally
+        {
+            _speakerMuteGate.Release();
+        }
+    }
+
+    private async Task<bool> EnsureTtsReadyForChatAsync()
+    {
+        if (IsTtsReadyForChat())
+            return true;
+
+        await ShowTtsUnavailableDialogAsync();
+        return false;
+    }
+
+    private static bool IsTtsReadyForChat()
+    {
+        return SpeechSetupReadiness.IsChatTtsPlaybackReady(CurrentApp.Settings);
+    }
+
+    private async Task ShowTtsUnavailableDialogAsync()
+    {
+        await ShowVoiceSettingsDialogAsync(
+            LocalizationHelper.GetString("ChatVoiceDialog_OutputOffTitle"),
+            LocalizationHelper.GetString("ChatVoiceDialog_OutputOffMessage"),
+            LocalizationHelper.GetString("ChatVoiceDialog_OpenPermissionsSettings"),
+            NavigateToPermissionsSettings);
+    }
+
+    private static bool ShouldStartSpeakerMuted(SettingsManager? settings)
+    {
+        return !SpeechSetupReadiness.IsAutomaticChatTtsEnabled(settings);
+    }
+
+    private async Task ShowVoiceSettingsDialogAsync(string title, string message, string primaryButtonText, Action openSettings)
+    {
+        if (Interlocked.Exchange(ref _voiceSettingsDialogOpen, 1) == 1)
+            return;
+
         var tcs = new TaskCompletionSource();
         if (DispatcherQueue is null || !DispatcherQueue.TryEnqueue(async () =>
         {
@@ -891,7 +990,7 @@ public sealed partial class ChatPage : Page
                 {
                     Title = title,
                     Content = message,
-                    PrimaryButtonText = LocalizationHelper.GetString("ChatVoiceDialog_OpenVoiceSettings"),
+                    PrimaryButtonText = primaryButtonText,
                     CloseButtonText = LocalizationHelper.GetString("ChatVoiceDialog_Dismiss"),
                     DefaultButton = ContentDialogButton.Primary,
                     XamlRoot = Content?.XamlRoot
@@ -912,7 +1011,7 @@ public sealed partial class ChatPage : Page
                 };
 
                 if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-                    openVoiceSettings();
+                    openSettings();
             }
             catch (InvalidOperationException ex)
             {
@@ -924,10 +1023,18 @@ public sealed partial class ChatPage : Page
             }
         }))
         {
+            Interlocked.Exchange(ref _voiceSettingsDialogOpen, 0);
             return;
         }
 
-        await tcs.Task;
+        try
+        {
+            await tcs.Task;
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _voiceSettingsDialogOpen, 0);
+        }
     }
 
     private void NavigateToVoiceSettings()
@@ -936,6 +1043,14 @@ public sealed partial class ChatPage : Page
             _hub.NavigateTo("voice");
         else
             (App.Current as App)?.ShowHub("voice");
+    }
+
+    private void NavigateToPermissionsSettings()
+    {
+        if (_hub is not null)
+            _hub.NavigateTo("permissions");
+        else
+            (App.Current as App)?.ShowHub("permissions");
     }
 
     private void OnAttachClicked()

@@ -28,6 +28,8 @@ public sealed class AppRefactorContractTests
 
         AssertInOrder(
             source,
+            "AppUserModelIdRegistrar.RegisterCurrentProcess(AppIdentity.AppUserModelId);",
+            "appUserModelIdRegistration.Attempted",
             "_settings = new SettingsManager();",
             "CheckForUpdatesAsync();",
             "ToastNotificationManagerCompat.OnActivated += OnToastActivated;",
@@ -228,6 +230,34 @@ public sealed class AppRefactorContractTests
         Assert.Contains("overallState = snapshot?.OverallState.ToString()", method);
         Assert.Contains("nodeState = snapshot?.NodeState.ToString()", method);
         Assert.Contains("nodeError = snapshot?.NodeError", method);
+    }
+
+    [Fact]
+    public void AppChatQueueMcpHandlers_AreWiredToAppCapability()
+    {
+        var source = ReadAppSources();
+        var method = ExtractMethod(source, "WireAppCapabilityHandlers");
+
+        Assert.Contains("app.ChatQueueListHandler = ListQueuedChatMessagesForMcpAsync;", method);
+        Assert.Contains("app.ChatQueueCancelHandler = CancelQueuedChatMessageForMcpAsync;", method);
+    }
+
+    [Fact]
+    public void AppChatSnapshot_IncludesQueuePayload()
+    {
+        var source = ReadAppSources();
+        var snapshotMethod = ExtractMethod(source, "BuildChatSnapshotPayload");
+        var queueMethod = ExtractMethod(source, "BuildChatQueuePayload");
+        var queueMessageMethod = ExtractMethod(source, "ToMcpQueuedMessage");
+        var cancelMethod = ExtractMethod(source, "CancelQueuedChatMessageForMcpAsync");
+
+        Assert.Contains("queue = BuildChatQueuePayload(snapshot, resolvedThreadId, filterToThread: false)", snapshotMethod);
+        Assert.Contains("snapshot.QueuedMessagesByThread", queueMethod);
+        Assert.Contains("sendState = message.SendState.ToString()", queueMessageMethod);
+        Assert.Contains("canCancel = CanCancelQueuedMessage(message)", queueMessageMethod);
+        Assert.Contains("canceled = await provider.CancelQueuedMessageAsync(resolvedThreadId, queuedMessageId)", cancelMethod);
+        Assert.Contains("Queued message is already sending and cannot be canceled", cancelMethod);
+        Assert.Contains("it may have started sending before cancellation was processed", cancelMethod);
     }
 
     [Fact]
@@ -823,6 +853,34 @@ public sealed class AppRefactorContractTests
     }
 
     [Fact]
+    public void TrayCoordinator_UsesStatusBadgedLobsterIcon()
+    {
+        var method = ExtractMethod(ReadCoordinatorSource(), "UpdateTrayIcon");
+
+        // The tray lobster mirrors the companion-app status dot instead of the
+        // static openclaw.ico, so it must resolve the accent and the badged icon.
+        Assert.Contains("ConnectionStatusPresenter.Accent(", method);
+        Assert.Contains("StatusBadgeIconFactory.GetBadgedIconPath(", method);
+        Assert.DoesNotContain("\"openclaw.ico\"", method);
+    }
+
+    [Fact]
+    public void HubWindow_DesktopIconMirrorsStatusAccent()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(
+            root, "src", "OpenClaw.Tray.WinUI", "Windows", "HubWindow.xaml.cs"));
+
+        // The desktop/taskbar icon is refreshed from the same accent as the pill.
+        var apply = ExtractMethod(source, "ApplyWindowStatusIcon");
+        Assert.Contains("StatusBadgeIconFactory.GetBadgedIconPath(accent)", apply);
+
+        // Both status-update paths must repaint the window icon.
+        var update = ExtractMethod(source, "UpdateTitleBarStatus");
+        Assert.Contains("ApplyWindowStatusIcon(accent)", update);
+    }
+
+    [Fact]
     public void AppNotifications_ConnectionIssueUsesStableDedupeKey()
     {
         var source = ReadAppSources();
@@ -977,7 +1035,7 @@ public sealed class AppRefactorContractTests
     {
         var match = Regex.Match(
             source,
-            $@"(?m)^\s*(?:private|protected|public|internal)\s+(?:async\s+)?(?:Task(?:<[^>]+>)?|System\.Threading\.Tasks\.Task|void|bool|int|string\??|IntPtr|OpenClaw\.Connection\.GatewayCredential\?)\s+{Regex.Escape(methodName)}\s*\(");
+            $@"(?m)^\s*(?:private|protected|public|internal)\s+(?:static\s+)?(?:async\s+)?(?:Task(?:<[^>]+>)?|System\.Threading\.Tasks\.Task|void|bool|int|string\??|object\??|IntPtr|OpenClaw\.Connection\.GatewayCredential\?)\s+{Regex.Escape(methodName)}\s*\(");
         Assert.True(match.Success, $"Could not find method {methodName}.");
 
         var brace = source.IndexOf('{', match.Index);

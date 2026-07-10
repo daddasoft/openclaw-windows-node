@@ -832,7 +832,7 @@ Use one of these options:
   </data>
   <!-- ==================== Recording Consent Dialog ==================== -->
   <data name="RecordingConsent_WindowTitle" xml:space="preserve">
-    <value>OpenClaw · Permission Request</value>
+    <value>Permission Request</value>
   </data>
   <data name="RecordingConsent_ScreenTitle" xml:space="preserve">
     <value>Allow screen recording?</value>
@@ -2288,9 +2288,6 @@ Use one of these options:
   <data name="HubWindow_NavigationViewItem_145.Content" xml:space="preserve">
     <value>Diagnostics</value>
   </data>
-<data name="HubWindow_NavigationViewItem_Notifications.Content" xml:space="preserve">
-  <value>Notifications</value>
-  </data>
 <data name="Onboarding_UnknownPage" xml:space="preserve">
   <value>Unknown page</value>
 </data>
@@ -2459,35 +2456,17 @@ Use one of these options:
   <data name="CronPageRemoveJobToolTip.Content" xml:space="preserve">
     <value>Remove job</value>
   </data>
-  <data name="PermissionsPage_SttMoreSettingsLink.Content" xml:space="preserve">
-    <value>More voice settings…</value>
+  <data name="PermissionsPage_VoiceSettingsLink.Content" xml:space="preserve">
+    <value>Voice &amp; Audio settings</value>
   </data>
-  <data name="PermissionsPage_TtsElevenLabsApiKey.Header" xml:space="preserve">
-    <value>ElevenLabs API key</value>
+  <data name="PermissionsPage_VoiceSettingsHelp_SpeechModel" xml:space="preserve">
+    <value>Download a speech model before speech-to-text can work.</value>
   </data>
-  <data name="PermissionsPage_TtsElevenLabsHelp.Text" xml:space="preserve">
-    <value>API key is encrypted at rest with Windows DPAPI. Leave blank to keep the previously saved value when you change other fields.</value>
+  <data name="PermissionsPage_VoiceSettingsHelp_VoiceSetup" xml:space="preserve">
+    <value>Your selected TTS provider still needs voice setup; chat read aloud can fall back to Windows speech.</value>
   </data>
-  <data name="PermissionsPage_TtsElevenLabsModel.Header" xml:space="preserve">
-    <value>ElevenLabs model</value>
-  </data>
-  <data name="PermissionsPage_TtsElevenLabsModel.PlaceholderText" xml:space="preserve">
-    <value>eleven_multilingual_v2</value>
-  </data>
-  <data name="PermissionsPage_TtsElevenLabsVoiceId.Header" xml:space="preserve">
-    <value>ElevenLabs voice ID</value>
-  </data>
-  <data name="PermissionsPage_TtsProviderComboBox.Header" xml:space="preserve">
-    <value>Provider</value>
-  </data>
-  <data name="PermissionsPage_TtsProviderElevenLabs.Content" xml:space="preserve">
-    <value>ElevenLabs</value>
-  </data>
-  <data name="PermissionsPage_TtsProviderPiper.Content" xml:space="preserve">
-    <value>Piper (local ML, recommended)</value>
-  </data>
-  <data name="PermissionsPage_TtsProviderWindows.Content" xml:space="preserve">
-    <value>Windows built-in speech</value>
+  <data name="PermissionsPage_VoiceSettingsHelp_Both" xml:space="preserve">
+    <value>Download a speech model for voice input. Your selected TTS provider also needs voice setup, though chat read aloud can fall back to Windows speech.</value>
   </data>
   <data name="VoiceSettingsPage_PageTitle.Text" xml:space="preserve">
     <value>Voice &amp; Audio</value>
@@ -2600,11 +2579,14 @@ Use one of these options:
   <data name="VoiceSettingsPage_SttDescription.Text" xml:space="preserve">
     <value>Enable voice input via microphone. Requires a Whisper model download.</value>
   </data>
-  <data name="VoiceSettingsPage_SttEnabledToggle.Header" xml:space="preserve">
-    <value>Enable Voice Input</value>
-  </data>
   <data name="VoiceSettingsPage_ModelHeader.Text" xml:space="preserve">
     <value>Speech Model</value>
+  </data>
+  <data name="VoiceSettingsPage_SttCapabilityDisabledNotice.Text" xml:space="preserve">
+    <value>Speech-to-text is disabled. Configure models here, then enable the capability in Permissions when you're ready.</value>
+  </data>
+  <data name="VoiceSettingsPage_OpenPermissionsLink.Content" xml:space="preserve">
+    <value>Open Permissions</value>
   </data>
   <data name="VoiceSettingsPage_ModelCombo.Header" xml:space="preserve">
     <value>Model Size</value>
@@ -2672,6 +2654,9 @@ Use one of these options:
   <data name="VoiceSettingsPage_VoiceDescription.Text" xml:space="preserve">
     <value>Choose the voice used when reading responses aloud.</value>
   </data>
+  <data name="VoiceSettingsPage_TtsCapabilityDisabledNotice.Text" xml:space="preserve">
+    <value>Text-to-speech is disabled. Configure providers and voices here, then enable the capability in Permissions when you're ready.</value>
+  </data>
   <data name="VoiceSettingsPage_TtsProviderCombo.Header" xml:space="preserve">
     <value>Provider</value>
   </data>
@@ -2733,7 +2718,7 @@ Use one of these options:
     <value>Voice Input Is Off</value>
   </data>
   <data name="ChatVoiceDialog_InputOffMessage" xml:space="preserve">
-    <value>Turn on Speech-to-Text in Voice settings, then download a speech model before using the microphone in chat.</value>
+    <value>Speech-to-text is disabled. Enable the capability in Permissions before using the microphone in chat.</value>
   </data>
   <data name="ChatVoiceDialog_ModelRequiredTitle" xml:space="preserve">
     <value>Speech Model Required</value>
@@ -2741,8 +2726,17 @@ Use one of these options:
   <data name="ChatVoiceDialog_ModelRequiredMessage" xml:space="preserve">
     <value>Speech-to-Text is on, but voice input will not work until at least one speech model is downloaded.</value>
   </data>
+  <data name="ChatVoiceDialog_OutputOffTitle" xml:space="preserve">
+    <value>Voice Output Is Off</value>
+  </data>
+  <data name="ChatVoiceDialog_OutputOffMessage" xml:space="preserve">
+    <value>Text-to-speech is disabled. Enable the capability in Permissions before using read aloud in chat.</value>
+  </data>
   <data name="ChatVoiceDialog_OpenVoiceSettings" xml:space="preserve">
     <value>Open Voice &amp; Audio Settings</value>
+  </data>
+  <data name="ChatVoiceDialog_OpenPermissionsSettings" xml:space="preserve">
+    <value>Open Permissions</value>
   </data>
   <data name="ChatVoiceDialog_Dismiss" xml:space="preserve">
     <value>Dismiss</value>
@@ -3061,6 +3055,18 @@ Use one of these options:
   </data>
   <data name="Chat_Composer_QueuedMessageFailed" xml:space="preserve">
     <value>Failed</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageCancel" xml:space="preserve">
+    <value>Cancel queued message</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageCancelAutomationFormat" xml:space="preserve">
+    <value>Cancel queued message {0}: {1}</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageRemoveFailed" xml:space="preserve">
+    <value>Remove failed queued message</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageRemoveFailedAutomationFormat" xml:space="preserve">
+    <value>Remove failed queued message {0}: {1}</value>
   </data>
   <data name="Chat_Assistant_Action_Copy" xml:space="preserve">
     <value>Copy message</value>
@@ -3397,25 +3403,13 @@ Commands are blocked while sandboxing is unavailable because strict fallback blo
     <value>Speech-to-text</value>
   </data>
   <data name="PermissionsPage_Cap_Stt_Description" xml:space="preserve">
-    <value>Lets agents transcribe microphone audio locally using Whisper. Turning this on downloads the Whisper model (~140 MB) on first use.</value>
+    <value>Lets agents transcribe microphone audio locally. Download a speech model in Voice &amp; Audio settings before first use.</value>
   </data>
   <data name="PermissionsPage_Cap_SystemRun_Label" xml:space="preserve">
     <value>System tools</value>
   </data>
   <data name="PermissionsPage_Cap_SystemRun_Description" xml:space="preserve">
     <value>Lets agents run shell commands and scripts on this PC. Turn this off to block all command execution.</value>
-  </data>
-  <data name="PermissionsPage_SttHint_Ready" xml:space="preserve">
-    <value>Whisper model is ready. Speech-to-text runs fully on this PC; no audio leaves the device.</value>
-  </data>
-  <data name="PermissionsPage_SttHint_Downloading" xml:space="preserve">
-    <value>Whisper model is downloading. Speech-to-text will be available once it's ready.</value>
-  </data>
-  <data name="PermissionsPage_SttHint_FailedFormat" xml:space="preserve">
-    <value>Whisper model download failed: {0}. Toggle Speech-to-text off and back on to retry.</value>
-  </data>
-  <data name="PermissionsPage_SttHint_NotDownloaded" xml:space="preserve">
-    <value>Whisper model is not downloaded. Open More voice settings… to download it before using speech-to-text.</value>
   </data>
   <data name="PermissionsPage_NodeStatus_Disabled" xml:space="preserve">
     <value>Node mode disabled</value>
@@ -3482,12 +3476,6 @@ Commands are blocked while sandboxing is unavailable because strict fallback blo
   </data>
   <data name="PermissionsPage_Allowlist_ParseFailed" xml:space="preserve">
     <value>Failed to parse allowlist from config.</value>
-  </data>
-  <data name="PermissionsPage_TtsStatus_DefaultProviderFormat" xml:space="preserve">
-    <value>Default provider: {0}</value>
-  </data>
-  <data name="PermissionsPage_TtsStatus_ElevenLabsSaved" xml:space="preserve">
-    <value>ElevenLabs settings saved.</value>
   </data>
   <data name="PermissionsPage_McpStatus_TokenReadFailedFormat" xml:space="preserve">
     <value>Failed to read token: {0}</value>
@@ -5638,7 +5626,7 @@ Make sure the gateway is running.</value>
     <value>How to create a Telegram bot →</value>
   </data>
   <data name="ChannelsPage_HelpDiscord" xml:space="preserve">
-    <value>How to create a Discord webhook →</value>
+    <value>How to create a Discord bot →</value>
   </data>
   <data name="ChannelsPage_HelpGoogleChat" xml:space="preserve">
     <value>How to add a Google Chat webhook →</value>
@@ -5692,19 +5680,19 @@ Make sure the gateway is running.</value>
     <value>Click &quot;Save and start&quot;. The channel will start automatically.</value>
   </data>
   <data name="ChannelsPage_GuideDiscordHeadline" xml:space="preserve">
-    <value>Connect Discord via a webhook</value>
+    <value>Connect Discord via a bot</value>
   </data>
   <data name="ChannelsPage_GuideDiscordStep1" xml:space="preserve">
-    <value>Open your Discord server settings → Integrations → Webhooks.</value>
+    <value>Open the Discord Developer Portal, then create or select an application.</value>
   </data>
   <data name="ChannelsPage_GuideDiscordStep2" xml:space="preserve">
-    <value>Click &quot;New Webhook&quot;, give it a name, and copy the webhook URL.</value>
+    <value>Open Bot, add a bot if needed, then reset and copy its token.</value>
   </data>
   <data name="ChannelsPage_GuideDiscordStep3" xml:space="preserve">
-    <value>Paste the URL into the Configuration form below.</value>
+    <value>Paste the bot token into the Configuration form below.</value>
   </data>
   <data name="ChannelsPage_GuideDiscordStep4" xml:space="preserve">
-    <value>Click &quot;Save and start&quot;.</value>
+    <value>Click &quot;Save and start&quot;, then add the bot to your server with its OAuth2 installation link.</value>
   </data>
   <data name="ChannelsPage_GuideGoogleChatHeadline" xml:space="preserve">
     <value>Connect Google Chat via a webhook</value>
@@ -5778,6 +5766,12 @@ Make sure the gateway is running.</value>
   <data name="ChannelsPage_FieldBotToken" xml:space="preserve">
     <value>Bot token</value>
   </data>
+  <data name="ChannelsPage_FieldDiscordBotToken" xml:space="preserve">
+    <value>Discord Bot Token</value>
+  </data>
+  <data name="ChannelsPage_PlaceholderDiscordBotToken" xml:space="preserve">
+    <value>Paste Discord bot token</value>
+  </data>
   <data name="ChannelsPage_FieldWebhookUrl" xml:space="preserve">
     <value>Webhook URL</value>
   </data>
@@ -5793,8 +5787,8 @@ Make sure the gateway is running.</value>
   <data name="ChannelsPage_HelpBotToken" xml:space="preserve">
     <value>Get from @BotFather (/newbot).</value>
   </data>
-  <data name="ChannelsPage_HelpWebhookDiscord" xml:space="preserve">
-    <value>Server Settings → Integrations → Webhooks → New Webhook.</value>
+  <data name="ChannelsPage_HelpDiscordBotToken" xml:space="preserve">
+    <value>Copy from Discord Developer Portal → Bot → Reset Token.</value>
   </data>
   <data name="ChannelsPage_HelpWebhookGoogleChat" xml:space="preserve">
     <value>Open a space → Manage webhooks → Add webhook.</value>

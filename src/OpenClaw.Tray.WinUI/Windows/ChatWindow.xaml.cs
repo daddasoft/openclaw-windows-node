@@ -30,6 +30,8 @@ public sealed partial class ChatWindow : WindowEx
     private bool _webViewInitialized;
     private bool _webViewMode;
     private bool _shownNearTray;
+    private readonly SemaphoreSlim _speakerMuteGate = new(1, 1);
+    private int _voiceSettingsDialogOpen;
     public bool IsClosed { get; private set; }
 
     [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
@@ -402,7 +404,7 @@ public sealed partial class ChatWindow : WindowEx
     {
         var app = App.Current as App;
         var provider = app?.ChatProvider;
-        Func<string, Task>? readAloud = app is null ? null : app.SpeakChatTextAsync;
+        Func<string, Task>? readAloud = app is null ? null : ReadChatTextAloudAsync;
 
         if (_functionalHost is not null && ReferenceEquals(_mountedProvider, provider))
         {
@@ -433,8 +435,8 @@ public sealed partial class ChatWindow : WindowEx
             onVoiceRequest: VoiceTranscribeAsync,
             onAttachClick: OnAttachClicked,
             onSettingsClick: () => appInstance?.ShowHub("voice"),
-            onSpeakerMuteChanged: muted => appInstance?.SetChatSpeakerMuted(muted),
-            initialMuted: appInstance?.Settings?.VoiceTtsEnabled == false,
+            onSpeakerMuteChanged: muted => _ = OnSpeakerMuteChangedAsync(muted),
+            initialMuted: ShouldStartSpeakerMuted(appInstance?.Settings),
             isCompact: true);
         _mountedProvider = provider;
         UpdateNativeChatSurfaceActive();
@@ -502,7 +504,8 @@ public sealed partial class ChatWindow : WindowEx
             await ShowVoiceSettingsDialogAsync(
                 LocalizationHelper.GetString("ChatVoiceDialog_InputOffTitle"),
                 LocalizationHelper.GetString("ChatVoiceDialog_InputOffMessage"),
-                () => app?.ShowHub("voice"));
+                LocalizationHelper.GetString("ChatVoiceDialog_OpenPermissionsSettings"),
+                () => app?.ShowHub("permissions"));
             return null;
         }
 
@@ -513,7 +516,8 @@ public sealed partial class ChatWindow : WindowEx
             await ShowVoiceSettingsDialogAsync(
                 LocalizationHelper.GetString("ChatVoiceDialog_InputOffTitle"),
                 LocalizationHelper.GetString("ChatVoiceDialog_InputOffMessage"),
-                () => app.ShowHub("voice"));
+                LocalizationHelper.GetString("ChatVoiceDialog_OpenPermissionsSettings"),
+                () => app.ShowHub("permissions"));
             return null;
         }
 
@@ -523,6 +527,7 @@ public sealed partial class ChatWindow : WindowEx
             await ShowVoiceSettingsDialogAsync(
                 LocalizationHelper.GetString("ChatVoiceDialog_ModelRequiredTitle"),
                 LocalizationHelper.GetString("ChatVoiceDialog_ModelRequiredMessage"),
+                LocalizationHelper.GetString("ChatVoiceDialog_OpenVoiceSettings"),
                 () => app.ShowHub("voice"));
             return null;
         }
@@ -552,8 +557,84 @@ public sealed partial class ChatWindow : WindowEx
         }
     }
 
-    private async Task ShowVoiceSettingsDialogAsync(string title, string message, Action openVoiceSettings)
+    private async Task ReadChatTextAloudAsync(string text)
     {
+        if (!await EnsureTtsReadyForChatAsync())
+            return;
+
+        if (App.Current is App app)
+            await app.SpeakChatTextAsync(text);
+    }
+
+    private async Task OnSpeakerMuteChangedAsync(bool muted)
+    {
+        if (!await _speakerMuteGate.WaitAsync(0))
+            return;
+
+        try
+        {
+            if (App.Current is not App app)
+                return;
+
+            if (muted)
+            {
+                app.SetChatSpeakerMuted(true);
+                return;
+            }
+
+            if (IsTtsReadyForChat(app.Settings))
+            {
+                app.SetChatSpeakerMuted(false);
+                return;
+            }
+
+            app.SetChatSpeakerMuted(true);
+            _functionalHost?.SetSpeakerMuted(true);
+            await ShowTtsUnavailableDialogAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"Speaker mute change failed: {ex.Message}");
+        }
+        finally
+        {
+            _speakerMuteGate.Release();
+        }
+    }
+
+    private async Task<bool> EnsureTtsReadyForChatAsync()
+    {
+        if (App.Current is App app && IsTtsReadyForChat(app.Settings))
+            return true;
+
+        await ShowTtsUnavailableDialogAsync();
+        return false;
+    }
+
+    private static bool IsTtsReadyForChat(SettingsManager? settings)
+    {
+        return SpeechSetupReadiness.IsChatTtsPlaybackReady(settings);
+    }
+
+    private async Task ShowTtsUnavailableDialogAsync()
+    {
+        await ShowVoiceSettingsDialogAsync(
+            LocalizationHelper.GetString("ChatVoiceDialog_OutputOffTitle"),
+            LocalizationHelper.GetString("ChatVoiceDialog_OutputOffMessage"),
+            LocalizationHelper.GetString("ChatVoiceDialog_OpenPermissionsSettings"),
+            () => (App.Current as App)?.ShowHub("permissions"));
+    }
+
+    private static bool ShouldStartSpeakerMuted(SettingsManager? settings)
+    {
+        return !SpeechSetupReadiness.IsAutomaticChatTtsEnabled(settings);
+    }
+
+    private async Task ShowVoiceSettingsDialogAsync(string title, string message, string primaryButtonText, Action openSettings)
+    {
+        if (Interlocked.Exchange(ref _voiceSettingsDialogOpen, 1) == 1)
+            return;
+
         var tcs = new TaskCompletionSource();
         if (DispatcherQueue is null || !DispatcherQueue.TryEnqueue(async () =>
         {
@@ -563,7 +644,7 @@ public sealed partial class ChatWindow : WindowEx
                 {
                     Title = title,
                     Content = message,
-                    PrimaryButtonText = LocalizationHelper.GetString("ChatVoiceDialog_OpenVoiceSettings"),
+                    PrimaryButtonText = primaryButtonText,
                     CloseButtonText = LocalizationHelper.GetString("ChatVoiceDialog_Dismiss"),
                     DefaultButton = ContentDialogButton.Primary,
                     XamlRoot = Content?.XamlRoot
@@ -584,7 +665,7 @@ public sealed partial class ChatWindow : WindowEx
                 };
 
                 if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-                    openVoiceSettings();
+                    openSettings();
             }
             catch (InvalidOperationException ex)
             {
@@ -596,10 +677,18 @@ public sealed partial class ChatWindow : WindowEx
             }
         }))
         {
+            Interlocked.Exchange(ref _voiceSettingsDialogOpen, 0);
             return;
         }
 
-        await tcs.Task;
+        try
+        {
+            await tcs.Task;
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _voiceSettingsDialogOpen, 0);
+        }
     }
 
     private async Task PickAndAttachFileAsync()

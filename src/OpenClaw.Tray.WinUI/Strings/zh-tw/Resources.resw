@@ -789,7 +789,7 @@
   </data>
   <!-- ==================== Recording Consent Dialog ==================== -->
   <data name="RecordingConsent_WindowTitle" xml:space="preserve">
-    <value>OpenClaw · 權限請求</value>
+    <value>權限請求</value>
   </data>
   <data name="RecordingConsent_ScreenTitle" xml:space="preserve">
     <value>允許螢幕錄製？</value>
@@ -2241,9 +2241,6 @@
   <data name="HubWindow_NavigationViewItem_145.Content" xml:space="preserve">
     <value>偵錯</value>
   </data>
-  <data name="HubWindow_NavigationViewItem_Notifications.Content" xml:space="preserve">
-    <value>通知</value>
-  </data>
   <data name="Onboarding_UnknownPage" xml:space="preserve">
     <value>未知頁面</value>
   </data>
@@ -2412,35 +2409,17 @@
   <data name="CronPageRemoveJobToolTip.Content" xml:space="preserve">
     <value>刪除工作</value>
   </data>
-  <data name="PermissionsPage_SttMoreSettingsLink.Content" xml:space="preserve">
-    <value>更多語音設定…</value>
+  <data name="PermissionsPage_VoiceSettingsLink.Content" xml:space="preserve">
+    <value>語音與音訊設定</value>
   </data>
-  <data name="PermissionsPage_TtsElevenLabsApiKey.Header" xml:space="preserve">
-    <value>ElevenLabs API 金鑰</value>
+  <data name="PermissionsPage_VoiceSettingsHelp_SpeechModel" xml:space="preserve">
+    <value>請先下載語音模型，語音轉文字才能正常運作。</value>
   </data>
-  <data name="PermissionsPage_TtsElevenLabsHelp.Text" xml:space="preserve">
-    <value>API 金鑰會使用 Windows DPAPI 加密儲存。修改其他欄位時若保持空白，則保留先前儲存的值。</value>
+  <data name="PermissionsPage_VoiceSettingsHelp_VoiceSetup" xml:space="preserve">
+    <value>所選 TTS 提供者仍需要語音設定；聊天朗讀可以回退到 Windows 語音。</value>
   </data>
-  <data name="PermissionsPage_TtsElevenLabsModel.Header" xml:space="preserve">
-    <value>ElevenLabs 模型</value>
-  </data>
-  <data name="PermissionsPage_TtsElevenLabsModel.PlaceholderText" xml:space="preserve">
-    <value>eleven_multilingual_v2</value>
-  </data>
-  <data name="PermissionsPage_TtsElevenLabsVoiceId.Header" xml:space="preserve">
-    <value>ElevenLabs 語音 ID</value>
-  </data>
-  <data name="PermissionsPage_TtsProviderComboBox.Header" xml:space="preserve">
-    <value>提供者</value>
-  </data>
-  <data name="PermissionsPage_TtsProviderElevenLabs.Content" xml:space="preserve">
-    <value>ElevenLabs</value>
-  </data>
-  <data name="PermissionsPage_TtsProviderPiper.Content" xml:space="preserve">
-    <value>Piper（本機 ML，建議）</value>
-  </data>
-  <data name="PermissionsPage_TtsProviderWindows.Content" xml:space="preserve">
-    <value>Windows 內建語音</value>
+  <data name="PermissionsPage_VoiceSettingsHelp_Both" xml:space="preserve">
+    <value>請為語音輸入下載語音模型。所選 TTS 提供者也需要語音設定，但聊天朗讀可以回退到 Windows 語音。</value>
   </data>
   <data name="VoiceSettingsPage_PageTitle.Text" xml:space="preserve">
     <value>語音與音訊</value>
@@ -2553,11 +2532,14 @@
   <data name="VoiceSettingsPage_SttDescription.Text" xml:space="preserve">
     <value>透過麥克風啟用語音輸入。需要下載 Whisper 模型。</value>
   </data>
-  <data name="VoiceSettingsPage_SttEnabledToggle.Header" xml:space="preserve">
-    <value>啟用語音輸入</value>
-  </data>
   <data name="VoiceSettingsPage_ModelHeader.Text" xml:space="preserve">
     <value>語音模型</value>
+  </data>
+  <data name="VoiceSettingsPage_SttCapabilityDisabledNotice.Text" xml:space="preserve">
+    <value>語音轉文字已停用。請先在此設定模型，準備好後再於「權限」中啟用此功能。</value>
+  </data>
+  <data name="VoiceSettingsPage_OpenPermissionsLink.Content" xml:space="preserve">
+    <value>開啟權限</value>
   </data>
   <data name="VoiceSettingsPage_ModelCombo.Header" xml:space="preserve">
     <value>模型大小</value>
@@ -2625,6 +2607,9 @@
   <data name="VoiceSettingsPage_VoiceDescription.Text" xml:space="preserve">
     <value>選擇朗讀回應時使用的語音。</value>
   </data>
+  <data name="VoiceSettingsPage_TtsCapabilityDisabledNotice.Text" xml:space="preserve">
+    <value>文字轉語音已停用。請先在此設定提供者和語音，準備好後再於「權限」中啟用此功能。</value>
+  </data>
   <data name="VoiceSettingsPage_TtsProviderCombo.Header" xml:space="preserve">
     <value>提供者</value>
   </data>
@@ -2686,7 +2671,7 @@
     <value>語音輸入已關閉</value>
   </data>
   <data name="ChatVoiceDialog_InputOffMessage" xml:space="preserve">
-    <value>請在語音設定中開啟語音轉文字，然後下載語音模型，才能在聊天中使用麥克風。</value>
+    <value>語音轉文字已停用。請先在「權限」中啟用此功能，然後再在聊天中使用麥克風。</value>
   </data>
   <data name="ChatVoiceDialog_ModelRequiredTitle" xml:space="preserve">
     <value>需要語音模型</value>
@@ -2694,8 +2679,17 @@
   <data name="ChatVoiceDialog_ModelRequiredMessage" xml:space="preserve">
     <value>語音轉文字已開啟，但至少下載一個語音模型後，語音輸入才會運作。</value>
   </data>
+  <data name="ChatVoiceDialog_OutputOffTitle" xml:space="preserve">
+    <value>語音輸出已關閉</value>
+  </data>
+  <data name="ChatVoiceDialog_OutputOffMessage" xml:space="preserve">
+    <value>文字轉語音已停用。請先在「權限」中啟用此功能，然後再在聊天中使用朗讀。</value>
+  </data>
   <data name="ChatVoiceDialog_OpenVoiceSettings" xml:space="preserve">
     <value>開啟語音和音訊設定</value>
+  </data>
+  <data name="ChatVoiceDialog_OpenPermissionsSettings" xml:space="preserve">
+    <value>開啟權限</value>
   </data>
   <data name="ChatVoiceDialog_Dismiss" xml:space="preserve">
     <value>關閉</value>
@@ -3014,6 +3008,18 @@
   </data>
   <data name="Chat_Composer_QueuedMessageFailed" xml:space="preserve">
     <value>失敗</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageCancel" xml:space="preserve">
+    <value>取消已排入佇列的訊息</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageCancelAutomationFormat" xml:space="preserve">
+    <value>取消已排入佇列的訊息 {0}：{1}</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageRemoveFailed" xml:space="preserve">
+    <value>移除失敗的已排入佇列訊息</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageRemoveFailedAutomationFormat" xml:space="preserve">
+    <value>移除失敗的已排入佇列訊息 {0}：{1}</value>
   </data>
   <data name="Chat_Assistant_Action_Copy" xml:space="preserve">
     <value>複製訊息</value>
@@ -3350,25 +3356,13 @@
     <value>Speech-to-text</value>
   </data>
   <data name="PermissionsPage_Cap_Stt_Description" xml:space="preserve">
-    <value>Lets agents transcribe microphone audio locally using Whisper. Turning this on downloads the Whisper model (~140 MB) on first use.</value>
+    <value>Lets agents transcribe microphone audio locally. Download a speech model in Voice &amp; Audio settings before first use.</value>
   </data>
   <data name="PermissionsPage_Cap_SystemRun_Label" xml:space="preserve">
     <value>System tools</value>
   </data>
   <data name="PermissionsPage_Cap_SystemRun_Description" xml:space="preserve">
     <value>Lets agents run shell commands and scripts on this PC. Turn this off to block all command execution.</value>
-  </data>
-  <data name="PermissionsPage_SttHint_Ready" xml:space="preserve">
-    <value>Whisper model is ready. Speech-to-text runs fully on this PC; no audio leaves the device.</value>
-  </data>
-  <data name="PermissionsPage_SttHint_Downloading" xml:space="preserve">
-    <value>Whisper model is downloading. Speech-to-text will be available once it's ready.</value>
-  </data>
-  <data name="PermissionsPage_SttHint_FailedFormat" xml:space="preserve">
-    <value>Whisper model download failed: {0}. Toggle Speech-to-text off and back on to retry.</value>
-  </data>
-  <data name="PermissionsPage_SttHint_NotDownloaded" xml:space="preserve">
-    <value>Whisper model is not downloaded. Open More voice settings… to download it before using speech-to-text.</value>
   </data>
   <data name="PermissionsPage_NodeStatus_Disabled" xml:space="preserve">
     <value>Node mode disabled</value>
@@ -3435,12 +3429,6 @@
   </data>
   <data name="PermissionsPage_Allowlist_ParseFailed" xml:space="preserve">
     <value>Failed to parse allowlist from config.</value>
-  </data>
-  <data name="PermissionsPage_TtsStatus_DefaultProviderFormat" xml:space="preserve">
-    <value>Default provider: {0}</value>
-  </data>
-  <data name="PermissionsPage_TtsStatus_ElevenLabsSaved" xml:space="preserve">
-    <value>ElevenLabs settings saved.</value>
   </data>
   <data name="PermissionsPage_McpStatus_TokenReadFailedFormat" xml:space="preserve">
     <value>Failed to read token: {0}</value>
@@ -5634,7 +5622,7 @@
     <value>如何建立 Telegram 機器人 →</value>
   </data>
   <data name="ChannelsPage_HelpDiscord" xml:space="preserve">
-    <value>如何建立 Discord webhook →</value>
+    <value>如何建立 Discord 機器人 →</value>
   </data>
   <data name="ChannelsPage_HelpGoogleChat" xml:space="preserve">
     <value>如何新增 Google Chat webhook →</value>
@@ -5688,19 +5676,19 @@
     <value>點擊 "Save and start"。頻道將自動啟動。</value>
   </data>
   <data name="ChannelsPage_GuideDiscordHeadline" xml:space="preserve">
-    <value>透過 webhook 連接 Discord</value>
+    <value>透過機器人連接 Discord</value>
   </data>
   <data name="ChannelsPage_GuideDiscordStep1" xml:space="preserve">
-    <value>開啟您的 Discord 伺服器設定 → 整合 → Webhooks。</value>
+    <value>開啟 Discord 開發者入口網站，然後建立或選取應用程式。</value>
   </data>
   <data name="ChannelsPage_GuideDiscordStep2" xml:space="preserve">
-    <value>點擊 "New Webhook"，為其命名，然後複製 webhook URL。</value>
+    <value>開啟 Bot，視需要新增機器人，然後重設並複製其權杖。</value>
   </data>
   <data name="ChannelsPage_GuideDiscordStep3" xml:space="preserve">
-    <value>將 URL 貼到下方的設定表單中。</value>
+    <value>將機器人權杖貼到下方的設定表單中。</value>
   </data>
   <data name="ChannelsPage_GuideDiscordStep4" xml:space="preserve">
-    <value>點擊 "Save and start"。</value>
+    <value>點擊 "Save and start"，然後使用 OAuth2 安裝連結將機器人新增到伺服器。</value>
   </data>
   <data name="ChannelsPage_GuideGoogleChatHeadline" xml:space="preserve">
     <value>透過 webhook 連接 Google Chat</value>
@@ -5774,6 +5762,12 @@
   <data name="ChannelsPage_FieldBotToken" xml:space="preserve">
     <value>機器人權杖</value>
   </data>
+  <data name="ChannelsPage_FieldDiscordBotToken" xml:space="preserve">
+    <value>Discord 機器人權杖</value>
+  </data>
+  <data name="ChannelsPage_PlaceholderDiscordBotToken" xml:space="preserve">
+    <value>貼上 Discord 機器人權杖</value>
+  </data>
   <data name="ChannelsPage_FieldWebhookUrl" xml:space="preserve">
     <value>Webhook 網址</value>
   </data>
@@ -5789,8 +5783,8 @@
   <data name="ChannelsPage_HelpBotToken" xml:space="preserve">
     <value>從 @BotFather (/newbot) 取得。</value>
   </data>
-  <data name="ChannelsPage_HelpWebhookDiscord" xml:space="preserve">
-    <value>伺服器設定 → 整合 → Webhooks → New Webhook。</value>
+  <data name="ChannelsPage_HelpDiscordBotToken" xml:space="preserve">
+    <value>從 Discord 開發者入口網站 → Bot → Reset Token 複製。</value>
   </data>
   <data name="ChannelsPage_HelpWebhookGoogleChat" xml:space="preserve">
     <value>開啟聊天室 → 管理 webhook → 新增 webhook。</value>

@@ -145,10 +145,11 @@ public sealed class OpenClawChatRoot : Component
         _scrollToBottomToken = () => scrollToBottomToken.Set(scrollToBottomToken.Value + 1);
         SetSpeakerMuted = muted => speakerMuted.Set(muted);
         var snapshotState = UseState<ChatDataSnapshot?>(null, threadSafe: true);
-        var selectedIdState = UseState<string?>(_initialThreadId, threadSafe: true);
+        var initialSelectedId = _initialThreadId ?? (_provider as OpenClawChatDataProvider)?.CachedLastChatState?.DefaultThreadId;
+        var selectedIdState = UseState<string?>(initialSelectedId, threadSafe: true);
         // UseRef tracks the selected ID across renders so that closures captured
         // inside UseEffect always read the latest value (UseState structs go stale).
-        var selectedIdRef = UseRef<string?>(_initialThreadId);
+        var selectedIdRef = UseRef<string?>(initialSelectedId);
         selectedIdRef.Current = selectedIdState.Value;
 
         UseEffect((Func<Action>)(() =>
@@ -301,6 +302,8 @@ public sealed class OpenClawChatRoot : Component
         {
             queuedMessages = queuedForThread.ToArray();
         }
+        var hasPendingQueuedSend = queuedMessages.Any(message =>
+            message.SendState is ChatQueuedMessageSendState.Queued or ChatQueuedMessageSendState.Sending);
 
         var entries = (IReadOnlyList<ChatTimelineItem>)timeline.Entries;
         var connectedRaw = snapshot.ConnectionStatus;
@@ -567,6 +570,7 @@ public sealed class OpenClawChatRoot : Component
                 CurrentModel: composerThread.Model,
                 CurrentModelProvider: composerThread.ModelProvider,
                 CurrentThinkingLevel: composerThread.ThinkingLevel,
+                MessageOptionsDisabled: turnActiveOverride || hasPendingQueuedSend,
                 ModelChoices: snapshot.ModelChoices,
                 OnSend: (msg, attachments) =>
                 {
@@ -578,6 +582,8 @@ public sealed class OpenClawChatRoot : Component
                 {
                     selectedIdState.Set(id);
                     selectedIdRef.Current = id;
+                    if (_provider is OpenClawChatDataProvider nativeProvider)
+                        nativeProvider.RememberSelectedThread(id);
                 },
                 OnModelChanged: model => ObserveFireAndForget(_provider.SetModelAsync(composerThread.Id!, model)),
                 OnModelCleared: () => ObserveFireAndForget(_provider.ClearModelAsync(composerThread.Id!)),
@@ -587,6 +593,7 @@ public sealed class OpenClawChatRoot : Component
                 OnAttachClick: _onAttachClick,
                 PendingAttachments: pendingAttachments.Value,
                 QueuedMessages: queuedMessages,
+                OnQueuedMessageCancel: queuedMessageId => RunFireAndForget(ct => _provider.CancelQueuedMessageAsync(composerThread.Id!, queuedMessageId, ct)),
                 OnAttachmentRemoved: attachment => SetPendingAttachments(RemoveAttachment(pendingAttachmentsRef.Current, attachment)),
                 IsSpeakerMuted: speakerMuted.Value,
                 OnSpeakerToggle: () =>

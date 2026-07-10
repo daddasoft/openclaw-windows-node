@@ -790,7 +790,7 @@ Gebruik een van deze opties:
   </data>
   <!-- ==================== Recording Consent Dialog ==================== -->
   <data name="RecordingConsent_WindowTitle" xml:space="preserve">
-    <value>OpenClaw · Toestemmingsverzoek</value>
+    <value>Toestemmingsverzoek</value>
   </data>
   <data name="RecordingConsent_ScreenTitle" xml:space="preserve">
     <value>Schermopname toestaan?</value>
@@ -2242,9 +2242,6 @@ Gebruik een van deze opties:
   <data name="HubWindow_NavigationViewItem_145.Content" xml:space="preserve">
     <value>Foutopsporing</value>
   </data>
-  <data name="HubWindow_NavigationViewItem_Notifications.Content" xml:space="preserve">
-    <value>Meldingen</value>
-  </data>
   <data name="Onboarding_UnknownPage" xml:space="preserve">
     <value>Onbekende pagina</value>
   </data>
@@ -2413,35 +2410,17 @@ Gebruik een van deze opties:
   <data name="CronPageRemoveJobToolTip.Content" xml:space="preserve">
     <value>Taak verwijderen</value>
   </data>
-  <data name="PermissionsPage_SttMoreSettingsLink.Content" xml:space="preserve">
-    <value>Meer spraakinstellingen…</value>
+  <data name="PermissionsPage_VoiceSettingsLink.Content" xml:space="preserve">
+    <value>Spraak- en audio-instellingen</value>
   </data>
-  <data name="PermissionsPage_TtsElevenLabsApiKey.Header" xml:space="preserve">
-    <value>ElevenLabs API-sleutel</value>
+  <data name="PermissionsPage_VoiceSettingsHelp_SpeechModel" xml:space="preserve">
+    <value>Download een spraakmodel voordat spraak-naar-tekst kan werken.</value>
   </data>
-  <data name="PermissionsPage_TtsElevenLabsHelp.Text" xml:space="preserve">
-    <value>API-sleutel wordt versleuteld opgeslagen met Windows DPAPI. Laat leeg om de eerder opgeslagen waarde te behouden bij het wijzigen van andere velden.</value>
+  <data name="PermissionsPage_VoiceSettingsHelp_VoiceSetup" xml:space="preserve">
+    <value>De geselecteerde TTS-provider heeft nog spraakconfiguratie nodig; hardop voorlezen in chat kan terugvallen op Windows-spraak.</value>
   </data>
-  <data name="PermissionsPage_TtsElevenLabsModel.Header" xml:space="preserve">
-    <value>ElevenLabs-model</value>
-  </data>
-  <data name="PermissionsPage_TtsElevenLabsModel.PlaceholderText" xml:space="preserve">
-    <value>eleven_multilingual_v2</value>
-  </data>
-  <data name="PermissionsPage_TtsElevenLabsVoiceId.Header" xml:space="preserve">
-    <value>ElevenLabs stem-ID</value>
-  </data>
-  <data name="PermissionsPage_TtsProviderComboBox.Header" xml:space="preserve">
-    <value>Aanbieder</value>
-  </data>
-  <data name="PermissionsPage_TtsProviderElevenLabs.Content" xml:space="preserve">
-    <value>ElevenLabs</value>
-  </data>
-  <data name="PermissionsPage_TtsProviderPiper.Content" xml:space="preserve">
-    <value>Piper (lokale ML, aanbevolen)</value>
-  </data>
-  <data name="PermissionsPage_TtsProviderWindows.Content" xml:space="preserve">
-    <value>Ingebouwde Windows-spraak</value>
+  <data name="PermissionsPage_VoiceSettingsHelp_Both" xml:space="preserve">
+    <value>Download een spraakmodel voor spraakinvoer. De geselecteerde TTS-provider heeft ook spraakconfiguratie nodig, hoewel hardop voorlezen in chat kan terugvallen op Windows-spraak.</value>
   </data>
   <data name="VoiceSettingsPage_PageTitle.Text" xml:space="preserve">
     <value>Spraak en audio</value>
@@ -2554,11 +2533,14 @@ Gebruik een van deze opties:
   <data name="VoiceSettingsPage_SttDescription.Text" xml:space="preserve">
     <value>Schakel spraakinvoer via microfoon in. Vereist een Whisper-modeldownload.</value>
   </data>
-  <data name="VoiceSettingsPage_SttEnabledToggle.Header" xml:space="preserve">
-    <value>Spraakinvoer inschakelen</value>
-  </data>
   <data name="VoiceSettingsPage_ModelHeader.Text" xml:space="preserve">
     <value>Spraakmodel</value>
+  </data>
+  <data name="VoiceSettingsPage_SttCapabilityDisabledNotice.Text" xml:space="preserve">
+    <value>Spraak-naar-tekst is uitgeschakeld. Configureer de modellen hier en schakel de mogelijkheid in Machtigingen in wanneer je klaar bent.</value>
+  </data>
+  <data name="VoiceSettingsPage_OpenPermissionsLink.Content" xml:space="preserve">
+    <value>Machtigingen openen</value>
   </data>
   <data name="VoiceSettingsPage_ModelCombo.Header" xml:space="preserve">
     <value>Modelgrootte</value>
@@ -2626,6 +2608,9 @@ Gebruik een van deze opties:
   <data name="VoiceSettingsPage_VoiceDescription.Text" xml:space="preserve">
     <value>Kies de stem die wordt gebruikt bij het hardop voorlezen van antwoorden.</value>
   </data>
+  <data name="VoiceSettingsPage_TtsCapabilityDisabledNotice.Text" xml:space="preserve">
+    <value>Tekst-naar-spraak is uitgeschakeld. Configureer de providers en stemmen hier en schakel de mogelijkheid in Machtigingen in wanneer je klaar bent.</value>
+  </data>
   <data name="VoiceSettingsPage_TtsProviderCombo.Header" xml:space="preserve">
     <value>Aanbieder</value>
   </data>
@@ -2687,7 +2672,7 @@ Gebruik een van deze opties:
     <value>Spraakinvoer is uitgeschakeld</value>
   </data>
   <data name="ChatVoiceDialog_InputOffMessage" xml:space="preserve">
-    <value>Schakel Spraak-naar-tekst in bij Spraakinstellingen en download daarna een spraakmodel voordat u de microfoon in de chat gebruikt.</value>
+    <value>Spraak-naar-tekst is uitgeschakeld. Schakel de capaciteit in bij Machtigingen voordat u de microfoon in de chat gebruikt.</value>
   </data>
   <data name="ChatVoiceDialog_ModelRequiredTitle" xml:space="preserve">
     <value>Spraakmodel vereist</value>
@@ -2695,8 +2680,17 @@ Gebruik een van deze opties:
   <data name="ChatVoiceDialog_ModelRequiredMessage" xml:space="preserve">
     <value>Spraak-naar-tekst is ingeschakeld, maar spraakinvoer werkt pas nadat ten minste één spraakmodel is gedownload.</value>
   </data>
+  <data name="ChatVoiceDialog_OutputOffTitle" xml:space="preserve">
+    <value>Spraakuitvoer is uitgeschakeld</value>
+  </data>
+  <data name="ChatVoiceDialog_OutputOffMessage" xml:space="preserve">
+    <value>Tekst-naar-spraak is uitgeschakeld. Schakel de mogelijkheid in Machtigingen in voordat u hardop voorlezen in chat gebruikt.</value>
+  </data>
   <data name="ChatVoiceDialog_OpenVoiceSettings" xml:space="preserve">
     <value>Spraak- en audio-instellingen openen</value>
+  </data>
+  <data name="ChatVoiceDialog_OpenPermissionsSettings" xml:space="preserve">
+    <value>Machtigingen openen</value>
   </data>
   <data name="ChatVoiceDialog_Dismiss" xml:space="preserve">
     <value>Sluiten</value>
@@ -3015,6 +3009,18 @@ Gebruik een van deze opties:
   </data>
   <data name="Chat_Composer_QueuedMessageFailed" xml:space="preserve">
     <value>Mislukt</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageCancel" xml:space="preserve">
+    <value>Bericht in wachtrij annuleren</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageCancelAutomationFormat" xml:space="preserve">
+    <value>Bericht {0} in wachtrij annuleren: {1}</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageRemoveFailed" xml:space="preserve">
+    <value>Mislukt bericht in wachtrij verwijderen</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageRemoveFailedAutomationFormat" xml:space="preserve">
+    <value>Mislukt bericht {0} in wachtrij verwijderen: {1}</value>
   </data>
   <data name="Chat_Assistant_Action_Copy" xml:space="preserve">
     <value>Bericht kopiëren</value>
@@ -3351,25 +3357,13 @@ Opdrachten worden geblokkeerd zolang sandboxing niet beschikbaar is, omdat strik
     <value>Speech-to-text</value>
   </data>
   <data name="PermissionsPage_Cap_Stt_Description" xml:space="preserve">
-    <value>Lets agents transcribe microphone audio locally using Whisper. Turning this on downloads the Whisper model (~140 MB) on first use.</value>
+    <value>Lets agents transcribe microphone audio locally. Download a speech model in Voice &amp; Audio settings before first use.</value>
   </data>
   <data name="PermissionsPage_Cap_SystemRun_Label" xml:space="preserve">
     <value>System tools</value>
   </data>
   <data name="PermissionsPage_Cap_SystemRun_Description" xml:space="preserve">
     <value>Lets agents run shell commands and scripts on this PC. Turn this off to block all command execution.</value>
-  </data>
-  <data name="PermissionsPage_SttHint_Ready" xml:space="preserve">
-    <value>Whisper model is ready. Speech-to-text runs fully on this PC; no audio leaves the device.</value>
-  </data>
-  <data name="PermissionsPage_SttHint_Downloading" xml:space="preserve">
-    <value>Whisper model is downloading. Speech-to-text will be available once it's ready.</value>
-  </data>
-  <data name="PermissionsPage_SttHint_FailedFormat" xml:space="preserve">
-    <value>Whisper model download failed: {0}. Toggle Speech-to-text off and back on to retry.</value>
-  </data>
-  <data name="PermissionsPage_SttHint_NotDownloaded" xml:space="preserve">
-    <value>Whisper model is not downloaded. Open More voice settings… to download it before using speech-to-text.</value>
   </data>
   <data name="PermissionsPage_NodeStatus_Disabled" xml:space="preserve">
     <value>Node mode disabled</value>
@@ -3436,12 +3430,6 @@ Opdrachten worden geblokkeerd zolang sandboxing niet beschikbaar is, omdat strik
   </data>
   <data name="PermissionsPage_Allowlist_ParseFailed" xml:space="preserve">
     <value>Failed to parse allowlist from config.</value>
-  </data>
-  <data name="PermissionsPage_TtsStatus_DefaultProviderFormat" xml:space="preserve">
-    <value>Default provider: {0}</value>
-  </data>
-  <data name="PermissionsPage_TtsStatus_ElevenLabsSaved" xml:space="preserve">
-    <value>ElevenLabs settings saved.</value>
   </data>
   <data name="PermissionsPage_McpStatus_TokenReadFailedFormat" xml:space="preserve">
     <value>Failed to read token: {0}</value>
@@ -5635,7 +5623,7 @@ Controleer of de gateway actief is.</value>
     <value>Een Telegram-bot aanmaken →</value>
   </data>
   <data name="ChannelsPage_HelpDiscord" xml:space="preserve">
-    <value>Een Discord-webhook aanmaken →</value>
+    <value>Een Discord-bot aanmaken →</value>
   </data>
   <data name="ChannelsPage_HelpGoogleChat" xml:space="preserve">
     <value>Een Google Chat-webhook toevoegen →</value>
@@ -5689,19 +5677,19 @@ Controleer of de gateway actief is.</value>
     <value>Klik op "Save and start". Het kanaal start automatisch.</value>
   </data>
   <data name="ChannelsPage_GuideDiscordHeadline" xml:space="preserve">
-    <value>Discord verbinden via een webhook</value>
+    <value>Discord verbinden via een bot</value>
   </data>
   <data name="ChannelsPage_GuideDiscordStep1" xml:space="preserve">
-    <value>Open uw Discord-serverinstellingen → Integraties → Webhooks.</value>
+    <value>Open de Discord Developer Portal en maak of selecteer een toepassing.</value>
   </data>
   <data name="ChannelsPage_GuideDiscordStep2" xml:space="preserve">
-    <value>Klik op "New Webhook", geef het een naam en kopieer de webhook-URL.</value>
+    <value>Open Bot, voeg zo nodig een bot toe en stel het token opnieuw in om het te kopiëren.</value>
   </data>
   <data name="ChannelsPage_GuideDiscordStep3" xml:space="preserve">
-    <value>Plak de URL in het configuratieformulier hieronder.</value>
+    <value>Plak het bottoken in het configuratieformulier hieronder.</value>
   </data>
   <data name="ChannelsPage_GuideDiscordStep4" xml:space="preserve">
-    <value>Klik op "Save and start".</value>
+    <value>Klik op "Save and start" en voeg de bot daarna toe aan uw server met de OAuth2-installatielink.</value>
   </data>
   <data name="ChannelsPage_GuideGoogleChatHeadline" xml:space="preserve">
     <value>Google Chat verbinden via een webhook</value>
@@ -5775,6 +5763,12 @@ Controleer of de gateway actief is.</value>
   <data name="ChannelsPage_FieldBotToken" xml:space="preserve">
     <value>Bot-token</value>
   </data>
+  <data name="ChannelsPage_FieldDiscordBotToken" xml:space="preserve">
+    <value>Discord-bottoken</value>
+  </data>
+  <data name="ChannelsPage_PlaceholderDiscordBotToken" xml:space="preserve">
+    <value>Plak het Discord-bottoken</value>
+  </data>
   <data name="ChannelsPage_FieldWebhookUrl" xml:space="preserve">
     <value>Webhook-URL</value>
   </data>
@@ -5790,8 +5784,8 @@ Controleer of de gateway actief is.</value>
   <data name="ChannelsPage_HelpBotToken" xml:space="preserve">
     <value>Verkrijg het via @BotFather (/newbot).</value>
   </data>
-  <data name="ChannelsPage_HelpWebhookDiscord" xml:space="preserve">
-    <value>Serverinstellingen → Integraties → Webhooks → New Webhook.</value>
+  <data name="ChannelsPage_HelpDiscordBotToken" xml:space="preserve">
+    <value>Kopieer uit de Discord Developer Portal → Bot → Token opnieuw instellen.</value>
   </data>
   <data name="ChannelsPage_HelpWebhookGoogleChat" xml:space="preserve">
     <value>Open een ruimte → Webhooks beheren → Webhook toevoegen.</value>

@@ -475,6 +475,12 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
         // Store protocol URI for processing after setup
         _pendingProtocolUri = protocolUri;
 
+        var appUserModelIdRegistration = AppUserModelIdRegistrar.RegisterCurrentProcess(AppIdentity.AppUserModelId);
+        if (appUserModelIdRegistration.Attempted && appUserModelIdRegistration.HResult < 0)
+        {
+            Logger.Warn($"Failed to set AppUserModelID '{AppIdentity.AppUserModelId}' (HRESULT=0x{appUserModelIdRegistration.HResult:X8}); toast sender name may fall back to the executable name.");
+        }
+
         // Initialize settings before update check so skip selections can be remembered.
         _settings = new SettingsManager();
         _previousSettingsSnapshot = _settings.ToSettingsData().ToConnectionSnapshot();
@@ -760,7 +766,10 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
         // Pre-create tray menu window at startup to avoid creation crashes later
         InitializeTrayMenuWindow();
         
-        var iconPath = IconHelper.GetStatusIconPath(ConnectionStatus.Disconnected);
+        // Start with the status-badged lobster (neutral/gray dot) so the tray icon
+        // mirrors the companion-app status from first paint, even before the first
+        // connection-state update arrives.
+        var iconPath = StatusBadgeIconFactory.GetBadgedIconPath(ConnectionStatusAccent.Neutral);
         _trayIcon = new TrayIcon(1, iconPath, BuildTrayTooltip());
         _trayIconCoordinator = new TrayIconCoordinator(
             _trayIcon,
@@ -2766,8 +2775,8 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
             //     });
             // }
 
-            // TTS: read response aloud whenever the toggle is on (any chat surface).
-            if (_settings?.VoiceTtsEnabled == true)
+            // TTS: read response aloud whenever chat TTS is enabled and ready (any chat surface).
+            if (SpeechSetupReadiness.IsAutomaticChatTtsEnabled(_settings))
             {
                 _ = (_chatCoordinator?.SpeakResponseAsync(speechText) ?? Task.CompletedTask);
             }
@@ -3684,6 +3693,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands
             EffectiveGatewayUrl = activeGateway?.Url ?? _settings?.GatewayUrl,
             EffectiveBrowserControlPort = activeGateway?.BrowserControlPort,
             HasActiveGatewayRecord = activeGateway != null,
+            ActiveGatewayHasSharedToken = !string.IsNullOrWhiteSpace(activeGateway?.SharedGatewayToken),
             ActiveGatewaySshTunnel = activeGateway?.SshTunnel
         };
     }

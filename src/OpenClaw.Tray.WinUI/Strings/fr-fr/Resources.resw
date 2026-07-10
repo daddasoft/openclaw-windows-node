@@ -789,7 +789,7 @@ Utilisez l'une de ces options :
   </data>
   <!-- ==================== Recording Consent Dialog ==================== -->
   <data name="RecordingConsent_WindowTitle" xml:space="preserve">
-    <value>OpenClaw · Demande d'autorisation</value>
+    <value>Demande d'autorisation</value>
   </data>
   <data name="RecordingConsent_ScreenTitle" xml:space="preserve">
     <value>Autoriser l'enregistrement d'écran ?</value>
@@ -2241,9 +2241,6 @@ Utilisez l'une de ces options :
   <data name="HubWindow_NavigationViewItem_145.Content" xml:space="preserve">
     <value>Débogage</value>
   </data>
-  <data name="HubWindow_NavigationViewItem_Notifications.Content" xml:space="preserve">
-    <value>Alertes</value>
-  </data>
   <data name="Onboarding_UnknownPage" xml:space="preserve">
     <value>Page inconnue</value>
   </data>
@@ -2412,35 +2409,17 @@ Utilisez l'une de ces options :
   <data name="CronPageRemoveJobToolTip.Content" xml:space="preserve">
     <value>Supprimer la tâche</value>
   </data>
-  <data name="PermissionsPage_SttMoreSettingsLink.Content" xml:space="preserve">
-    <value>Plus de paramètres vocaux…</value>
+  <data name="PermissionsPage_VoiceSettingsLink.Content" xml:space="preserve">
+    <value>Paramètres Voix et audio</value>
   </data>
-  <data name="PermissionsPage_TtsElevenLabsApiKey.Header" xml:space="preserve">
-    <value>Clé API ElevenLabs</value>
+  <data name="PermissionsPage_VoiceSettingsHelp_SpeechModel" xml:space="preserve">
+    <value>Téléchargez un modèle de reconnaissance vocale avant que la reconnaissance vocale puisse fonctionner.</value>
   </data>
-  <data name="PermissionsPage_TtsElevenLabsHelp.Text" xml:space="preserve">
-    <value>La clé API est chiffrée au repos avec Windows DPAPI. Laissez vide pour conserver la valeur précédente lorsque vous modifiez d'autres champs.</value>
+  <data name="PermissionsPage_VoiceSettingsHelp_VoiceSetup" xml:space="preserve">
+    <value>Le fournisseur TTS sélectionné nécessite encore une configuration vocale ; la lecture à voix haute du chat peut utiliser la synthèse vocale Windows en secours.</value>
   </data>
-  <data name="PermissionsPage_TtsElevenLabsModel.Header" xml:space="preserve">
-    <value>Modèle ElevenLabs</value>
-  </data>
-  <data name="PermissionsPage_TtsElevenLabsModel.PlaceholderText" xml:space="preserve">
-    <value>eleven_multilingual_v2</value>
-  </data>
-  <data name="PermissionsPage_TtsElevenLabsVoiceId.Header" xml:space="preserve">
-    <value>ID de voix ElevenLabs</value>
-  </data>
-  <data name="PermissionsPage_TtsProviderComboBox.Header" xml:space="preserve">
-    <value>Fournisseur</value>
-  </data>
-  <data name="PermissionsPage_TtsProviderElevenLabs.Content" xml:space="preserve">
-    <value>ElevenLabs</value>
-  </data>
-  <data name="PermissionsPage_TtsProviderPiper.Content" xml:space="preserve">
-    <value>Piper (ML local, recommandé)</value>
-  </data>
-  <data name="PermissionsPage_TtsProviderWindows.Content" xml:space="preserve">
-    <value>Voix intégrée à Windows</value>
+  <data name="PermissionsPage_VoiceSettingsHelp_Both" xml:space="preserve">
+    <value>Téléchargez un modèle de reconnaissance vocale pour la saisie vocale. Le fournisseur TTS sélectionné nécessite aussi une configuration vocale, même si la lecture à voix haute du chat peut utiliser la synthèse vocale Windows en secours.</value>
   </data>
   <data name="VoiceSettingsPage_PageTitle.Text" xml:space="preserve">
     <value>Voix et audio</value>
@@ -2553,11 +2532,14 @@ Utilisez l'une de ces options :
   <data name="VoiceSettingsPage_SttDescription.Text" xml:space="preserve">
     <value>Activer la saisie vocale via le microphone. Nécessite le téléchargement d'un modèle Whisper.</value>
   </data>
-  <data name="VoiceSettingsPage_SttEnabledToggle.Header" xml:space="preserve">
-    <value>Activer la saisie vocale</value>
-  </data>
   <data name="VoiceSettingsPage_ModelHeader.Text" xml:space="preserve">
     <value>Modèle vocal</value>
+  </data>
+  <data name="VoiceSettingsPage_SttCapabilityDisabledNotice.Text" xml:space="preserve">
+    <value>La reconnaissance vocale est désactivée. Configurez les modèles ici, puis activez la capacité dans Autorisations lorsque vous êtes prêt.</value>
+  </data>
+  <data name="VoiceSettingsPage_OpenPermissionsLink.Content" xml:space="preserve">
+    <value>Ouvrir les autorisations</value>
   </data>
   <data name="VoiceSettingsPage_ModelCombo.Header" xml:space="preserve">
     <value>Taille du modèle</value>
@@ -2625,6 +2607,9 @@ Utilisez l'une de ces options :
   <data name="VoiceSettingsPage_VoiceDescription.Text" xml:space="preserve">
     <value>Choisissez la voix utilisée pour lire les réponses à voix haute.</value>
   </data>
+  <data name="VoiceSettingsPage_TtsCapabilityDisabledNotice.Text" xml:space="preserve">
+    <value>La synthèse vocale est désactivée. Configurez les fournisseurs et les voix ici, puis activez la capacité dans Autorisations lorsque vous êtes prêt.</value>
+  </data>
   <data name="VoiceSettingsPage_TtsProviderCombo.Header" xml:space="preserve">
     <value>Fournisseur</value>
   </data>
@@ -2686,7 +2671,7 @@ Utilisez l'une de ces options :
     <value>La saisie vocale est désactivée</value>
   </data>
   <data name="ChatVoiceDialog_InputOffMessage" xml:space="preserve">
-    <value>Activez la reconnaissance vocale dans les paramètres Voix, puis téléchargez un modèle vocal avant d'utiliser le microphone dans le chat.</value>
+    <value>La reconnaissance vocale est désactivée. Activez la capacité dans les autorisations avant d'utiliser le microphone dans le chat.</value>
   </data>
   <data name="ChatVoiceDialog_ModelRequiredTitle" xml:space="preserve">
     <value>Modèle vocal requis</value>
@@ -2694,8 +2679,17 @@ Utilisez l'une de ces options :
   <data name="ChatVoiceDialog_ModelRequiredMessage" xml:space="preserve">
     <value>La reconnaissance vocale est activée, mais la saisie vocale ne fonctionnera pas tant qu'au moins un modèle vocal n'aura pas été téléchargé.</value>
   </data>
+  <data name="ChatVoiceDialog_OutputOffTitle" xml:space="preserve">
+    <value>Sortie vocale désactivée</value>
+  </data>
+  <data name="ChatVoiceDialog_OutputOffMessage" xml:space="preserve">
+    <value>La synthèse vocale est désactivée. Activez la capacité dans Autorisations avant d'utiliser la lecture à voix haute dans le chat.</value>
+  </data>
   <data name="ChatVoiceDialog_OpenVoiceSettings" xml:space="preserve">
     <value>Ouvrir les paramètres Voix et audio</value>
+  </data>
+  <data name="ChatVoiceDialog_OpenPermissionsSettings" xml:space="preserve">
+    <value>Ouvrir les autorisations</value>
   </data>
   <data name="ChatVoiceDialog_Dismiss" xml:space="preserve">
     <value>Fermer</value>
@@ -3014,6 +3008,18 @@ Utilisez l'une de ces options :
   </data>
   <data name="Chat_Composer_QueuedMessageFailed" xml:space="preserve">
     <value>Échec</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageCancel" xml:space="preserve">
+    <value>Annuler le message en file d’attente</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageCancelAutomationFormat" xml:space="preserve">
+    <value>Annuler le message en file d’attente {0} : {1}</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageRemoveFailed" xml:space="preserve">
+    <value>Supprimer le message en file d’attente en échec</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageRemoveFailedAutomationFormat" xml:space="preserve">
+    <value>Supprimer le message en file d’attente en échec {0} : {1}</value>
   </data>
   <data name="Chat_Assistant_Action_Copy" xml:space="preserve">
     <value>Copier le message</value>
@@ -3350,25 +3356,13 @@ Les commandes sont bloquées tant que le sandboxing est indisponible, car le blo
     <value>Speech-to-text</value>
   </data>
   <data name="PermissionsPage_Cap_Stt_Description" xml:space="preserve">
-    <value>Lets agents transcribe microphone audio locally using Whisper. Turning this on downloads the Whisper model (~140 MB) on first use.</value>
+    <value>Lets agents transcribe microphone audio locally. Download a speech model in Voice &amp; Audio settings before first use.</value>
   </data>
   <data name="PermissionsPage_Cap_SystemRun_Label" xml:space="preserve">
     <value>System tools</value>
   </data>
   <data name="PermissionsPage_Cap_SystemRun_Description" xml:space="preserve">
     <value>Lets agents run shell commands and scripts on this PC. Turn this off to block all command execution.</value>
-  </data>
-  <data name="PermissionsPage_SttHint_Ready" xml:space="preserve">
-    <value>Whisper model is ready. Speech-to-text runs fully on this PC; no audio leaves the device.</value>
-  </data>
-  <data name="PermissionsPage_SttHint_Downloading" xml:space="preserve">
-    <value>Whisper model is downloading. Speech-to-text will be available once it's ready.</value>
-  </data>
-  <data name="PermissionsPage_SttHint_FailedFormat" xml:space="preserve">
-    <value>Whisper model download failed: {0}. Toggle Speech-to-text off and back on to retry.</value>
-  </data>
-  <data name="PermissionsPage_SttHint_NotDownloaded" xml:space="preserve">
-    <value>Whisper model is not downloaded. Open More voice settings… to download it before using speech-to-text.</value>
   </data>
   <data name="PermissionsPage_NodeStatus_Disabled" xml:space="preserve">
     <value>Node mode disabled</value>
@@ -3435,12 +3429,6 @@ Les commandes sont bloquées tant que le sandboxing est indisponible, car le blo
   </data>
   <data name="PermissionsPage_Allowlist_ParseFailed" xml:space="preserve">
     <value>Failed to parse allowlist from config.</value>
-  </data>
-  <data name="PermissionsPage_TtsStatus_DefaultProviderFormat" xml:space="preserve">
-    <value>Default provider: {0}</value>
-  </data>
-  <data name="PermissionsPage_TtsStatus_ElevenLabsSaved" xml:space="preserve">
-    <value>ElevenLabs settings saved.</value>
   </data>
   <data name="PermissionsPage_McpStatus_TokenReadFailedFormat" xml:space="preserve">
     <value>Failed to read token: {0}</value>
@@ -5634,7 +5622,7 @@ Assurez-vous que la passerelle est en cours d'exécution.</value>
     <value>Comment créer un bot Telegram →</value>
   </data>
   <data name="ChannelsPage_HelpDiscord" xml:space="preserve">
-    <value>Comment créer un webhook Discord →</value>
+    <value>Comment créer un bot Discord →</value>
   </data>
   <data name="ChannelsPage_HelpGoogleChat" xml:space="preserve">
     <value>Comment ajouter un webhook Google Chat →</value>
@@ -5688,19 +5676,19 @@ Assurez-vous que la passerelle est en cours d'exécution.</value>
     <value>Cliquez sur "Save and start". Le canal démarrera automatiquement.</value>
   </data>
   <data name="ChannelsPage_GuideDiscordHeadline" xml:space="preserve">
-    <value>Connecter Discord via un webhook</value>
+    <value>Connecter Discord via un bot</value>
   </data>
   <data name="ChannelsPage_GuideDiscordStep1" xml:space="preserve">
-    <value>Ouvrez les paramètres de votre serveur Discord → Intégrations → Webhooks.</value>
+    <value>Ouvrez le portail des développeurs Discord, puis créez ou sélectionnez une application.</value>
   </data>
   <data name="ChannelsPage_GuideDiscordStep2" xml:space="preserve">
-    <value>Cliquez sur "New Webhook", donnez-lui un nom et copiez l’URL du webhook.</value>
+    <value>Ouvrez Bot, ajoutez un bot si nécessaire, puis réinitialisez et copiez son jeton.</value>
   </data>
   <data name="ChannelsPage_GuideDiscordStep3" xml:space="preserve">
-    <value>Collez l’URL dans le formulaire de configuration ci-dessous.</value>
+    <value>Collez le jeton du bot dans le formulaire de configuration ci-dessous.</value>
   </data>
   <data name="ChannelsPage_GuideDiscordStep4" xml:space="preserve">
-    <value>Cliquez sur "Save and start".</value>
+    <value>Cliquez sur "Save and start", puis ajoutez le bot à votre serveur avec son lien d’installation OAuth2.</value>
   </data>
   <data name="ChannelsPage_GuideGoogleChatHeadline" xml:space="preserve">
     <value>Connecter Google Chat via un webhook</value>
@@ -5774,6 +5762,12 @@ Assurez-vous que la passerelle est en cours d'exécution.</value>
   <data name="ChannelsPage_FieldBotToken" xml:space="preserve">
     <value>Jeton du bot</value>
   </data>
+  <data name="ChannelsPage_FieldDiscordBotToken" xml:space="preserve">
+    <value>Jeton du bot Discord</value>
+  </data>
+  <data name="ChannelsPage_PlaceholderDiscordBotToken" xml:space="preserve">
+    <value>Collez le jeton du bot Discord</value>
+  </data>
   <data name="ChannelsPage_FieldWebhookUrl" xml:space="preserve">
     <value>URL du webhook</value>
   </data>
@@ -5789,8 +5783,8 @@ Assurez-vous que la passerelle est en cours d'exécution.</value>
   <data name="ChannelsPage_HelpBotToken" xml:space="preserve">
     <value>Obtenez-le auprès de @BotFather (/newbot).</value>
   </data>
-  <data name="ChannelsPage_HelpWebhookDiscord" xml:space="preserve">
-    <value>Paramètres du serveur → Intégrations → Webhooks → New Webhook.</value>
+  <data name="ChannelsPage_HelpDiscordBotToken" xml:space="preserve">
+    <value>Copiez-le depuis le portail des développeurs Discord → Bot → Reset Token.</value>
   </data>
   <data name="ChannelsPage_HelpWebhookGoogleChat" xml:space="preserve">
     <value>Ouvrez un espace → Gérer les webhooks → Ajouter un webhook.</value>
