@@ -199,6 +199,30 @@ public sealed record ProgressRingElement(double? Value) : Element;
 public sealed record SliderElement(double Value, double Minimum, double Maximum, Action<double>? OnChanged) : Element;
 public sealed record ColorPickerElement(Color Value, Action<Color>? OnChanged) : Element;
 public sealed record ComboBoxElement(string[] Items, int SelectedIndex, Action<int>? OnSelectionChanged) : Element;
+/// <summary>
+/// A single row for the rich <see cref="ItemComboBoxElement"/> primitive. Pure data (no WinUI
+/// types) so it can be constructed and diffed off the UI thread and unit-tested directly.
+/// Headers render as non-selectable group labels; normal rows carry a stable <paramref name="Id"/>.
+/// </summary>
+public sealed record ComboItem(string Id, string Label, bool Enabled = true, bool IsHeader = false, double Indent = 0);
+/// <summary>
+/// A reconciled ComboBox that supports grouped/headered, indented, individually-enabled rows and
+/// selection by stable id. Unlike hand-rolling a native <c>ComboBox</c> inside a setter, this
+/// element is preserved by render path and only rebuilds its rows when the item set actually
+/// changes, so an open dropdown survives unrelated re-renders (the #970 regression).
+/// </summary>
+public sealed record ItemComboBoxElement(IReadOnlyList<ComboItem> Items, string? SelectedId, Action<string>? OnSelectionChanged) : Element
+{
+    /// <summary>Pure, order-sensitive value comparison of two item lists. Testable off the UI thread.</summary>
+    public static bool ItemsEqual(IReadOnlyList<ComboItem> left, IReadOnlyList<ComboItem> right)
+    {
+        if (ReferenceEquals(left, right)) return true;
+        if (left is null || right is null || left.Count != right.Count) return false;
+        for (var i = 0; i < left.Count; i++)
+            if (left[i] != right[i]) return false;
+        return true;
+    }
+}
 public sealed record ImageElement(string Source) : Element;
 public sealed record BorderElement(Element? Child) : Element;
 public sealed record StackElement(Orientation Orientation, double Spacing, IReadOnlyList<Element?> Children) : Element;
@@ -591,6 +615,8 @@ public static class Factories
         new(value, onChanged);
     public static ComboBoxElement ComboBox(string[] items, int selectedIndex = -1, Action<int>? onSelectionChanged = null) =>
         new(items, selectedIndex, onSelectionChanged);
+    public static ItemComboBoxElement ComboBox(IReadOnlyList<ComboItem> items, string? selectedId = null, Action<string>? onSelectionChanged = null) =>
+        new(items, selectedId, onSelectionChanged);
     public static ImageElement Image(string source) => new(source);
     public static BorderElement Border(Element? child = null) => new(child);
     public static FlexRowElement FlexRow(params Element?[] children) => new(children);
@@ -754,6 +780,7 @@ public static class ElementExtensions
     public static SliderElement Set(this SliderElement element, Action<Slider> setter) => element.AddSetter(setter);
     public static ColorPickerElement Set(this ColorPickerElement element, Action<ColorPicker> setter) => element.AddSetter(setter);
     public static ComboBoxElement Set(this ComboBoxElement element, Action<ComboBox> setter) => element.AddSetter(setter);
+    public static ItemComboBoxElement Set(this ItemComboBoxElement element, Action<ComboBox> setter) => element.AddSetter(setter);
     public static ImageElement Set(this ImageElement element, Action<Image> setter) => element.AddSetter(setter);
     public static BorderElement Set(this BorderElement element, Action<Border> setter) => element.AddSetter(setter);
     public static ProgressRingElement Set(this ProgressRingElement element, Action<ProgressRing> setter) => element.AddSetter(setter);
@@ -975,6 +1002,7 @@ internal sealed class UiRenderer(Action requestRender)
             SliderElement e => ConfigureSlider(GetOrCreate<Slider>(path), e),
             ColorPickerElement e => ConfigureColorPicker(GetOrCreate<ColorPicker>(path), e),
             ComboBoxElement e => ConfigureComboBox(GetOrCreate<ComboBox>(path), e),
+            ItemComboBoxElement e => ConfigureItemComboBox(GetOrCreate<ComboBox>(path), e),
             ImageElement e => ConfigureImage(GetOrCreate<Image>(path), e),
             BorderElement e => ConfigureBorder(GetOrCreate<Border>(path), e, path, effects),
             StackElement e => ConfigureStack(GetOrCreate<Border>(path), e, path, effects),
@@ -1260,6 +1288,68 @@ internal sealed class UiRenderer(Action requestRender)
         ApplyModifiers(control, element);
         ApplySetters(control, element);
         return control;
+    }
+
+    private ComboBox ConfigureItemComboBox(ComboBox control, ItemComboBoxElement element)
+    {
+        control.SelectionChanged -= ItemComboBoxSelectionChanged;
+        var previous = control.Tag as ItemComboBoxElement;
+        control.Tag = element;
+
+        // Rebuild the row containers only when the item set actually changes. Rebuilding on every
+        // render would dismiss an open dropdown, which is the #970 session-picker regression.
+        if (previous is null || !ItemComboBoxElement.ItemsEqual(previous.Items, element.Items))
+        {
+            control.Items.Clear();
+            foreach (var item in element.Items)
+                control.Items.Add(CreateComboBoxItem(item));
+        }
+
+        // Reconcile selection by stable id every render (a status re-render must not change it).
+        ComboBoxItem? target = null;
+        if (element.SelectedId is { } selectedId)
+        {
+            foreach (var candidate in control.Items)
+            {
+                if (candidate is ComboBoxItem { Tag: string id } container && id == selectedId)
+                {
+                    target = container;
+                    break;
+                }
+            }
+        }
+        if (!ReferenceEquals(control.SelectedItem, target))
+            control.SelectedItem = target;
+
+        // Reattach only after programmatic mutations so those don't fire the user callback.
+        control.SelectionChanged += ItemComboBoxSelectionChanged;
+        ApplyModifiers(control, element);
+        ApplySetters(control, element);
+        return control;
+    }
+
+    private static ComboBoxItem CreateComboBoxItem(ComboItem item)
+    {
+        if (item.IsHeader)
+        {
+            return new ComboBoxItem
+            {
+                Content = item.Label,
+                IsEnabled = false,
+                IsHitTestVisible = false,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                FontSize = 10,
+                Padding = new Thickness(4, 2, 4, 2),
+            };
+        }
+
+        return new ComboBoxItem
+        {
+            Content = item.Label,
+            Tag = item.Id,
+            IsEnabled = item.Enabled,
+            Padding = new Thickness(8 + item.Indent, 4, 4, 4),
+        };
     }
 
     private Image ConfigureImage(Image control, ImageElement element)
@@ -2101,6 +2191,12 @@ internal sealed class UiRenderer(Action requestRender)
     {
         if (sender is ComboBox { Tag: ComboBoxElement element } combo)
             element.OnSelectionChanged?.Invoke(combo.SelectedIndex);
+    }
+
+    private static void ItemComboBoxSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ComboBox { Tag: ItemComboBoxElement element, SelectedItem: ComboBoxItem { Tag: string id } })
+            element.OnSelectionChanged?.Invoke(id);
     }
 
     private static void MenuFlyoutItemClick(object sender, RoutedEventArgs e)
