@@ -364,16 +364,20 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
 
         await SendRawAsync(JsonSerializer.Serialize(req));
 
-        var completedTask = await Task.WhenAny(completion.Task, Task.Delay(5000, CancellationToken));
-        if (completedTask != completion.Task)
+        try
+        {
+            var result = await WaitForGatewayResponseAsync(
+                completion.Task,
+                TimeSpan.FromSeconds(5),
+                CancellationToken,
+                "Timed out waiting for chat.send response from gateway");
+            _logger.Info($"Sent chat message ({message.Length} chars{(hasAttachments ? $", {attachments!.Count} attachment(s)" : "")})");
+            return result;
+        }
+        finally
         {
             RemovePendingChatSend(requestId);
-            throw new TimeoutException("Timed out waiting for chat.send response from gateway");
         }
-
-        var result = await completion.Task.ConfigureAwait(false);
-        _logger.Info($"Sent chat message ({message.Length} chars{(hasAttachments ? $", {attachments!.Count} attachment(s)" : "")})");
-        return result;
     }
 
     Task IOperatorGatewayClient.SendChatMessageAsync(string message, string? sessionKey) =>
@@ -491,23 +495,59 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
         // traverse gateway → operator → optional UI confirm → ack, so we give
         // it a larger budget than the chat.send sibling's 5s. A timeout keeps
         // the banner visible for the user to retry rather than hanging the UI.
-        var delayTask = Task.Delay(15000, CancellationToken);
-        await Task.WhenAny(completion.Task, delayTask);
-
-        // Use IsCompleted directly rather than Task.WhenAny's return identity:
-        // when both tasks complete in the same scheduling tick, WhenAny may
-        // return the delay task even though the TCS is already complete, which
-        // would otherwise surface as a spurious TimeoutException and discard a
-        // real ok:true / ok:false response.
-        if (!completion.Task.IsCompleted)
+        try
+        {
+            await WaitForGatewayResponseAsync(
+                completion.Task,
+                TimeSpan.FromSeconds(15),
+                CancellationToken,
+                "Timed out waiting for exec.approval.resolve response from gateway");
+        }
+        finally
         {
             _pendingApprovalResolves.TryRemove(requestId, out _);
             RemovePendingRequest(requestId);
-            throw new TimeoutException("Timed out waiting for exec.approval.resolve response from gateway");
+        }
+    }
+
+    private static async Task<T> WaitForGatewayResponseAsync<T>(
+        Task<T> responseTask,
+        TimeSpan timeout,
+        CancellationToken cancellationToken,
+        string timeoutMessage)
+    {
+        var cancellationSignal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cancellationRegistration = cancellationToken.Register(
+            () => cancellationSignal.TrySetCanceled(cancellationToken));
+        var timeoutTask = Task.Delay(timeout);
+        var completedTask = await Task.WhenAny(responseTask, timeoutTask, cancellationSignal.Task);
+        return await ResolveGatewayResponseAsync(
+            responseTask,
+            completedTask,
+            cancellationSignal.Task,
+            timeoutMessage);
+    }
+
+    internal static async Task<T> ResolveGatewayResponseAsync<T>(
+        Task<T> responseTask,
+        Task completedTask,
+        Task cancellationTask,
+        string timeoutMessage)
+    {
+        // A response that arrived before this continuation resumed wins over
+        // either terminal signal, preserving the existing same-tick contract.
+        if (responseTask.IsCompleted)
+            return await responseTask.ConfigureAwait(false);
+
+        // Classify from the task that actually won WhenAny. Sampling the token
+        // here would let later shutdown reclassify an already-elapsed deadline.
+        if (ReferenceEquals(completedTask, cancellationTask))
+        {
+            await cancellationTask.ConfigureAwait(false);
+            throw new OperationCanceledException("Gateway request canceled");
         }
 
-        // Propagate any exception (ok:false, disconnect) stored on the TCS.
-        await completion.Task.ConfigureAwait(false);
+        throw new TimeoutException(timeoutMessage);
     }
 
     private static bool IsValidApprovalDecision(string decision)
@@ -621,22 +661,17 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
         try
         {
             await SendRawAsync(SerializeRequest(requestId, method, parameters));
+            return await completion.Task.WaitAsync(TimeSpan.FromMilliseconds(timeoutMs), CancellationToken);
         }
-        catch
+        catch (TimeoutException ex)
+        {
+            throw new TimeoutException($"Timed out waiting for {method} response", ex);
+        }
+        finally
         {
             _pendingWizardResponses.TryRemove(requestId, out _);
             RemovePendingRequest(requestId);
-            throw;
         }
-
-        var completedTask = await Task.WhenAny(completion.Task, Task.Delay(timeoutMs, CancellationToken));
-        if (completedTask != completion.Task)
-        {
-            _pendingWizardResponses.TryRemove(requestId, out _);
-            throw new TimeoutException($"Timed out waiting for {method} response");
-        }
-
-        return await completion.Task;
     }
 
     /// <summary>Request session list from gateway.</summary>
@@ -3397,6 +3432,9 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
         // Avoids the intermediate List<T> that new List(collection).ToArray() would produce.
         var arr = new SessionInfo[_sessions.Count];
         _sessions.Values.CopyTo(arr, 0);
+        // Defensive copy: subscribers read the snapshot with no lock, and the tracked
+        // instances keep being mutated in place under _sessionsLock — hand out clones.
+        for (var i = 0; i < arr.Length; i++) arr[i] = arr[i].Clone();
         Array.Sort(arr, static (a, b) =>
         {
             // Main session first, then by last seen
@@ -3837,7 +3875,7 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
             var summary = new GatewayCostUsageInfo
             {
                 UpdatedAt = ParseUnixTimestampMs(payload, "updatedAt") ?? DateTime.UtcNow,
-                Days = GetInt(payload, "days")
+                Days = JsonReadHelpers.GetInt(payload, "days")
             };
 
             if (payload.TryGetProperty("totals", out var totals) && totals.ValueKind == JsonValueKind.Object)
@@ -3850,7 +3888,7 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
                     CacheWrite = GetLong(totals, "cacheWrite"),
                     TotalTokens = GetLong(totals, "totalTokens"),
                     TotalCost = GetDouble(totals, "totalCost"),
-                    MissingCostEntries = GetInt(totals, "missingCostEntries")
+                    MissingCostEntries = JsonReadHelpers.GetInt(totals, "missingCostEntries")
                 };
             }
 
@@ -3867,7 +3905,7 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
                         CacheWrite = GetLong(day, "cacheWrite"),
                         TotalTokens = GetLong(day, "totalTokens"),
                         TotalCost = GetDouble(day, "totalCost"),
-                        MissingCostEntries = GetInt(day, "missingCostEntries")
+                        MissingCostEntries = JsonReadHelpers.GetInt(day, "missingCostEntries")
                     });
                 }
             }
@@ -4036,15 +4074,6 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
             JsonValueKind.False => false,
             _ => null
         };
-    }
-
-    private static int GetInt(JsonElement parent, string property)
-    {
-        if (!parent.TryGetProperty(property, out var value) || value.ValueKind != JsonValueKind.Number)
-            return 0;
-        if (value.TryGetInt32(out var intVal)) return intVal;
-        if (value.TryGetInt64(out var longVal)) return (int)Math.Clamp(longVal, int.MinValue, int.MaxValue);
-        return 0;
     }
 
     private static long GetLong(JsonElement parent, string property)
