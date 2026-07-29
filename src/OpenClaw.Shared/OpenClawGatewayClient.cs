@@ -47,13 +47,14 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
     private readonly DeviceIdentity _deviceIdentity;
     private readonly string _currentGatewayUrl;
     private string? _mainSessionKey;
+    private bool _mainSessionKeyIsCanonical;
     private bool _hasHandshakeSnapshot;
 
     /// <summary>
-    /// The gateway's canonical main session key as published in the hello-ok
-    /// snapshot (preferring the canonical <c>sessionDefaults.mainSessionKey</c>
-    /// over the legacy alias <c>mainKey</c>). <c>null</c> until handshake
-    /// completes or after a disconnect. Callers should pass this exact value
+    /// The gateway's resolved main session key as published in the hello-ok
+    /// snapshot (preferring canonical <c>sessionDefaults.mainSessionKey</c>,
+    /// with <c>mainKey</c> retained for older gateways). <c>null</c> until
+    /// handshake completes or after a disconnect. Callers should pass this value
     /// (or <c>null</c>) to <see cref="SendChatMessageForRunAsync"/>; never
     /// substitute a literal like <c>"main"</c>, which can drift from the
     /// canonical key the gateway echoes back in chat events.
@@ -186,6 +187,7 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
         // stale canonical key that the new server doesn't recognize, and
         // HasHandshakeSnapshot would lie about the offline state to callers.
         Volatile.Write(ref _mainSessionKey, null);
+        Volatile.Write(ref _mainSessionKeyIsCanonical, false);
         Volatile.Write(ref _hasHandshakeSnapshot, false);
     }
 
@@ -579,7 +581,7 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
             else if (m.TryGetProperty("ts", out var tsProp2) && tsProp2.ValueKind == JsonValueKind.Number)
                 ts = tsProp2.GetInt64();
 
-            var (openClawId, openClawSeq) = ExtractOpenClawMetadata(m);
+            var openClawMetadata = ExtractOpenClawMetadata(m);
 
             // stopReason on assistant messages (e.g. "stop", "toolUse", possibly "abort")
             string? stopReason = null;
@@ -600,8 +602,11 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
                 Text = text,
                 State = "final",
                 Ts = ts,
-                OpenClawId = openClawId,
-                OpenClawSeq = openClawSeq,
+                OpenClawId = openClawMetadata.Id,
+                OpenClawSeq = openClawMetadata.Seq,
+                OpenClawKind = openClawMetadata.Kind,
+                CompactionTokensBefore = openClawMetadata.TokensBefore,
+                CompactionTokensAfter = openClawMetadata.TokensAfter,
                 StopReason = stopReason,
                 InputTokens = inputTokens,
                 OutputTokens = outputTokens,
@@ -1023,7 +1028,47 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
     public async Task RequestModelsListAsync()
     {
         if (_modelsListUnsupported) return;
-        await SendTrackedRequestAsync("models.list", new { view = "configured" });
+
+        ModelsListInfo configured;
+        try
+        {
+            var configuredPayload = await SendWizardRequestAsync(
+                "models.list",
+                new { view = "configured" },
+                timeoutMs: 10000);
+            configured = ParseModelsListPayload(configuredPayload);
+        }
+        catch (Exception ex)
+        {
+            // Preserve the legacy fire-and-forget path for older gateways and
+            // transient response-aware request failures.
+            _logger.Warn($"Configured models.list request failed; using legacy request path: {ex.Message}");
+            await SendTrackedRequestAsync("models.list", new { view = "configured" });
+            return;
+        }
+
+        // Populate the existing safe choices immediately, then enhance the picker
+        // when the broader catalog response arrives.
+        ModelsListUpdated?.Invoke(this, configured);
+
+        ModelsListInfo catalog;
+        try
+        {
+            var catalogPayload = await SendWizardRequestAsync(
+                "models.list",
+                new { view = "all" },
+                timeoutMs: 10000);
+            catalog = ParseModelsListPayload(catalogPayload);
+        }
+        catch (Exception ex)
+        {
+            // A full catalog is an enhancement. The configured list remains a
+            // safe, selectable fallback when discovery is unsupported or slow.
+            _logger.Warn($"Full models.list catalog request failed; keeping configured models only: {ex.Message}");
+            return;
+        }
+
+        ModelsListUpdated?.Invoke(this, MergeModelCatalog(configured, catalog));
     }
 
     // Node/Device pairing
@@ -1824,7 +1869,13 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
             // Volatile.Read on the public getters so a reader observing
             // HasHandshakeSnapshot==true is guaranteed to see the populated
             // MainSessionKey (release/acquire ordering).
-            Volatile.Write(ref _mainSessionKey, TryGetHandshakeMainSessionKey(payload));
+            var hasCanonicalMainSessionKey = TryGetCanonicalHandshakeMainSessionKey(
+                payload,
+                out var canonicalMainSessionKey);
+            Volatile.Write(ref _mainSessionKeyIsCanonical, hasCanonicalMainSessionKey);
+            Volatile.Write(
+                ref _mainSessionKey,
+                hasCanonicalMainSessionKey ? canonicalMainSessionKey : TryGetHandshakeMainSessionKey(payload));
             Volatile.Write(ref _hasHandshakeSnapshot, true);
             _logger.Info($"[HANDSHAKE] deviceId={_operatorDeviceId}, scopes=[{string.Join(", ", _grantedOperatorScopes)}], mainSession={_mainSessionKey ?? "(unset)"}");
             PublishGatewaySelf(GatewaySelfInfo.FromHelloOk(payload));
@@ -2463,13 +2514,8 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
         // are keyed by the canonical form. Using the alias here would cause
         // the tray's local timeline (keyed by the alias) to diverge from the
         // gateway's echo (keyed by canonical), stranding optimistic state.
-        if (sessionDefaults.TryGetProperty("mainSessionKey", out var canonical) &&
-            canonical.ValueKind == JsonValueKind.String)
-        {
-            var canonicalValue = canonical.GetString();
-            if (!string.IsNullOrWhiteSpace(canonicalValue))
-                return canonicalValue;
-        }
+        if (TryGetCanonicalHandshakeMainSessionKey(payload, out var canonicalValue))
+            return canonicalValue;
 
         if (sessionDefaults.TryGetProperty("mainKey", out var mainKey) &&
             mainKey.ValueKind == JsonValueKind.String)
@@ -2480,6 +2526,21 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
         }
 
         return null;
+    }
+
+    private static bool TryGetCanonicalHandshakeMainSessionKey(JsonElement payload, out string? value)
+    {
+        value = null;
+        if (!payload.TryGetProperty("snapshot", out var snapshot)
+            || snapshot.ValueKind != JsonValueKind.Object
+            || !snapshot.TryGetProperty("sessionDefaults", out var sessionDefaults)
+            || sessionDefaults.ValueKind != JsonValueKind.Object
+            || !sessionDefaults.TryGetProperty("mainSessionKey", out var canonical)
+            || canonical.ValueKind != JsonValueKind.String)
+            return false;
+
+        value = canonical.GetString();
+        return !string.IsNullOrWhiteSpace(value);
     }
 
     private static string? TryGetHandshakeDeviceToken(JsonElement payload)
@@ -3141,8 +3202,8 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
             if (string.IsNullOrEmpty(text)) return;
             if (ChatMessageInfo.IsSilentAssistantDirective(role, text)) return;
 
-            var (messageOpenClawId, messageOpenClawSeq) = ExtractOpenClawMetadata(message);
-            var (payloadOpenClawId, payloadOpenClawSeq) = ExtractOpenClawMetadata(payload);
+            var messageOpenClawMetadata = ExtractOpenClawMetadata(message);
+            var payloadOpenClawMetadata = ExtractOpenClawMetadata(payload);
             EmitChatMessageReceived(
                 sessionKey,
                 role,
@@ -3153,8 +3214,11 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
                 outTok,
                 respTok,
                 ctxPct,
-                messageOpenClawId ?? payloadOpenClawId,
-                messageOpenClawSeq ?? payloadOpenClawSeq);
+                messageOpenClawMetadata.Id ?? payloadOpenClawMetadata.Id,
+                messageOpenClawMetadata.Seq ?? payloadOpenClawMetadata.Seq,
+                messageOpenClawMetadata.Kind ?? payloadOpenClawMetadata.Kind,
+                messageOpenClawMetadata.TokensBefore ?? payloadOpenClawMetadata.TokensBefore,
+                messageOpenClawMetadata.TokensAfter ?? payloadOpenClawMetadata.TokensAfter);
 
             if (role == "assistant" && string.Equals(state, "final", StringComparison.OrdinalIgnoreCase))
             {
@@ -3176,7 +3240,7 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
             {
                 if (ChatMessageInfo.IsSilentAssistantDirective(role, text)) return;
 
-                var (openClawId, openClawSeq) = ExtractOpenClawMetadata(payload);
+                var openClawMetadata = ExtractOpenClawMetadata(payload);
                 EmitChatMessageReceived(
                     sessionKey,
                     role,
@@ -3187,8 +3251,11 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
                     outTok,
                     respTok,
                     ctxPct,
-                    openClawId,
-                    openClawSeq);
+                    openClawMetadata.Id,
+                    openClawMetadata.Seq,
+                    openClawMetadata.Kind,
+                    openClawMetadata.TokensBefore,
+                    openClawMetadata.TokensAfter);
 
                 if (role == "assistant")
                 {
@@ -3261,7 +3328,10 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
         int? responseTokens = null,
         int? contextPct = null,
         string? openClawId = null,
-        int? openClawSeq = null)
+        int? openClawSeq = null,
+        string? openClawKind = null,
+        long? compactionTokensBefore = null,
+        long? compactionTokensAfter = null)
     {
         if (ChatMessageInfo.IsSilentAssistantDirective(role, text))
             return;
@@ -3280,7 +3350,10 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
                 ResponseTokens = responseTokens,
                 ContextPercent = contextPct,
                 OpenClawId = openClawId,
-                OpenClawSeq = openClawSeq
+                OpenClawSeq = openClawSeq,
+                OpenClawKind = openClawKind,
+                CompactionTokensBefore = compactionTokensBefore,
+                CompactionTokensAfter = compactionTokensAfter
             });
         }
         catch (Exception ex)
@@ -3289,13 +3362,18 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
         }
     }
 
-    private static (string? Id, int? Seq) ExtractOpenClawMetadata(JsonElement node)
+    private static (
+        string? Id,
+        int? Seq,
+        string? Kind,
+        long? TokensBefore,
+        long? TokensAfter) ExtractOpenClawMetadata(JsonElement node)
     {
         if (node.ValueKind != JsonValueKind.Object ||
             !node.TryGetProperty("__openclaw", out var openClaw) ||
             openClaw.ValueKind != JsonValueKind.Object)
         {
-            return (null, null);
+            return (null, null, null, null, null);
         }
 
         var id = openClaw.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.String
@@ -3306,7 +3384,21 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
                   seqProp.TryGetInt32(out var parsedSeq)
             ? parsedSeq
             : (int?)null;
-        return (id, seq);
+        var kind = openClaw.TryGetProperty("kind", out var kindProp) &&
+                   kindProp.ValueKind == JsonValueKind.String
+            ? kindProp.GetString()
+            : null;
+        var tokensBefore = openClaw.TryGetProperty("tokensBefore", out var beforeProp) &&
+                           beforeProp.ValueKind == JsonValueKind.Number &&
+                           beforeProp.TryGetInt64(out var parsedBefore)
+            ? parsedBefore
+            : (long?)null;
+        var tokensAfter = openClaw.TryGetProperty("tokensAfter", out var afterProp) &&
+                          afterProp.ValueKind == JsonValueKind.Number &&
+                          afterProp.TryGetInt64(out var parsedAfter)
+            ? parsedAfter
+            : (long?)null;
+        return (id, seq, kind, tokensBefore, tokensAfter);
     }
 
     private static long ExtractChatTimestampMs(JsonElement node)
@@ -3518,13 +3610,10 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
                             session = new SessionInfo { Key = sessionKey };
                         }
 
-                        var endsWithMain = sessionKey.EndsWith(":main");
-                        session.IsMain = sessionKey == "main" || endsWithMain || sessionKey.Contains(":main:main");
+                        UpdateSessionMainStatus(session, sessionKey, item);
 
                         if (item.ValueKind == JsonValueKind.Object)
                         {
-                            if (item.TryGetProperty("isMain", out var isMain) && isMain.GetBoolean())
-                                session.IsMain = true;
                             PopulateSessionFromObject(session, item);
                         }
                         else if (item.ValueKind == JsonValueKind.String)
@@ -3559,7 +3648,7 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
             _logger.Warn($"Failed to parse sessions: {ex.Message}");
         }
     }
-    
+
     private string? ParseSessionItem(JsonElement item)
     {
         var sessionKey = "unknown";
@@ -3572,17 +3661,71 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
             session = new SessionInfo { Key = sessionKey };
         }
 
-        session.IsMain = sessionKey == "main" || 
-                         sessionKey.EndsWith(":main") ||
-                         sessionKey.Contains(":main:main");
-        
-        if (item.TryGetProperty("isMain", out var isMain) && isMain.GetBoolean())
-            session.IsMain = true;
-            
+        UpdateSessionMainStatus(session, sessionKey, item);
+
         PopulateSessionFromObject(session, item);
 
         _sessions[session.Key] = session;
         return session.Key;
+    }
+
+    private bool IsMainSessionKey(string sessionKey)
+    {
+        var mainSessionKey = MainSessionKey;
+        if (!string.IsNullOrWhiteSpace(mainSessionKey))
+        {
+            if (string.Equals(sessionKey, mainSessionKey, StringComparison.Ordinal))
+                return true;
+            if (Volatile.Read(ref _mainSessionKeyIsCanonical))
+                return false;
+
+            // Legacy hello-ok snapshots exposed only the routing alias. Older
+            // gateways canonicalized that alias with the default main agent.
+            return string.Equals(sessionKey, $"agent:main:{mainSessionKey}", StringComparison.Ordinal);
+        }
+
+        // Compatibility for pre-handshake and older gateways. Once the
+        // handshake resolves a canonical key it is the only authority.
+        return sessionKey.Equals("main", StringComparison.Ordinal)
+               || sessionKey.Equals("agent:main:main", StringComparison.Ordinal);
+    }
+
+    private void UpdateSessionMainStatus(SessionInfo session, string sessionKey, JsonElement item)
+    {
+        if (!string.IsNullOrWhiteSpace(MainSessionKey)
+            && Volatile.Read(ref _mainSessionKeyIsCanonical))
+        {
+            session.IsMain = IsMainSessionKey(sessionKey);
+            session.IsMainResolved = true;
+            return;
+        }
+
+        if (item.ValueKind == JsonValueKind.Object
+            && item.TryGetProperty("presentation", out var presentation)
+            && presentation.ValueKind == JsonValueKind.Object
+            && TryGetRequiredBoolean(presentation, "isMain", out var presentationIsMain))
+        {
+            session.IsMain = presentationIsMain;
+            session.IsMainResolved = true;
+            return;
+        }
+
+        if (item.ValueKind == JsonValueKind.Object
+            && item.TryGetProperty("isMain", out var isMain)
+            && isMain.ValueKind is JsonValueKind.True or JsonValueKind.False)
+        {
+            session.IsMain = isMain.GetBoolean();
+            session.IsMainResolved = true;
+            return;
+        }
+
+        // Sparse pre-handshake updates preserve both true and false row values;
+        // only an unclassified session receives the bounded legacy key fallback.
+        if (!session.IsMainResolved)
+        {
+            session.IsMain = IsMainSessionKey(sessionKey);
+            session.IsMainResolved = true;
+        }
     }
 
     private void PopulateSessionFromObject(SessionInfo session, JsonElement item)
@@ -3596,18 +3739,40 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
                 _logger.Info($"[SESSION] {session.Key}: model changed '{session.Model}' → '{newModel}'");
             session.Model = newModel;
         }
-        if (item.TryGetProperty("channel", out var channel))
-            session.Channel = channel.GetString();
-        if (item.TryGetProperty("displayName", out var displayName))
-            session.DisplayName = displayName.GetString();
-        if (item.TryGetProperty("provider", out var provider))
-            session.Provider = provider.GetString();
-        if (item.TryGetProperty("subject", out var subject))
-            session.Subject = subject.GetString();
-        if (item.TryGetProperty("room", out var room))
-            session.Room = room.GetString();
-        if (item.TryGetProperty("space", out var space))
-            session.Space = space.GetString();
+        if (item.TryGetProperty("label", out _)) session.Label = GetString(item, "label");
+        if (item.TryGetProperty("channel", out _)) session.Channel = GetString(item, "channel");
+        if (item.TryGetProperty("displayName", out _)) session.DisplayName = GetString(item, "displayName");
+        if (item.TryGetProperty("derivedTitle", out _)) session.DerivedTitle = GetString(item, "derivedTitle");
+        if (item.TryGetProperty("modelProvider", out _))
+            session.Provider = GetString(item, "modelProvider");
+        else if (item.TryGetProperty("provider", out _))
+            session.Provider = GetString(item, "provider");
+        if (item.TryGetProperty("subject", out _)) session.Subject = GetString(item, "subject");
+        if (item.TryGetProperty("groupChannel", out _))
+            session.Room = GetString(item, "groupChannel");
+        else if (item.TryGetProperty("room", out _))
+            session.Room = GetString(item, "room");
+        if (item.TryGetProperty("space", out _)) session.Space = GetString(item, "space");
+        if (item.TryGetProperty("chatType", out _)) session.ChatType = GetString(item, "chatType");
+        if (item.TryGetProperty("execNode", out _)) session.ExecNode = GetString(item, "execNode");
+        if (item.TryGetProperty("parentSessionKey", out _))
+            session.ParentSessionKey = GetString(item, "parentSessionKey");
+        if (item.TryGetProperty("spawnDepth", out var spawnDepth))
+            session.SpawnDepth = spawnDepth.ValueKind == JsonValueKind.Number
+                && spawnDepth.TryGetInt32(out var parsedSpawnDepth)
+                    ? parsedSpawnDepth
+                    : null;
+        if (item.TryGetProperty("origin", out var origin))
+            session.OriginLabel = origin.ValueKind == JsonValueKind.Object
+                ? GetString(origin, "label")
+                : null;
+        if (item.TryGetProperty("worktree", out _)) session.Worktree = ParseSessionWorktree(item);
+        if (item.TryGetProperty("presentation", out _))
+            session.Presentation = ParseSessionPresentation(item);
+        if (session.Presentation is { } presentation)
+        {
+            session.Channel ??= presentation.Channel;
+        }
         if (item.TryGetProperty("sessionId", out var sessionId))
             session.SessionId = sessionId.GetString();
         if (item.TryGetProperty("thinkingLevel", out var thinking))
@@ -3644,6 +3809,56 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
                 session.StartedAt = DateTimeOffset.FromUnixTimeMilliseconds(ms).LocalDateTime;
             }
         }
+    }
+
+    private static SessionWorktreeInfo? ParseSessionWorktree(JsonElement item)
+    {
+        if (!item.TryGetProperty("worktree", out var worktree) || worktree.ValueKind != JsonValueKind.Object)
+            return null;
+
+        var id = GetString(worktree, "id");
+        var branch = GetString(worktree, "branch");
+        var repoRoot = GetString(worktree, "repoRoot");
+        return id is null && branch is null && repoRoot is null
+            ? null
+            : new SessionWorktreeInfo { Id = id, Branch = branch, RepoRoot = repoRoot };
+    }
+
+    private static SessionPresentationInfo? ParseSessionPresentation(JsonElement item)
+    {
+        if (!item.TryGetProperty("presentation", out var presentation)
+            || presentation.ValueKind != JsonValueKind.Object)
+            return null;
+
+        var title = GetString(presentation, "title");
+        var family = GetString(presentation, "family");
+        if (title is null
+            || family is null
+            || !TryGetRequiredBoolean(presentation, "isMain", out var isMain)
+            || !TryGetRequiredBoolean(presentation, "isBackground", out var isBackground))
+            return null;
+
+        return new SessionPresentationInfo
+        {
+            Title = title,
+            TitleSource = GetString(presentation, "titleSource") ?? "generated",
+            Subtitle = GetString(presentation, "subtitle"),
+            Family = family,
+            AgentId = GetString(presentation, "agentId"),
+            Channel = GetString(presentation, "channel"),
+            AccountId = GetString(presentation, "accountId"),
+            PeerKind = GetString(presentation, "peerKind"),
+            IsMain = isMain,
+            IsBackground = isBackground,
+        };
+    }
+
+    private static bool TryGetRequiredBoolean(JsonElement parent, string propertyName, out bool value)
+    {
+        value = false;
+        if (!parent.TryGetProperty(propertyName, out var property)) return false;
+        if (property.ValueKind == JsonValueKind.True) value = true;
+        return property.ValueKind is JsonValueKind.True or JsonValueKind.False;
     }
 
     private void ParseNodeList(JsonElement nodesPayload)
@@ -4245,48 +4460,141 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
     {
         try
         {
-            var info = new ModelsListInfo();
-            // Gateway returns { models: [...] } or just an array
-            var modelsArray = payload.ValueKind == JsonValueKind.Array
-                ? payload
-                : payload.TryGetProperty("models", out var m) ? m : default;
-
-            if (modelsArray.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in modelsArray.EnumerateArray())
-                {
-                    if (item.ValueKind != JsonValueKind.Object) continue;
-
-                    // Read readiness flags defensively; older gateways may omit
-                    // them, and the UI only uses them for labels/selectability.
-                    var hasConfiguredFlag = item.TryGetProperty("configured", out var cfg)
-                                            && (cfg.ValueKind == JsonValueKind.True || cfg.ValueKind == JsonValueKind.False);
-                    bool available = true;
-                    if (TryReadBool(item, out var av, "available")) available = av;
-                    else if (TryReadBool(item, out var un, "unavailable")) available = !un;
-
-                    var model = new ModelInfo
-                    {
-                        Id = item.TryGetProperty("id", out var id) ? id.GetString() ?? "" : "",
-                        Name = item.TryGetProperty("name", out var name) ? name.GetString() : null,
-                        Provider = item.TryGetProperty("provider", out var prov) ? prov.GetString() : null,
-                        ContextWindow = item.TryGetProperty("contextWindow", out var cw) && cw.ValueKind == JsonValueKind.Number ? cw.GetInt32() : null,
-                        IsConfigured = hasConfiguredFlag && cfg.ValueKind == JsonValueKind.True,
-                        HasConfiguredFlag = hasConfiguredFlag,
-                        IsDefault = ReadBool(item, "default", "isDefault"),
-                        IsAvailable = available,
-                        RequiresAuth = ReadBool(item, "requiresAuth", "authRequired", "needsAuth", "authNeeded")
-                    };
-                    if (!string.IsNullOrEmpty(model.Id))
-                        info.Models.Add(model);
-                }
-            }
-            ModelsListUpdated?.Invoke(this, info);
+            ModelsListUpdated?.Invoke(this, ParseModelsListPayload(payload));
         }
         catch (Exception ex)
         {
             _logger.Warn($"Failed to parse models.list: {ex.Message}");
         }
+    }
+
+    internal static ModelsListInfo ParseModelsListPayload(JsonElement payload)
+    {
+        var info = new ModelsListInfo();
+        // Gateway returns { models: [...] } or just an array.
+        var modelsArray = payload.ValueKind == JsonValueKind.Array
+            ? payload
+            : payload.TryGetProperty("models", out var m) ? m : default;
+
+        if (modelsArray.ValueKind != JsonValueKind.Array)
+            return info;
+
+        foreach (var item in modelsArray.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object) continue;
+
+            // Read readiness flags defensively; older gateways may omit
+            // them, and the UI only uses them for labels/selectability.
+            var hasConfiguredFlag = item.TryGetProperty("configured", out var cfg)
+                                    && (cfg.ValueKind == JsonValueKind.True || cfg.ValueKind == JsonValueKind.False);
+            bool available = true;
+            if (TryReadBool(item, out var av, "available")) available = av;
+            else if (TryReadBool(item, out var un, "unavailable")) available = !un;
+
+            var model = new ModelInfo
+            {
+                Id = item.TryGetProperty("id", out var id) ? id.GetString() ?? "" : "",
+                Name = item.TryGetProperty("name", out var name) ? name.GetString() : null,
+                Provider = item.TryGetProperty("provider", out var prov) ? prov.GetString() : null,
+                ContextWindow = ReadPositiveInt32(item, "contextWindow"),
+                ContextTokens = ReadPositiveInt32(item, "contextTokens"),
+                IsConfigured = hasConfiguredFlag && cfg.ValueKind == JsonValueKind.True,
+                HasConfiguredFlag = hasConfiguredFlag,
+                IsDefault = ReadBool(item, "default", "isDefault"),
+                IsAvailable = available,
+                RequiresAuth = ReadBool(item, "requiresAuth", "authRequired", "needsAuth", "authNeeded")
+            };
+            if (!string.IsNullOrEmpty(model.Id))
+                info.Models.Add(model);
+        }
+
+        return info;
+    }
+
+    internal static ModelsListInfo MergeModelCatalog(ModelsListInfo configured, ModelsListInfo catalog)
+    {
+        var result = new ModelsListInfo();
+        var byIdentity = new Dictionary<string, ModelInfo>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var source in configured.Models)
+        {
+            if (source is null || string.IsNullOrWhiteSpace(source.Id)) continue;
+
+            var identity = GetModelIdentity(source);
+            if (!byIdentity.TryAdd(identity, CloneModelInfo(source))) continue;
+
+            var configuredModel = byIdentity[identity];
+            configuredModel.HasConfiguredFlag = true;
+            configuredModel.IsConfigured = true;
+            result.Models.Add(configuredModel);
+        }
+
+        foreach (var source in catalog.Models)
+        {
+            if (source is null || string.IsNullOrWhiteSpace(source.Id)) continue;
+            if (!source.IsAvailable && !source.RequiresAuth) continue;
+
+            var identity = GetModelIdentity(source);
+            if (byIdentity.TryGetValue(identity, out var configuredModel))
+            {
+                configuredModel.Name ??= source.Name;
+                configuredModel.Provider ??= source.Provider;
+                configuredModel.ContextWindow ??= source.ContextWindow;
+                configuredModel.ContextTokens ??= source.ContextTokens;
+                configuredModel.IsDefault |= source.IsDefault;
+                configuredModel.RequiresAuth |= source.RequiresAuth;
+                continue;
+            }
+
+            var catalogModel = CloneModelInfo(source);
+            catalogModel.HasConfiguredFlag = true;
+            catalogModel.IsConfigured = false;
+            // Catalog-only entries stay visible for discovery, while the explicit
+            // configuration flag keeps them disabled until they are allowlisted.
+            byIdentity.Add(identity, catalogModel);
+            result.Models.Add(catalogModel);
+        }
+
+        return result;
+    }
+
+    private static ModelInfo CloneModelInfo(ModelInfo source) => new()
+    {
+        Id = source.Id,
+        Name = source.Name,
+        Provider = source.Provider,
+        ContextWindow = source.ContextWindow,
+        ContextTokens = source.ContextTokens,
+        IsConfigured = source.IsConfigured,
+        HasConfiguredFlag = source.HasConfiguredFlag,
+        IsDefault = source.IsDefault,
+        IsAvailable = source.IsAvailable,
+        RequiresAuth = source.RequiresAuth
+    };
+
+    private static string GetModelIdentity(ModelInfo model)
+    {
+        var id = model.Id.Trim();
+        var provider = model.Provider?.Trim();
+        if (string.IsNullOrEmpty(provider)) return id;
+
+        var prefix = provider + "/";
+        return id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            ? id
+            : prefix + id;
+    }
+
+    private static int? ReadPositiveInt32(JsonElement obj, string key)
+    {
+        if (!obj.TryGetProperty(key, out var value)
+            || value.ValueKind != JsonValueKind.Number
+            || !value.TryGetInt32(out var parsed)
+            || parsed <= 0)
+        {
+            return null;
+        }
+
+        return parsed;
     }
 
     // Reads the first present boolean property among <paramref name="keys"/>.

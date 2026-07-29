@@ -208,22 +208,8 @@ public sealed partial class HubWindow : WindowEx
         var notification = _currentAppNotification;
         AppNotificationInfoBar.Visibility = Visibility.Visible;
         AppNotificationInfoBar.Severity = ToInfoBarSeverity(notification.Severity);
-        AppNotificationInfoBar.Title = string.Empty;
-        AppNotificationInfoBar.Message = string.Empty;
-
-        AppNotificationMessageText.Inlines.Clear();
-        AppNotificationMessageText.Inlines.Add(new Run
-        {
-            Text = notification.Title,
-            FontWeight = FontWeights.SemiBold
-        });
-        if (!string.IsNullOrWhiteSpace(notification.Message))
-        {
-            AppNotificationMessageText.Inlines.Add(new Run
-            {
-                Text = $" — {notification.Message}"
-            });
-        }
+        AppNotificationInfoBar.Title = notification.Title;
+        AppNotificationInfoBar.Message = notification.Message;
 
         // Action-button precedence: if the visible notification is itself
         // actionable (e.g. a connection issue routes to the Connection page),
@@ -262,7 +248,6 @@ public sealed partial class HubWindow : WindowEx
         AppNotificationInfoBar.Visibility = Visibility.Collapsed;
         AppNotificationInfoBar.Title = string.Empty;
         AppNotificationInfoBar.Message = string.Empty;
-        AppNotificationMessageText.Inlines.Clear();
         AppNotificationActionButton.Visibility = Visibility.Collapsed;
         _appNotificationActionShowsMore = false;
         _currentAppNotification = null;
@@ -595,6 +580,20 @@ public sealed partial class HubWindow : WindowEx
     private void OnNavPaneToggleButtonClick(object sender, RoutedEventArgs e)
     {
         NavView.IsPaneOpen = !NavView.IsPaneOpen;
+    }
+
+    // The top-left brand mark doubles as the nav pane toggle. Hovering swaps the
+    // lobster logo for the toggle glyph, matching the GitHub Copilot app.
+    private void OnBrandTogglePointerEntered(object sender, PointerRoutedEventArgs e)
+    {
+        BrandToggleMark.Opacity = 0;
+        BrandToggleGlyph.Opacity = 1;
+    }
+
+    private void OnBrandTogglePointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        BrandToggleMark.Opacity = 1;
+        BrandToggleGlyph.Opacity = 0;
     }
 
     // ── Back navigation (title-bar back button + Alt+Left) ──────────────────
@@ -1027,11 +1026,11 @@ public sealed partial class HubWindow : WindowEx
         ArmContentReady(e.Content as FrameworkElement);
 
         // Navigation activation hook: resolve + assign a DI-backed view model for the
-        // navigated page. The page→view-model map is currently empty, so this only
-        // advances the navigation scope (deactivating any prior view model) and never
-        // touches a page's DataContext — a runtime no-op until pages adopt view models.
-        // Contained in a try/catch so a future misbehaving view model's activation
-        // cannot escape this XAML event handler and crash the app.
+        // navigated page. Pages present in the page->view-model map (currently Settings)
+        // get their view model resolved, activated, and assigned as DataContext; other pages
+        // only advance the navigation scope (deactivating any prior view model). Contained in a
+        // try/catch so a misbehaving view model's activation cannot escape this XAML event handler
+        // and crash the app.
         if (e.Content is { } content)
         {
             try

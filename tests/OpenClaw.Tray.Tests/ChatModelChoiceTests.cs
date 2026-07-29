@@ -20,6 +20,7 @@ public class ChatModelChoiceTests
                     Name = "Claude Opus 4.8",
                     Provider = "Anthropic",
                     ContextWindow = 200000,
+                    ContextTokens = 180000,
                     IsConfigured = true,
                     IsDefault = true,
                     IsAvailable = true,
@@ -36,6 +37,7 @@ public class ChatModelChoiceTests
         Assert.Equal("Claude Opus 4.8", c.DisplayName);
         Assert.Equal("Anthropic", c.Provider);
         Assert.Equal(200000, c.ContextWindow);
+        Assert.Equal(180000, c.ContextTokens);
         Assert.True(c.IsConfigured);
         Assert.True(c.IsDefault);
         Assert.True(c.IsAvailable);
@@ -80,40 +82,46 @@ public class ChatModelChoiceTests
     }
 
     [Fact]
-    public void FromModelsList_HidesExplicitlyUnconfiguredModels()
+    public void FromModelsList_ShowsExplicitlyUnconfiguredModelsAsDisabled()
     {
         var info = new ModelsListInfo
         {
             Models =
             {
-                // Provider explicitly reported as not configured with no auth path → hidden.
                 new ModelInfo { Id = "unconfigured", HasConfiguredFlag = true, IsConfigured = false },
-                // Auth-needed rows stay visible so users can choose the provider-auth path.
                 new ModelInfo { Id = "needs-key", HasConfiguredFlag = true, IsConfigured = false, RequiresAuth = true },
-                // Configured → kept.
                 new ModelInfo { Id = "ready", HasConfiguredFlag = true, IsConfigured = true },
-                // Flag omitted entirely → kept (we don't know, so don't hide).
                 new ModelInfo { Id = "unknown" },
             }
         };
 
         var choices = ChatModelChoice.FromModelsList(info);
-        Assert.Equal(new[] { "needs-key", "ready", "unknown" }, choices.Select(c => c.Id).ToArray());
-        Assert.True(choices[0].RequiresAuth);
-        Assert.True(choices[0].IsSelectable);
+
+        Assert.Equal(
+            new[] { "unconfigured", "needs-key", "ready", "unknown" },
+            choices.Select(c => c.Id).ToArray());
+
+        var unconfigured = choices[0];
+        Assert.False(unconfigured.IsSelectable);
+        Assert.Equal("not configured", ChatModelLabels.BuildStateMarker(unconfigured));
+
+        Assert.True(choices[1].RequiresAuth);
+        Assert.True(choices[1].IsSelectable);
     }
 
-    // ── Selectability ────────────────────────────────────────────────────
-
+    // Selectability
     [Fact]
-    public void IsSelectable_FalseOnlyWhenUnavailable()
+    public void IsSelectable_BlocksExplicitlyUnconfiguredModels()
     {
         Assert.True(new ChatModelChoice("x", "X").IsSelectable);
-        // Auth-needed stays selectable (routes to provider auth).
         Assert.True(new ChatModelChoice("x", "X", RequiresAuth: true).IsSelectable);
+        Assert.False(new ChatModelChoice(
+            "x",
+            "X",
+            IsConfigured: false,
+            HasConfiguredFlag: true).IsSelectable);
         Assert.False(new ChatModelChoice("x", "X", IsAvailable: false).IsSelectable);
     }
-
     [Theory]
     [InlineData("gpt-5.4", "openai", "openai/gpt-5.4")]
     [InlineData("openai/gpt-5.4", "openai", "openai/gpt-5.4")]
@@ -191,14 +199,88 @@ public class ChatModelChoiceTests
     // ── Meta segment ─────────────────────────────────────────────────────
 
     [Fact]
-    public void BuildMetaSegment_CombinesProviderAndContext()
+    public void BuildMetaSegment_DifferingRuntimeAndNative_ShowsRuntimeFirst()
+    {
+        var c = new ChatModelChoice(
+            "x",
+            "X",
+            Provider: "OpenAI",
+            ContextWindow: 1000000,
+            ContextTokens: 272000);
+
+        Assert.Equal("OpenAI · 272K runtime · 1M native", ChatModelLabels.BuildMetaSegment(c));
+    }
+
+    [Fact]
+    public void BuildMetaSegment_RuntimeExceedsNative_DoesNotClampOrReorder()
+    {
+        var c = new ChatModelChoice(
+            "x",
+            "X",
+            Provider: "OpenAI",
+            ContextWindow: 272000,
+            ContextTokens: 1000000);
+
+        Assert.Equal("OpenAI · 1M runtime · 272K native", ChatModelLabels.BuildMetaSegment(c));
+    }
+
+    [Fact]
+    public void BuildMetaSegment_EqualRuntimeAndNative_ShowsUnqualifiedValueOnce()
+    {
+        var c = new ChatModelChoice(
+            "x",
+            "X",
+            Provider: "OpenAI",
+            ContextWindow: 272000,
+            ContextTokens: 272000);
+
+        Assert.Equal("OpenAI · 272K", ChatModelLabels.BuildMetaSegment(c));
+    }
+
+    [Fact]
+    public void BuildMetaSegment_DifferentValuesWithSameCompactLabel_UsesHigherPrecision()
+    {
+        var c = new ChatModelChoice(
+            "x",
+            "X",
+            Provider: "OpenAI",
+            ContextWindow: 1049000,
+            ContextTokens: 1000001);
+
+        Assert.Equal("OpenAI · 1M runtime · 1.049M native", ChatModelLabels.BuildMetaSegment(c));
+    }
+
+    [Fact]
+    public void BuildMetaSegment_DifferentValuesStillColliding_UsesExactInvariantValues()
+    {
+        var c = new ChatModelChoice(
+            "x",
+            "X",
+            Provider: "OpenAI",
+            ContextWindow: 1000002,
+            ContextTokens: 1000001);
+
+        Assert.Equal(
+            "OpenAI · 1,000,001 runtime · 1,000,002 native",
+            ChatModelLabels.BuildMetaSegment(c));
+    }
+
+    [Fact]
+    public void BuildMetaSegment_RuntimeOnly_QualifiesRuntimeValue()
+    {
+        var c = new ChatModelChoice("x", "X", Provider: "OpenAI", ContextTokens: 272000);
+        Assert.Equal("OpenAI · 272K runtime", ChatModelLabels.BuildMetaSegment(c));
+    }
+
+    [Fact]
+    public void BuildMetaSegment_RuntimeMissing_FallsBackToNativeWindow()
     {
         var c = new ChatModelChoice("x", "X", Provider: "OpenAI", ContextWindow: 272000);
         Assert.Equal("OpenAI · 272K", ChatModelLabels.BuildMetaSegment(c));
     }
 
     [Fact]
-    public void BuildMetaSegment_ProviderOnly()
+    public void BuildMetaSegment_BothContextsMissing_PreservesProviderOnly()
     {
         var c = new ChatModelChoice("x", "X", Provider: "OpenAI");
         Assert.Equal("OpenAI", ChatModelLabels.BuildMetaSegment(c));
@@ -231,6 +313,16 @@ public class ChatModelChoiceTests
         Assert.Equal("auth needed", ChatModelLabels.BuildStateMarker(c));
     }
 
+    [Fact]
+    public void BuildStateMarker_NotConfigured()
+    {
+        var c = new ChatModelChoice(
+            "x",
+            "X",
+            IsConfigured: false,
+            HasConfiguredFlag: true);
+        Assert.Equal("not configured", ChatModelLabels.BuildStateMarker(c));
+    }
     [Fact]
     public void BuildStateMarker_Default()
     {

@@ -1,5 +1,6 @@
 namespace OpenClaw.Chat;
 
+using System.Globalization;
 using OpenClaw.Shared;
 
 /// <summary>
@@ -8,7 +9,8 @@ using OpenClaw.Shared;
 /// <param name="Id">Wire model id (e.g. <c>claude-opus-4.8</c>).</param>
 /// <param name="DisplayName">Human-friendly label (falls back to <paramref name="Id"/>).</param>
 /// <param name="Provider">Owning provider (e.g. <c>OpenAI</c>, <c>Anthropic</c>), when known.</param>
-/// <param name="ContextWindow">Context-window size in tokens, when known.</param>
+/// <param name="ContextWindow">Native/catalog context-window size in tokens, when known.</param>
+/// <param name="ContextTokens">Effective runtime context budget in tokens, when known.</param>
 /// <param name="IsConfigured">True when the provider is configured on the gateway.</param>
 /// <param name="IsAvailable">
 /// True when the model can be selected right now. When false the picker shows it
@@ -19,15 +21,18 @@ using OpenClaw.Shared;
 /// the model is usable.
 /// </param>
 /// <param name="IsDefault">True when the gateway marks this model as the default.</param>
+/// <param name="HasConfiguredFlag">True when the gateway explicitly reported configuration state.</param>
 public sealed record ChatModelChoice(
     string Id,
     string DisplayName,
     string? Provider = null,
     int? ContextWindow = null,
+    int? ContextTokens = null,
     bool IsConfigured = true,
     bool IsAvailable = true,
     bool RequiresAuth = false,
-    bool IsDefault = false)
+    bool IsDefault = false,
+    bool HasConfiguredFlag = false)
 {
     /// <summary>
     /// Provider-qualified identity used for picker tags and <c>sessions.patch</c>
@@ -37,11 +42,11 @@ public sealed record ChatModelChoice(
 
     /// <summary>
     /// True when the user may switch the session to this model. Auth-needed
-    /// models remain selectable (selecting one routes the user toward the
-    /// gateway's provider-auth flow); only explicitly unavailable models are
-    /// blocked.
+    /// models remain selectable so the provider-auth flow can run. Catalog-only
+    /// and explicitly unavailable models remain visible but disabled.
     /// </summary>
-    public bool IsSelectable => IsAvailable;
+    public bool IsSelectable =>
+        IsAvailable && (!HasConfiguredFlag || IsConfigured || RequiresAuth);
 
     /// <summary>
     /// Maps gateway models into ordered, selection-deduplicated picker entries.
@@ -55,18 +60,17 @@ public sealed record ChatModelChoice(
         foreach (var m in info.Models)
         {
             if (m is null || string.IsNullOrEmpty(m.Id)) continue;
-            // Hide explicitly unconfigured models unless the gateway reports an
-            // auth flow for them; auth-needed rows are useful picker actions.
-            if (m.HasConfiguredFlag && !m.IsConfigured && !m.RequiresAuth) continue;
             var choice = new ChatModelChoice(
                 Id: m.Id,
                 DisplayName: m.DisplayName,
                 Provider: m.Provider,
                 ContextWindow: m.ContextWindow,
+                ContextTokens: m.ContextTokens,
                 IsConfigured: m.IsConfigured,
                 IsAvailable: m.IsAvailable,
                 RequiresAuth: m.RequiresAuth,
-                IsDefault: m.IsDefault);
+                IsDefault: m.IsDefault,
+                HasConfiguredFlag: m.HasConfiguredFlag);
             if (!seen.Add(choice.SelectionId)) continue;
             list.Add(choice);
         }
@@ -160,7 +164,10 @@ public static class ChatModelLabels
     /// Compact token-count label: 272000 → "272K", 1_048_576 → "1M",
     /// 200000 → "200K". Falls back to the raw number for small values.
     /// </summary>
-    public static string FormatContextWindow(int contextWindow)
+    public static string FormatContextWindow(int contextWindow) =>
+        FormatContextWindow(contextWindow, "0.#");
+
+    private static string FormatContextWindow(int contextWindow, string fractionalFormat)
     {
         if (contextWindow <= 0) return string.Empty;
         if (contextWindow >= 1_000_000)
@@ -169,26 +176,73 @@ public static class ChatModelLabels
             // Trim a trailing ".0" so 2_000_000 → "2M" not "2.0M".
             return millions == Math.Floor(millions)
                 ? $"{(int)millions}M"
-                : $"{millions:0.#}M";
+                : $"{millions.ToString(fractionalFormat, CultureInfo.InvariantCulture)}M";
         }
         if (contextWindow >= 1_000)
         {
             var thousands = contextWindow / 1_000.0;
             return thousands == Math.Floor(thousands)
                 ? $"{(int)thousands}K"
-                : $"{thousands:0.#}K";
+                : $"{thousands.ToString(fractionalFormat, CultureInfo.InvariantCulture)}K";
         }
-        return contextWindow.ToString();
+        return contextWindow.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static (string Runtime, string Native) FormatDistinctContextValues(
+        int runtimeTokens,
+        int nativeTokens)
+    {
+        var runtime = FormatContextWindow(runtimeTokens);
+        var native = FormatContextWindow(nativeTokens);
+        if (!string.Equals(runtime, native, StringComparison.Ordinal))
+            return (runtime, native);
+
+        runtime = FormatContextWindow(runtimeTokens, "0.###");
+        native = FormatContextWindow(nativeTokens, "0.###");
+        if (!string.Equals(runtime, native, StringComparison.Ordinal))
+            return (runtime, native);
+
+        return (
+            runtimeTokens.ToString("N0", CultureInfo.InvariantCulture),
+            nativeTokens.ToString("N0", CultureInfo.InvariantCulture));
     }
 
     /// <summary>
-    /// Builds the secondary metadata segment ("OpenAI · 272K") from provider and
-    /// context window, or an empty string when neither is known.
+    /// Builds the secondary metadata segment from provider and context metadata.
+    /// Runtime budget is shown first when available; a differing native/catalog
+    /// window follows it. Older gateways that only expose a context window keep
+    /// the original unqualified display.
     /// </summary>
     public static string BuildMetaSegment(ChatModelChoice choice)
     {
         var hasProvider = !string.IsNullOrWhiteSpace(choice.Provider);
-        var ctx = choice.ContextWindow is { } cw ? FormatContextWindow(cw) : string.Empty;
+        var runtimeTokens = choice.ContextTokens is > 0 ? choice.ContextTokens : null;
+        var nativeTokens = choice.ContextWindow is > 0 ? choice.ContextWindow : null;
+        string ctx;
+
+        if (runtimeTokens is { } runtime)
+        {
+            if (nativeTokens is { } native)
+            {
+                if (runtime == native)
+                {
+                    ctx = FormatContextWindow(runtime);
+                }
+                else
+                {
+                    var labels = FormatDistinctContextValues(runtime, native);
+                    ctx = $"{labels.Runtime} runtime · {labels.Native} native";
+                }
+            }
+            else
+            {
+                ctx = $"{FormatContextWindow(runtime)} runtime";
+            }
+        }
+        else
+        {
+            ctx = nativeTokens is { } native ? FormatContextWindow(native) : string.Empty;
+        }
         var hasCtx = ctx.Length > 0;
 
         if (hasProvider && hasCtx) return $"{choice.Provider} · {ctx}";
@@ -199,14 +253,14 @@ public static class ChatModelLabels
 
     /// <summary>
     /// Trailing state marker for a model: "default", "auth needed",
-    /// "unavailable", or empty. Unavailable takes precedence over auth-needed,
-    /// which takes precedence over default. Only explicit gateway signals drive
-    /// the markers — a missing <see cref="ChatModelChoice.IsConfigured"/> flag is
-    /// not treated as "auth needed" because the gateway's <c>configured</c> view
-    /// often omits the field entirely.
+    /// "not configured", "unavailable", or empty. Explicit configuration state
+    /// is shown first so catalog-only rows explain why they are disabled. Missing
+    /// configuration metadata remains neutral for older gateways.
     /// </summary>
     public static string BuildStateMarker(ChatModelChoice choice)
     {
+        if (choice.HasConfiguredFlag && !choice.IsConfigured && !choice.RequiresAuth)
+            return "not configured";
         if (!choice.IsAvailable) return "unavailable";
         if (choice.RequiresAuth) return "auth needed";
         if (choice.IsDefault) return "default";
@@ -215,8 +269,8 @@ public static class ChatModelLabels
 
     /// <summary>
     /// Full menu/combo label, e.g. "Claude Opus 4.8 · Anthropic · 200K · default".
-    /// State marker is appended last so default/auth-needed/unavailable reads at
-    /// the end of the row.
+    /// State marker is appended last so default/auth-needed/not-configured/unavailable
+    /// reads at the end of the row.
     /// </summary>
     public static string BuildMenuLabel(ChatModelChoice choice)
     {

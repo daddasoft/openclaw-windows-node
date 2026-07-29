@@ -2,8 +2,6 @@ using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Hosting;
-using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using OpenClaw.SetupEngine;
 using OpenClaw.SetupEngine.UI;
@@ -18,17 +16,27 @@ public sealed partial class WelcomePage : Page
     private const string CheckingButtonText = "Checking existing setup...";
     private SetupConfig? _config;
     private bool _installSelected = true; // default selection
+    private bool _suppressSelectionWrite;
 
     public WelcomePage()
     {
         InitializeComponent();
         Loaded += OnLoaded;
-        UpdateCardSelection();
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         _config = e.Parameter as SetupConfig ?? new SetupConfig();
+        _installSelected = SetupWindow.Active?.IsWelcomeInstallSelected ?? true;
+        _suppressSelectionWrite = true;
+        try
+        {
+            GatewayChoiceSelector.SelectedIndex = _installSelected ? 0 : 1;
+        }
+        finally
+        {
+            _suppressSelectionWrite = false;
+        }
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -54,29 +62,34 @@ public sealed partial class WelcomePage : Page
         visual.StartAnimation("Scale", pulse);
     }
 
-    private void InstallCard_Pressed(object sender, PointerRoutedEventArgs e)
+    private void GatewayChoice_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        _installSelected = true;
-        UpdateCardSelection();
+        // A single-select ListView can be cleared to no selection (Ctrl+click / automation).
+        // The Welcome choice must always have exactly one option selected, so restore the last
+        // known selection instead of leaving the persisted value stale behind an empty list.
+        if (GatewayChoiceSelector.SelectedIndex is not (0 or 1))
+        {
+            _suppressSelectionWrite = true;
+            try
+            {
+                GatewayChoiceSelector.SelectedIndex = _installSelected ? 0 : 1;
+            }
+            finally
+            {
+                _suppressSelectionWrite = false;
+            }
+
+            return;
+        }
+
+        if (!_suppressSelectionWrite)
+            SetInstallSelected(GatewayChoiceSelector.SelectedIndex == 0);
     }
 
-    private void ConnectCard_Pressed(object sender, PointerRoutedEventArgs e)
+    private void SetInstallSelected(bool installSelected)
     {
-        _installSelected = false;
-        UpdateCardSelection();
-    }
-
-    private void UpdateCardSelection()
-    {
-        InstallCard.BorderBrush = _installSelected
-            ? (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"]
-            : (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"];
-        InstallCard.BorderThickness = new Thickness(_installSelected ? 2 : 1);
-
-        ConnectCard.BorderBrush = !_installSelected
-            ? (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"]
-            : (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"];
-        ConnectCard.BorderThickness = new Thickness(!_installSelected ? 2 : 1);
+        _installSelected = installSelected;
+        SetupWindow.Active?.SetWelcomeInstallSelected(installSelected);
     }
 
     private void Back_Click(object sender, RoutedEventArgs e)
