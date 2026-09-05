@@ -30,7 +30,13 @@ src/OpenClaw.SetupEngine/
 ├── Program.cs                     # callable entry: --config, --headless, --dry-run, --rollback-on-failure
 ├── SetupPipeline.cs               # Sequential step orchestrator (132 lines)
 ├── SetupContext.cs                # Config model + shared state bag (217 lines)
-├── SetupSteps.cs                  # All setup step implementations
+├── SetupSteps.cs                  # Shared setup-engine helpers (WslConstants, WslInstallSupport,
+│                                   #   SetupOpenClawLogger, SetupPairingCredentialPolicy,
+│                                   #   WindowsGatewayReachability); one file per step class lives
+│                                   #   alongside it (e.g. CreateWslInstanceStep.cs,
+│                                   #   ConfigureGatewayStep.cs, StartKeepaliveStep.cs, ...)
+├── KeepaliveProcessManager.cs      # Setup-time WSL keepalive process/marker/rollback owner
+├── TailscaleSetupSteps.cs         # The 4 Tailscale setup steps, grouped
 ├── TransactionJournal.cs          # Append-only JSONL journal (77 lines)
 ├── SetupLogger.cs                 # Structured JSONL logger (112 lines)
 ├── CommandRunner.cs               # Concrete WSL/process command runner
@@ -50,7 +56,9 @@ src/OpenClaw.SetupEngine.UI/
     └── CompletePage.xaml / .cs       # Mascot status badge, summary, startup toggle
 ```
 
-**Total engine code: ~1,882 lines across 8 files.** UI adds ~10 more files.
+The pipeline runs 24 steps (see `SetupStepFactory.BuildDefaultSteps()` in `SetupPipeline.cs` for
+the authoritative order. This doc's step table below predates the 4 Tailscale steps and is not
+fully current). UI adds ~10 more files.
 
 ---
 
@@ -158,7 +166,12 @@ rerun setup with a supported new name.
 
 ## Pipeline Steps (24 total)
 
-Executed sequentially. Each step is a small class (30–120 lines) in `SetupSteps.cs`.
+> Note: this table predates the 4 Tailscale setup steps; the current pipeline runs 24 steps
+> total. See `SetupStepFactory.BuildDefaultSteps()` in `SetupPipeline.cs` for the authoritative,
+> current order. Fixing this table fully is out of scope for the E0 file-split PR.
+
+Executed sequentially. Each step is a small class (30–120 lines) in its own file under
+`src/OpenClaw.SetupEngine/` (e.g. `PreflightOsStep.cs`).
 
 | # | Step Class | What It Does |
 |---|-----------|-------------|
@@ -166,7 +179,7 @@ Executed sequentially. Each step is a small class (30–120 lines) in `SetupStep
 | 2 | `PreflightOsStep` | Validate Windows 64-bit, version ≥ 22H2 |
 | 3 | `PreflightWslStep` | Verify WSL is installed and supports direct named clean installs |
 | 4 | `PreflightWindowsTailscaleStep` | Validate optional Windows Tailscale prerequisites |
-| 5 | `CleanupStaleDistroStep` | Unregister leftover app-owned WSL distro and remove its VHD directory if `CleanBeforeRun` |
+| 5 | `CleanupStaleDistroStep` | Unregister a leftover WSL distro only when durable app ownership and the live current-user registration base path agree, and remove an orphaned VHD directory automatically only with a path-bound marker; explicit destructive confirmation may override |
 | 6 | `CleanupStaleGatewayStep` | Stop orphaned gateway service, remove config |
 | 7 | `PreflightPortStep` | Check gateway port is available |
 | 8 | `CreateWslInstanceStep` | Directly install a fresh app-owned WSL distro; never export a user's Ubuntu distro |
@@ -259,7 +272,7 @@ Log path defaults to `%APPDATA%\OpenClawTray\Logs\Setup\setup-engine-<yyyyMMdd-H
 
 The WinUI app is a **thin shell** - no business logic, just rendering pipeline state. End-user UI runs default to `RollbackOnFailure=true`; `--no-rollback-on-failure` preserves an explicit debugging opt-out.
 
-### Page Flow: Security → Welcome → Capabilities → Progress → OpenClaw onboard → Complete
+### Page Flow: Security → Welcome → WSL readiness gate → Capabilities → Progress → OpenClaw onboard → Complete
 
 **SecurityNoticePage**
 - Native warning InfoBar for device-trust and setup transparency
@@ -313,6 +326,7 @@ OpenClaw.SetupEngine.Program.Main(["--log-path", "./trace.log"])
 ```
 
 Common flags include `--config`, `--headless`, `--dry-run`, `--rollback-on-failure`, `--no-rollback-on-failure`, `--log-path`, `--gateway-port`, and uninstall safety flags such as `--uninstall` plus `--confirm-destructive`.
+The cross-repository release gate may also pass `--gateway-candidate-package <absolute-tgz>` together with `--validate-gateway-candidate`, headless mode, and rollback-on-failure. This runtime-only input is not deserialized from setup config and does not authorize normal product setup to install an unvalidated release.
 
 SetupEngine option names are case-insensitive. Value options accept either separated
 syntax (`--config custom.json`) or equals syntax (`--config=custom.json`). Unknown

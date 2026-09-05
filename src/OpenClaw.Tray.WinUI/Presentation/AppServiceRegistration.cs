@@ -1,4 +1,7 @@
+using OpenClaw.Shared.ExecApprovals;
+using OpenClaw.Shared.Inference;
 using Microsoft.Extensions.DependencyInjection;
+using OpenClawTray.Chat;
 using OpenClawTray.Services;
 
 namespace OpenClawTray.Presentation;
@@ -32,19 +35,28 @@ internal static class AppServiceRegistration
         services.AddSingleton(context.Dispatcher);
         services.AddSingleton(context.AppCommands);
         services.AddSingleton(context.Settings);
-
-        // Settings facade over the App-owned SettingsManager. Constructed eagerly from the
-        // already-owned singletons so presentation code depends on ISettingsStore, never the
-        // concrete manager. It subscribes to the manager (which App owns) and is not disposed
-        // by the container.
-        services.AddSingleton<ISettingsStore>(new SettingsStore(context.Settings, context.Dispatcher));
+        services.AddSingleton(context.ExecApprovalsStore);
+        services.AddSingleton(context.PermissionsRuntimeHost);
+        if (context.LocalAiRuntime is not null)
+            services.AddSingleton(context.LocalAiRuntime);
+        // Settings facade over the App-owned SettingsManager. Container-owned so it can dispose
+        // its Saved-event subscription during shutdown.
+        services.AddSingleton<ISettingsStore, SettingsStore>();
+        services.AddSingleton<IPermissionsPageRuntimeSource, PermissionsPageRuntimeSource>();
+        services.AddSingleton<IHostHardwareProbe, CudaHostHardwareProbe>();
 
         // Container-owned navigation lifetime manager (disposed with the root provider).
         services.AddSingleton<NavigationScopeManager>();
 
+        // Stateless per-host-mount composer session factory. Depends only on the
+        // App-owned dispatcher instance above; starts no background work.
+        services.AddSingleton<IChatComposerFactory, ChatComposerFactory>();
+
         // Transient page view models resolved per navigation scope.
         services.AddTransient<SettingsPageViewModel>();
         services.AddTransient<PermissionsPageViewModel>();
+        if (context.LocalAiRuntime is not null)
+            services.AddTransient<LocalAiPageViewModel>();
 
         return services;
     }

@@ -35,7 +35,7 @@ public sealed partial class WizardPage : Page
     private int _totalProgressPolls;
     private readonly Dictionary<string, int> _stepVisits = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<WizardOptionValue> _options = [];
-    private readonly Stack<JsonElement> _stepHistory = new();
+    private volatile bool _expectedTerminalRestart;
     // "More ▾" overflow toggle lives as a sibling of SelectOptions, so track it to remove between steps.
     private Button? _moreOptionsButton;
     // wizard.payload frames do not include plugin console output, so tail the gateway log inline.
@@ -98,6 +98,8 @@ public sealed partial class WizardPage : Page
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
+        AdvanceOperationGeneration();
+        _expectedTerminalRestart = false;
         _ = DisconnectAsync();
     }
 
@@ -108,11 +110,15 @@ public sealed partial class WizardPage : Page
         {
             _errorState = false;
             _finalizationErrorState = false;
-            HideRecoveryActions();
+            _expectedTerminalRestart = false;
+            ShowRecoveryActions();
             // Cancel any in-progress server-side wizard session before starting a
             // fresh one, so the gateway doesn't reject wizard.start with "wizard
             // already running" when recovering from a previous error.
             await CancelCurrentSessionAsync();
+            if (generation != _operationGeneration)
+                return;
+
             ClearConsoleBanner();
             _sessionId = "";
             _wizardStepCount = 0;
@@ -121,7 +127,14 @@ public sealed partial class WizardPage : Page
             _lastProgressStepId = "";
             _stepVisits.Clear();
             SetBusy("Connecting to gateway...");
-            _client = await ConnectClientAsync();
+            var client = await ConnectClientAsync();
+            if (generation != _operationGeneration)
+            {
+                await DisconnectAndDisposeClientAsync(client);
+                return;
+            }
+
+            _client = client;
             _client.StatusChanged += OnWizardClientStatusChanged;
             SetBusy("Starting wizard...");
             StartConsoleTail();
@@ -184,7 +197,15 @@ public sealed partial class WizardPage : Page
             {
                 return ReconnectAuthorizationResult.AllowedResult;
             }
-            var provenance = await provenanceService.InspectAsync(record, cancellationToken);
+            var provenance = _expectedTerminalRestart
+                ? await GatewayWizardRestartRecoveryPolicy.WaitForExpectedManagedGatewayAsync(
+                    cancellationToken => provenanceService.InspectAsync(
+                        record,
+                        cancellationToken),
+                    noListenerRetryCount: 30,
+                    retryDelay: TimeSpan.FromSeconds(1),
+                    cancellationToken)
+                : await provenanceService.InspectAsync(record, cancellationToken);
             return provenance.Kind == GatewayEndpointProvenanceKind.ExpectedManagedGateway
                 ? ReconnectAuthorizationResult.AllowedResult
                 : new ReconnectAuthorizationResult(
@@ -236,9 +257,12 @@ public sealed partial class WizardPage : Page
 
         DispatcherQueue.TryEnqueue(() =>
         {
+            // The pending request classifies the close code. Suppress only the duplicate
+            // status error while it does so; non-1012 failures still enter the normal error path.
             if (_errorState
                 || _client == null
                 || !ReferenceEquals(sender, _client)
+                || _expectedTerminalRestart
                 || string.IsNullOrWhiteSpace(_sessionId))
             {
                 return;
@@ -363,8 +387,6 @@ public sealed partial class WizardPage : Page
             }
 
             ResetInputs();
-            // Push current payload so Back can re-render this step
-            _stepHistory.Push(payload);
             TitleText.Text = string.IsNullOrWhiteSpace(title) ? DisplayTitleFor(_stepType) : title;
             RenderMessage(message);
             StepCard.MinHeight = _stepType == "note" && string.IsNullOrWhiteSpace(message) ? 140 : 260;
@@ -372,7 +394,6 @@ public sealed partial class WizardPage : Page
             BusyRing.Visibility = Visibility.Collapsed;
             BusyRing.IsActive = false;
             ShowRecoveryActions();
-            WizardBackButton.Visibility = Visibility.Visible;
             StatusText.Text = "A few quick questions to connect your agent";
             PrimaryButton.IsEnabled = !WizardSelection.RequiresAnswer(_stepType);
             SecondaryButton.IsEnabled = true;
@@ -428,7 +449,6 @@ public sealed partial class WizardPage : Page
         PrimaryButton.Content = "Continue";
         SecondaryButton.IsEnabled = false;
         SecondaryButton.Visibility = Visibility.Collapsed;
-        WizardBackButton.Visibility = Visibility.Collapsed;
         ShowRecoveryActions();
     }
 
@@ -450,7 +470,9 @@ public sealed partial class WizardPage : Page
         {
             SelectOptions.Visibility = Visibility.Visible;
 
-            // Reorder: skip options first, then non-more options, filter out "more" and "back" options
+            // Gateway Back is an in-band __back/back answer sent through wizard.next,
+            // not a dedicated wizard.back RPC. Companion intentionally filters it
+            // rather than reintroducing client-local navigation.
             var skipOptions = _options.Where(IsSkipOption).ToList();
             var moreOptions = _options.Where(IsMoreOption).ToList();
             var normalOptions = _options.Where(o => !IsSkipOption(o) && !IsMoreOption(o) && !IsBackOption(o)).ToList();
@@ -713,7 +735,7 @@ public sealed partial class WizardPage : Page
 
                 var expandedOptions = WizardAnswerBuilder.ReadOptions(step).ToList();
 
-                // Filter out __back and __more from expanded list
+                // Keep Gateway navigation options out of Companion's visible choices.
                 var filtered = expandedOptions
                     .Where(o => !IsMoreOption(o) && !IsBackOption(o))
                     .ToList();
@@ -739,30 +761,12 @@ public sealed partial class WizardPage : Page
                 // Select first item by default
                 if (SelectOptions.Items.Count > 0)
                     SelectOptions.SelectedIndex = 0;
-
-                // Push this expanded payload to step history so Back works
-                _stepHistory.Push(payload);
             }
         }
         catch (Exception ex)
         {
             if (generation != _operationGeneration) return;
             await EnterWizardErrorAsync(ex.Message);
-        }
-    }
-
-    private void WizardBack_Click(object sender, RoutedEventArgs e)
-    {
-        // Pop the current step (that's showing now), then re-render the previous one
-        if (_stepHistory.Count > 1)
-        {
-            _stepHistory.Pop(); // discard current
-            var previousPayload = _stepHistory.Pop(); // will be re-pushed by ApplyPayloadAsync
-            _ = ApplyPayloadAsync(previousPayload);
-        }
-        else
-        {
-            SetupWindow.Active?.NavigateToWelcome(back: true);
         }
     }
 
@@ -774,11 +778,13 @@ public sealed partial class WizardPage : Page
 
     private async Task StartOverAsync()
     {
-        AdvanceOperationGeneration();
-        _stepHistory.Clear();
+        var generation = AdvanceOperationGeneration();
         HideRecoveryActions();
         SetBusy("Starting over...");
         await CancelCurrentSessionAsync();
+        if (generation != _operationGeneration)
+            return;
+
         await StartWizardAsync();
     }
 
@@ -793,6 +799,8 @@ public sealed partial class WizardPage : Page
         if (_client == null) return;
 
         var generation = _operationGeneration;
+        var answeredQuestion = "";
+        string? answeredLabel = null;
         try
         {
             object? answerValue = null;
@@ -813,8 +821,8 @@ public sealed partial class WizardPage : Page
             // render and the user's current click. Once they answer, those messages
             // are "consumed" — wipe so the next step starts with a clean slate.
             ClearConsoleBanner();
-            var answeredQuestion = TitleText.Text;
-            var answeredLabel = CurrentAnswerLabel(skip);
+            answeredQuestion = TitleText.Text;
+            answeredLabel = CurrentAnswerLabel(skip);
             object parameters;
             if (skip)
             {
@@ -831,6 +839,14 @@ public sealed partial class WizardPage : Page
                 parameters = new { sessionId = _sessionId, answer = new { stepId = _stepId, value = answerValue } };
             }
 
+            _expectedTerminalRestart =
+                !skip &&
+                _hostAccessPlan.CanControlWslGateway &&
+                GatewayWizardRestartRecoveryPolicy.IsTerminalRestartCandidate(
+                    _config.Gateway.Version,
+                    _stepId,
+                    _currentTitle,
+                    _currentMessage);
             var payload = await _client.SendWizardRequestAsync("wizard.next", parameters, timeoutMs: TimeoutForCurrentStep());
             if (generation != _operationGeneration)
                 return;
@@ -844,7 +860,76 @@ public sealed partial class WizardPage : Page
             if (generation != _operationGeneration)
                 return;
 
+            if (_expectedTerminalRestart &&
+                GatewayWizardRestartRecoveryPolicy.IsExpectedTerminalRestart(
+                    _config.Gateway.Version,
+                    _stepId,
+                    ex,
+                    _currentTitle,
+                    _currentMessage))
+            {
+                StatusText.Text = "Gateway restarted; verifying endpoint ownership...";
+                var reconnected = await WaitForReconnectAsync(
+                    _client,
+                    TimeSpan.FromSeconds(60));
+                if (generation != _operationGeneration)
+                    return;
+
+                if (!reconnected)
+                {
+                    await EnterWizardErrorAsync(
+                        "The gateway restarted after applying setup, but Companion could not verify and reconnect to its managed endpoint.");
+                    return;
+                }
+
+                AppendTranscriptTurn(answeredQuestion, answeredLabel);
+                await DisconnectAsync();
+                if (generation != _operationGeneration || _errorState)
+                    return;
+
+                await CompleteSetupAsync(generation);
+                return;
+            }
+
             await EnterWizardErrorAsync(ex.Message);
+        }
+        finally
+        {
+            if (generation == _operationGeneration)
+                _expectedTerminalRestart = false;
+        }
+    }
+
+    private static async Task<bool> WaitForReconnectAsync(
+        OpenClawGatewayClient client,
+        TimeSpan timeout)
+    {
+        if (client.HasHandshakeSnapshot)
+            return true;
+
+        var tcs = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnHandshakeSucceeded(object? sender, EventArgs args) =>
+            tcs.TrySetResult(true);
+        void OnDisposed(object? sender, EventArgs args) =>
+            tcs.TrySetResult(false);
+
+        client.HandshakeSucceeded += OnHandshakeSucceeded;
+        client.Disposed += OnDisposed;
+        try
+        {
+            if (client.HasHandshakeSnapshot)
+                return true;
+
+            using var timeoutCancellation = new CancellationTokenSource(timeout);
+            await using var _ = timeoutCancellation.Token.Register(
+                () => tcs.TrySetResult(false));
+            return await tcs.Task;
+        }
+        finally
+        {
+            client.HandshakeSucceeded -= OnHandshakeSucceeded;
+            client.Disposed -= OnDisposed;
         }
     }
 
@@ -1489,6 +1574,18 @@ public sealed partial class WizardPage : Page
         // slopwatch-ignore: SW003 Cleanup is best-effort; failure cannot improve caller state and the original outcome is preserved.
         try { await client.DisconnectAsync(); } catch { }
         client.Dispose();
+    }
+
+    private static async Task DisconnectAndDisposeClientAsync(OpenClawGatewayClient client)
+    {
+        try
+        {
+            await client.DisconnectAsync();
+        }
+        finally
+        {
+            client.Dispose();
+        }
     }
 
     private static string DisplayTitleFor(string stepType) => stepType switch

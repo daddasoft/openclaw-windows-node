@@ -56,24 +56,56 @@ public class SetupPipelineTests
     }
 
     [Fact]
+    public async Task RunAsync_CompatibilityFailure_PreservesTypedTerminalReason()
+    {
+        var compatibilityError = new GatewayCompatibilityException(
+            GatewayCompatibilityFailureKind.ProtocolMismatch,
+            "Expected protocol v4.");
+        var pipeline = new SetupPipeline([
+            new MockStep(
+                "compatibility",
+                (_, _) => Task.FromResult(
+                    StepResult.Terminal(compatibilityError.Message, compatibilityError))),
+        ]);
+
+        var result = await pipeline.RunAsync(CreateContext());
+
+        Assert.Equal(PipelineOutcome.Failed, result.Outcome);
+        Assert.Equal(GatewayCompatibilityFailureKind.ProtocolMismatch, result.CompatibilityFailure);
+    }
+
+    [Fact]
     public void BuildDefaultSteps_IncludesCurrentSetupFlow()
     {
         var steps = SetupStepFactory.BuildDefaultSteps();
 
-        Assert.Equal(24, steps.Count);
+        Assert.Equal(37, steps.Count);
         Assert.IsType<ValidateDistroInstallPathStep>(steps[0]);
         Assert.IsType<PreflightOsStep>(steps[1]);
-        Assert.IsType<PreflightWslStep>(steps[2]);
-        Assert.IsType<PreflightWindowsTailscaleStep>(steps[3]);
-        Assert.IsType<CleanupStaleDistroStep>(steps[4]);
-        Assert.IsType<CleanupStaleGatewayStep>(steps[5]);
+        Assert.IsType<PreflightLocalAiHardwareStep>(steps[2]);
+        Assert.IsType<PreflightWslStep>(steps[3]);
+        Assert.IsType<PreflightWindowsTailscaleStep>(steps[4]);
+        Assert.IsType<EnsureWslPlatformStep>(steps[5]);
+        Assert.IsType<ReconcileLocalAiInstallationStep>(steps[6]);
+        Assert.IsType<AcquireLocalAiRuntimeStep>(steps[7]);
+        Assert.IsType<AcquireLocalAiModelStep>(steps[8]);
+        Assert.IsType<PersistLocalAiManifestStep>(steps[9]);
+        Assert.IsType<StartLocalAiRuntimeStep>(steps[10]);
+        Assert.IsType<CaptureLocalAiGpuBaselineStep>(steps[11]);
+        Assert.IsType<VerifyLocalAiInferenceStep>(steps[12]);
+        Assert.IsType<VerifyLocalAiGpuLoadStep>(steps[13]);
+        Assert.IsType<ConfigureLocalAiWslNetworkingStep>(steps[14]);
+        Assert.IsType<CleanupStaleDistroStep>(steps[15]);
+        Assert.IsType<CleanupStaleGatewayStep>(steps[16]);
         Assert.Contains(steps, s => s is ValidateWslLockdownStep);
         var lockdownIndex = steps.FindIndex(s => s is ValidateWslLockdownStep);
         var cliInstallIndex = steps.FindIndex(s => s is InstallCliStep);
         Assert.Equal(lockdownIndex + 1, cliInstallIndex);
-        Assert.IsType<InstallTailscaleStep>(steps[cliInstallIndex + 1]);
-        Assert.IsType<AuthorizeTailscaleStep>(steps[cliInstallIndex + 2]);
+        Assert.IsType<VerifyLocalAiWslStep>(steps[cliInstallIndex + 1]);
+        Assert.IsType<InstallTailscaleStep>(steps[cliInstallIndex + 2]);
+        Assert.IsType<AuthorizeTailscaleStep>(steps[cliInstallIndex + 3]);
         var installServiceIndex = steps.FindIndex(s => s is InstallGatewayServiceStep);
+        Assert.IsType<ConfigureLocalAiGatewayStep>(steps[installServiceIndex - 1]);
         Assert.IsType<StartGatewayStep>(steps[installServiceIndex + 1]);
         Assert.IsType<FinalizeTailscaleServeStep>(steps[installServiceIndex + 2]);
         Assert.Contains(steps, s => s is RunGatewayWizardStep);
@@ -82,6 +114,45 @@ public class SetupPipelineTests
         var wizardIndex = steps.FindIndex(s => s is RunGatewayWizardStep);
         Assert.IsType<WindowsNodeBootstrapContextStep>(steps[wizardIndex + 1]);
         Assert.IsType<StartKeepaliveStep>(steps[^1]);
+
+        var ensureWslIndex = steps.FindIndex(step => step is EnsureWslPlatformStep);
+        var preflightWslIndex = steps.FindIndex(step => step is PreflightWslStep);
+        var localAiHardwareIndex = steps.FindIndex(step => step is PreflightLocalAiHardwareStep);
+        var runtimeDownloadIndex = steps.FindIndex(step => step is AcquireLocalAiRuntimeStep);
+        var modelDownloadIndex = steps.FindIndex(step => step is AcquireLocalAiModelStep);
+        Assert.True(localAiHardwareIndex < preflightWslIndex);
+        Assert.True(preflightWslIndex < ensureWslIndex);
+        Assert.True(ensureWslIndex < runtimeDownloadIndex);
+        Assert.True(ensureWslIndex < modelDownloadIndex);
+    }
+
+    [Fact]
+    public void LocalAiDisabled_SkipsEveryLocalAiMutation()
+    {
+        var ctx = CreateContext(new SetupConfig
+        {
+            LocalAi = new LocalAiConfig { Enabled = false }
+        });
+        var steps = SetupStepFactory.BuildDefaultSteps();
+        SetupStep[] localAiSteps =
+        [
+            steps.Single(step => step is PreflightLocalAiHardwareStep),
+            steps.Single(step => step is ReconcileLocalAiInstallationStep),
+            steps.Single(step => step is AcquireLocalAiRuntimeStep),
+            steps.Single(step => step is AcquireLocalAiModelStep),
+            steps.Single(step => step is PersistLocalAiManifestStep),
+            steps.Single(step => step is StartLocalAiRuntimeStep),
+            steps.Single(step => step is CaptureLocalAiGpuBaselineStep),
+            steps.Single(step => step is VerifyLocalAiInferenceStep),
+            steps.Single(step => step is VerifyLocalAiGpuLoadStep),
+            steps.Single(step => step is ConfigureLocalAiWslNetworkingStep),
+            steps.Single(step => step is VerifyLocalAiWslStep),
+            steps.Single(step => step is ConfigureLocalAiGatewayStep),
+        ];
+
+        Assert.All(localAiSteps, step => Assert.True(step.CanSkip(ctx), step.Id));
+        Assert.False(steps.Single(step => step is PreflightWslStep).CanSkip(ctx));
+        Assert.False(steps.Single(step => step is EnsureWslPlatformStep).CanSkip(ctx));
     }
 
     [Theory]
@@ -326,6 +397,48 @@ public class SetupPipelineTests
         var result = await pipeline.RunAsync(ctx);
         Assert.Equal(PipelineOutcome.Cancelled, result.Outcome);
         Assert.Equal(3, result.ExitCode);
+    }
+
+    [Fact]
+    public async Task RunAsync_CancelledDuringStep_RollsBackInterruptedThenCompletedWithFreshTokens()
+    {
+        using var cts = new CancellationTokenSource();
+        var rollbacks = new List<(string StepId, bool WasCancelled)>();
+        var config = new SetupConfig { RollbackOnFailure = true };
+        var ctx = CreateContext(config, cts.Token);
+
+        Task RecordRollback(string stepId, CancellationToken ct)
+        {
+            rollbacks.Add((stepId, ct.IsCancellationRequested));
+            return Task.CompletedTask;
+        }
+
+        var pipeline = new SetupPipeline([
+            new MockStep(
+                "s1",
+                (_, _) => Task.FromResult(StepResult.Ok()),
+                (_, ct) => RecordRollback("s1", ct)),
+            new MockStep(
+                "s2",
+                (_, _) => Task.FromResult(StepResult.Ok()),
+                (_, ct) => RecordRollback("s2", ct)),
+            new MockStep(
+                "s3",
+                (_, ct) =>
+                {
+                    cts.Cancel();
+                    ct.ThrowIfCancellationRequested();
+                    return Task.FromResult(StepResult.Ok());
+                },
+                (_, ct) => RecordRollback("s3", ct)),
+        ]);
+
+        var result = await pipeline.RunAsync(ctx);
+
+        Assert.Equal(PipelineOutcome.Cancelled, result.Outcome);
+        Assert.Equal(
+            [("s3", false), ("s2", false), ("s1", false)],
+            rollbacks);
     }
 
     [Fact]

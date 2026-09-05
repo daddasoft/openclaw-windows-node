@@ -44,6 +44,9 @@ public class LocalizationValidationTests
         "VoiceOverlayWindow_winexWindowEx_2.Title",
         // Brand name — identical across all locales.
         "ConnectionPage_TopologyTailscale",
+        // Native engine executable/product name. Keep the exact llama-server
+        // spelling in every locale so it matches diagnostics and process names.
+        "LocalAiPage_EngineHeading.Text",
         // Product/feature name — "OpenClaw Onboard" is kept identical across
         // all locales (the card's description and button are translated).
         "SettingsPage_OnboardWizard_Header.Text",
@@ -53,6 +56,7 @@ public class LocalizationValidationTests
         // Sample IDs / brand identifiers — same across locales.
         "VoiceSettingsPage_ElevenLabsVoiceIdBox.PlaceholderText",
         "VoiceSettingsPage_ElevenLabsModelBox.PlaceholderText",
+        "VoiceSettingsPage_MiniMaxModelBox.PlaceholderText",
         // Capability command identifier — should match the wire/API name.
         "NotificationsPage_MetadataSystemRun",
         // Punctuation-only layout format; localized parts are supplied by
@@ -85,6 +89,8 @@ public class LocalizationValidationTests
         "PermissionsPage_Cap_Tts_Description",
         "PermissionsPage_Cap_Stt_Label",
         "PermissionsPage_Cap_Stt_Description",
+        "PermissionsPage_Cap_Ollama_Label",
+        "PermissionsPage_Cap_Ollama_Description",
         "PermissionsPage_Cap_SystemRun_Label",
         "PermissionsPage_Cap_SystemRun_Description",
         "PermissionsPage_NodeStatus_Disabled",
@@ -329,6 +335,10 @@ public class LocalizationValidationTests
         "WorkspacePage_RootFolder",
         "WorkspacePage_SearchResultsPath",
         "WorkspacePage_BrowserTruncated",
+        // "GB" is an internationally recognized SI byte-size abbreviation kept identical
+        // across every supported locale (matches how NodesPage_Label_* technical loanwords
+        // above are handled); only the surrounding sentence is translated per locale.
+        "LocalAi_Reason_GigabytesFormat",
     };
 
     private static readonly HashSet<string> EnUsOnlyFallbackResourceKeys = new(StringComparer.Ordinal);
@@ -349,11 +359,11 @@ public class LocalizationValidationTests
 
     private static readonly string[] RequiredLocalizedAccessibilityKeys =
     [
-        "PermissionsPage_NewRuleAction.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name",
         "SandboxPage_UnavailablePrimaryButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name",
         "SandboxPage_PresetLockedButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name",
         "SandboxPage_PresetBalancedButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name",
         "SandboxPage_PresetPermissiveButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name",
+        "SandboxPage_AllowWindowsUi.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name",
         "SandboxPage_DocsAccessCombo.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name",
         "SandboxPage_DownloadsAccessCombo.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name",
         "SandboxPage_DesktopAccessCombo.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name",
@@ -595,6 +605,7 @@ public class LocalizationValidationTests
     {
         "fr-fr",
         "nl-nl",
+        "pt-br",
     };
 
     private static bool IsInvariantOrDeferred(string key, string value) =>
@@ -768,10 +779,10 @@ public class LocalizationValidationTests
     }
 
     [Fact]
-    public void AllFiveLocaleDirectories_Exist()
+    public void AllSupportedLocaleDirectories_Exist()
     {
         var stringsDir = GetStringsDirectory();
-        string[] expected = ["en-us", "fr-fr", "nl-nl", "zh-cn", "zh-tw"];
+        string[] expected = ["en-us", "fr-fr", "nl-nl", "zh-cn", "zh-tw", "pt-br"];
 
         foreach (var locale in expected)
         {
@@ -780,6 +791,30 @@ public class LocalizationValidationTests
             Assert.True(File.Exists(Path.Combine(dir, "Resources.resw")),
                 $"Resources.resw missing for locale: {locale}");
         }
+    }
+
+    [Fact]
+    public void LanguageOverrideWhitelist_MatchesSupportedLocaleDirectories()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var appSource = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.Tray.WinUI", "App.xaml.cs"));
+        var whitelist = Regex.Match(
+            appSource,
+            @"string\[\]\s+allowedLocales\s*=\s*\[(?<locales>[^\]]+)\]",
+            RegexOptions.CultureInvariant);
+
+        Assert.True(whitelist.Success, "App language override whitelist was not found.");
+
+        var allowedLocales = Regex.Matches(whitelist.Groups["locales"].Value, @"""(?<locale>[^""]+)""")
+            .Select(match => match.Groups["locale"].Value)
+            .OrderBy(locale => locale, StringComparer.OrdinalIgnoreCase);
+        var resourceLocales = Directory.GetDirectories(GetStringsDirectory())
+            .Select(Path.GetFileName)
+            .Where(locale => locale is not null)
+            .Cast<string>()
+            .OrderBy(locale => locale, StringComparer.OrdinalIgnoreCase);
+
+        Assert.Equal(resourceLocales, allowedLocales);
     }
 
     [Fact]

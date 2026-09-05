@@ -23,6 +23,7 @@ public class SkillMdDriftTests
     {
         var skillMdPath = LocateSkillMd();
         var content = File.ReadAllText(skillMdPath);
+        Assert.Contains("\"provider\": \"piper|windows|elevenlabs|minimax\"", content);
 
         var documented = ParseCommandHeadings(content);
         var canonical = new HashSet<string>(McpToolBridge.KnownCommands, StringComparer.Ordinal);
@@ -50,6 +51,20 @@ public class SkillMdDriftTests
                       $"[{string.Join(", ", extrasInDoc)}]";
             Assert.Fail(msg);
         }
+    }
+
+    [Fact]
+    public void ConnectionStatus_documents_package_and_protocol_compatibility_separately()
+    {
+        var content = File.ReadAllText(LocateSkillMd());
+
+        Assert.Contains("gateway.packageVersion", content, StringComparison.Ordinal);
+        Assert.Contains("wire protocol", content, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("gateway_too_old", content, StringComparison.Ordinal);
+        Assert.Contains("gateway_too_new", content, StringComparison.Ordinal);
+        Assert.Contains("retryable", content, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("4/3/4", content, StringComparison.Ordinal);
+        Assert.Contains("selectedProtocol", content, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -92,6 +107,7 @@ public class SkillMdDriftTests
             new TtsCapability(NullLogger.Instance),
         };
 
+        using var ollamaCapability = new OllamaCapability(NullLogger.Instance);
         var commands = new HashSet<string>(StringComparer.Ordinal);
         foreach (var capability in capabilities)
         {
@@ -99,6 +115,10 @@ public class SkillMdDriftTests
             {
                 commands.Add(command);
             }
+        }
+        foreach (var command in ollamaCapability.Commands)
+        {
+            commands.Add(command);
         }
         return commands;
     }

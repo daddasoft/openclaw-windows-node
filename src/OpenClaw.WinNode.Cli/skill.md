@@ -138,9 +138,10 @@ Returns `{ "bins": { "git": "C:\\...", ... } }`. Names not found are omitted.
 
 ### system.execApprovals.get
 No params. Returns the active V2 snapshot:
-`{ path, exists, hash, baseHash, file: { version, defaults: { security, ask, askFallback, autoAllowSkills }, agents: { "<agentId>": { security, ask, askFallback, autoAllowSkills, allowlist: [{ id, pattern, lastUsedAt?, lastResolvedPath? }] } } } }`.
+`{ path, exists, hash, file: { version, defaults: { security, ask, askFallback, autoAllowSkills }, agents: { "<agentId>": { security, ask, askFallback, autoAllowSkills, allowlist: [{ id, pattern, lastUsedAt?, lastResolvedPath? }] } } } }`.
 `security` is `deny|allowlist|full`; `ask` is `off|on-miss|always|deny`;
 `askFallback` is `deny|allowlist|full`. Socket credentials are never returned.
+Pass `hash` as `baseHash` when calling `system.execApprovals.set`.
 
 ### system.execApprovals.set
 Replace the full V2 file using compare-and-swap. `baseHash` is required and must
@@ -246,6 +247,8 @@ No params. Returns renderer capabilities (renderer, snapshot, a2ui version).
 }
 ```
 Returns `{ format, width, height, base64, image }` (image is a `data:` URL).
+The first use requires remembered user consent. Every invocation displays a
+visible notification before screen capture begins.
 
 ### screen.record
 ```
@@ -267,6 +270,8 @@ No params. Returns `{ cameras: [{ deviceId, name, isDefault }] }`.
 ```
 Returns `{ format, width, height, base64 }`. `deviceId` defaults to system
 default camera.
+The first use requires remembered user consent. Every invocation displays a
+visible notification before camera capture begins.
 
 ### camera.clip
 ```
@@ -317,23 +322,23 @@ where `readiness` ∈ `"ready" | "initializing" | "model-downloading" | "model-n
 
 ## Text-to-speech (tts.*)
 
-Three providers - Piper (local neural via Sherpa-ONNX, default), Windows
-built-in speech, and ElevenLabs (cloud). Provider + per-provider voice
-are configured in tray Settings.
+Four providers - Piper (local neural via Sherpa-ONNX, default), Windows
+built-in speech, ElevenLabs (cloud), and MiniMax (cloud). Provider +
+per-provider voice are configured in tray Settings.
 
 ### tts.speak
 Speak text aloud on the Windows node.
 ```
 {
   "text": "string",           // required
-  "provider": "piper|windows|elevenlabs",  // optional; omit to use TtsProvider setting
+  "provider": "piper|windows|elevenlabs|minimax",  // optional; omit to use TtsProvider setting
   "voiceId": "string",        // optional, overrides the per-provider configured voice
-  "model": "string",          // optional, ElevenLabs only
+  "model": "string",          // optional, cloud providers only
   "interrupt": false          // default false; true cuts off any in-progress playback
 }
 ```
 When `provider` is omitted and the configured provider isn't usable (no
-ElevenLabs key, Piper voice not downloaded), the node falls back to Windows
+cloud API key, Piper voice not downloaded), the node falls back to Windows
 TTS so playback still happens. Explicit `provider` requests stay strict and
 do not silently reroute. Returns `{ spoken, provider, requestedProvider, fellBack, contentType, durationMs }`
 where `provider` is the provider that actually spoke.
@@ -347,6 +352,42 @@ where `effectiveProvider` is what would run now after fallback and `readiness`
 The configured/effective view reflects configured defaults only; explicit
 `tts.speak` provider requests stay strict and may not match the default
 snapshot.
+
+## Local model inference (ollama.*)
+
+Runs against a separately installed Windows Ollama service (not the
+app-managed Local AI gateway provider). Any paired active gateway, local
+or remote, may invoke it once enabled. **Requires
+`NodeOllamaInferenceEnabled` in tray Settings > Permissions (opt-in,
+default off).**
+
+### ollama.models
+List locally installed Ollama models. Read-only inventory - no prompt
+or chat content. No params.
+Returns `{ provider, models[{ name, size, modifiedAt, family, parameterSize, quantization, contextWindow, capabilities, loaded }] }`.
+
+### ollama.chat
+Send a single-turn chat prompt to a local Ollama model.
+**Privacy and resource sensitive** - sends prompt content to a locally
+running model and consumes CPU/GPU. Only one chat runs at a time per node;
+a concurrent call while one is in flight returns an error.
+```
+{
+  "model": "string",          // required
+  "prompt": "string",         // required, max 128000 chars
+  "system": "string",         // optional, max 32000 chars
+  "temperature": 0.7,         // optional, 0..2
+  "maxTokens": 512,           // optional, default 512, max 8192
+  "timeoutMs": 120000         // optional, default 120000, max 600000
+}
+```
+Returns `{ provider, model, response, usage?: { promptTokens, completionTokens }, timings?: { loadMs, totalMs } }`.
+
+Newer gateways with the bundled Ollama plugin expose these commands through
+the `node_inference` agent tool. Older gateways can invoke them through the
+generic `nodes` tool after both exact command names are added to
+`gateway.nodes.allowCommands`. Feature-detect the node's effective commands;
+do not infer support from the gateway version.
 
 ## App control (app.*)
 
@@ -428,14 +469,23 @@ presence/outcome only.
 
 ### app.connection.status
 Read-only connection diagnostics for agents and CLIs. No params. Returns:
-`{ schemaVersion, connectionState, effectiveMode, legacyConnectionStatus, gateway, operator, node, mcp, browserProxy, pendingActions, retry, diagnostics }`.
+`{ schemaVersion, connectionState, effectiveMode, legacyConnectionStatus, gateway, protocol, operator, node, mcp, browserProxy, pendingActions, retry, diagnostics }`.
 
 The payload includes the active gateway id/name/url, operator and node role
 states, credential sources/statuses, MCP enabled/running/error state, browser
 proxy shared-token caveat, pending approval commands, retry hints inferred from
 recent diagnostics, and recent connection diagnostic events. `effectiveMode`
 reflects Settings mode (`EnableNodeMode` / `EnableMcpServer`); `node.intended`
-reflects the manager snapshot plus current Node mode setting.
+reflects the manager snapshot plus current Node mode setting. `gateway.packageVersion`
+is the installed Gateway npm package version reported by `hello-ok`; it is
+separate from the wire protocol. `protocol` reports the accepted Gateway wire
+protocol, the Windows-supported current/minimum/maximum values (currently
+4/3/4), normalized compatibility
+(`compatible`, `gateway_too_old`, `gateway_too_new`, `mismatch`, or `unknown`),
+the operator/node source, available Gateway protocol expectations, and whether
+the condition is retryable. During an active mismatch, `selectedProtocol` comes
+only from that connection attempt and is otherwise null, even if cached Gateway
+self information remains available.
 
 ### app.connection.gateways
 Read-only saved gateway diagnostics. No params. Returns:
@@ -579,6 +629,8 @@ Get the device's current geographic location.
 ```
 Returns `{ latitude, longitude, accuracy (meters), timestamp (ms) }`.
 Requires the Location capability to be enabled and OS location permission granted to the app.
+The first use also requires remembered OpenClaw consent. Every invocation
+displays a visible notification before location access begins.
 Error `LOCATION_PERMISSION_REQUIRED` if the user has not granted location access.
 
 ## Device (device.*)

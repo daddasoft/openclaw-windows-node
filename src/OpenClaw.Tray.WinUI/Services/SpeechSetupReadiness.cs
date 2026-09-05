@@ -1,3 +1,4 @@
+using OpenClaw.Shared;
 using OpenClaw.Shared.Audio;
 using OpenClaw.Shared.Capabilities;
 
@@ -39,6 +40,39 @@ public static class SpeechSetupReadiness
                 string.IsNullOrWhiteSpace(settings.TtsElevenLabsVoiceId);
         }
 
+        if (string.Equals(provider, TtsCapability.MiniMaxProvider, StringComparison.Ordinal))
+        {
+            return string.IsNullOrWhiteSpace(settings.TtsMiniMaxApiKey) ||
+                string.IsNullOrWhiteSpace(settings.TtsMiniMaxVoiceId);
+        }
+
         return true;
+    }
+
+    public static bool IsConfiguredSttModelSetupRequired(SettingsManager settings) =>
+        IsConfiguredSttModelSetupRequired(
+            settings,
+            SettingsManager.SettingsDirectoryPath,
+            new AppLogger());
+
+    internal static bool IsConfiguredSttModelSetupRequired(
+        SettingsManager settings,
+        string dataDirectory,
+        IOpenClawLogger logger)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentException.ThrowIfNullOrWhiteSpace(dataDirectory);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        var modelName = settings.SttModelName?.Trim();
+        if (string.IsNullOrWhiteSpace(modelName)
+            || !WhisperModelManager.AvailableModels.Any(model =>
+                string.Equals(model.Name, modelName, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        var models = new WhisperModelManager(dataDirectory, logger);
+        return !models.IsModelDownloaded(modelName);
     }
 }

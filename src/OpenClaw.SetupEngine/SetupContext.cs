@@ -2,6 +2,10 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenClaw.Connection;
+using OpenClaw.Connection.LocalAi;
+using OpenClaw.Shared;
+using OpenClaw.Shared.Inference;
+using OpenClaw.Shared.Inference.Catalog;
 
 namespace OpenClaw.SetupEngine;
 
@@ -21,6 +25,8 @@ public sealed class SetupConfig
     public bool CleanBeforeRun { get; set; }
     public bool DryRun { get; set; }
     public bool ConfirmDestructive { get; set; }
+    [JsonIgnore]
+    public string? ConfirmedDestructiveDistroName { get; set; }
     public string LogLevel { get; set; } = "trace";
     public string? LogPath { get; set; }
     public string? GatewayUrl { get; set; }
@@ -37,8 +43,9 @@ public sealed class SetupConfig
     public PairingConfig Pairing { get; set; } = new();
     public WindowsNodeContextConfig WindowsNodeContext { get; set; } = new();
     public TailscaleConfig Tailscale { get; set; } = new();
+    public LocalAiConfig LocalAi { get; set; } = new();
 
-    public string EffectiveGatewayUrl => GatewayUrl ?? $"ws://localhost:{GatewayPort}";
+    public string EffectiveGatewayUrl => GatewayUrl ?? $"ws://127.0.0.1:{GatewayPort}";
 
     public static SetupConfig LoadFromFile(string path)
     {
@@ -129,6 +136,23 @@ public sealed class SetupConfig
 
 // ─── WSL Configuration ───
 
+// Native local inference is disabled for programmatic and backward-compatible
+// configs. The bundled product config explicitly enables it for onboarding.
+public sealed class LocalAiConfig
+{
+    public bool Enabled { get; set; }
+    public string? SelectedModelId { get; set; }
+    /// <summary>Runtime-only effective profile selected from detected GPU capacity.</summary>
+    [JsonIgnore]
+    public string? SelectedProfileId { get; set; }
+    /// <summary>Managed llama-server port. Zero selects a free loopback port during setup.</summary>
+    public int Port { get; set; }
+    public bool WslMirroredNetworkingConsent { get; set; }
+    public int HealthTimeoutSeconds { get; set; } = 15;
+    public int AcquisitionTimeoutSeconds { get; set; } = 7_200;
+    public int InferenceTimeoutSeconds { get; set; } = 600;
+}
+
 public sealed class WslConfig
 {
     private static readonly System.Text.RegularExpressions.Regex s_linuxUserNamePattern =
@@ -154,11 +178,17 @@ public sealed class GatewayConfig
 {
     public string Bind { get; set; } = "loopback";
     public string? InstallUrl { get; set; }
+    public string Selection { get; set; } = "recommended";
     public string? Version { get; set; }
+    // Runtime-only input for the explicit headless release-candidate validation lane.
+    [JsonIgnore]
+    public string? ValidationPackagePath { get; set; }
     public int HealthTimeoutSeconds { get; set; } = 90;
-    public string ReloadMode { get; set; } = "hot";
+    public string ReloadMode { get; set; } = "hybrid";
     public string AuthMode { get; set; } = "token";
     public Dictionary<string, string>? ExtraConfig { get; set; }
+    [JsonIgnore]
+    public GatewayReleaseResolution? ResolvedRelease { get; set; }
 }
 
 // ─── Capabilities Configuration ───
@@ -419,12 +449,25 @@ public sealed class ConsoleExternalAuthorizationPresenter : IExternalAuthorizati
 
 public enum StepOutcome { Success, Skipped, Failed, FailedTerminal }
 
-public sealed record StepResult(StepOutcome Outcome, string? Message = null, Exception? Error = null)
+/// <summary>
+/// Root-cause evidence for a Local AI failure. The step message reports what OpenClaw observed
+/// (an HTTP status, a timeout); these are llama-server's own words about why, plus the directory
+/// holding its logs — which is not the setup log directory the UI otherwise links to.
+/// </summary>
+public sealed record LocalAiFailureDetail(IReadOnlyList<string> Diagnostics, string LogDirectory);
+
+public sealed record StepResult(
+    StepOutcome Outcome,
+    string? Message = null,
+    Exception? Error = null,
+    LocalAiFailureDetail? Detail = null)
 {
     public static StepResult Ok(string? message = null) => new(StepOutcome.Success, message);
     public static StepResult Skip(string reason) => new(StepOutcome.Skipped, reason);
-    public static StepResult Fail(string message, Exception? ex = null) => new(StepOutcome.Failed, message, ex);
-    public static StepResult Terminal(string message, Exception? ex = null) => new(StepOutcome.FailedTerminal, message, ex);
+    public static StepResult Fail(string message, Exception? ex = null, LocalAiFailureDetail? detail = null) =>
+        new(StepOutcome.Failed, message, ex, detail);
+    public static StepResult Terminal(string message, Exception? ex = null, LocalAiFailureDetail? detail = null) =>
+        new(StepOutcome.FailedTerminal, message, ex, detail);
 
     public bool IsSuccess => Outcome is StepOutcome.Success or StepOutcome.Skipped;
 }
@@ -447,11 +490,28 @@ public sealed class SetupContext
     public string? GatewayRecordId { get; set; }
     public string? OperatorDeviceId { get; set; }
     public string? NodeDeviceId { get; set; }
+    public GatewaySelfInfo? ObservedGatewaySelf { get; set; }
+    public GatewayCompatibilityException? GatewayCompatibilityFailure { get; set; }
     public string? WindowsTailnetDnsSuffix { get; set; }
     public string? TailscaleDnsName { get; set; }
     public IExternalAuthorizationPresenter? ExternalAuthorizationPresenter { get; set; }
+    public IProgress<SetupDetailProgressEvent>? DetailProgress { get; set; }
     public Func<GatewayRecord, CancellationToken, Task<GatewayEndpointProvenance>>?
         EndpointProvenanceProbe { get; set; }
+    internal WslViabilityResult? WslViability { get; set; }
+    public HostHardwareInfo? LocalAiHardware { get; set; }
+    public LocalInferenceEligibilityResult? LocalAiEligibility { get; set; }
+    public int? LocalAiPort { get; set; }
+    internal LlamaRuntimeInstallResult? LocalAiRuntimeInstall { get; set; }
+    internal HuggingFaceModelInstallResult? LocalAiModelInstall { get; set; }
+    internal LocalAiResolvedInstall? LocalAiResolvedInstall { get; set; }
+    internal bool LocalAiManifestCreatedThisRun { get; set; }
+    internal ILocalAiRuntime? LocalAiRuntime { get; set; }
+    internal HostHardwareInfo? LocalAiGpuBaseline { get; set; }
+    internal LlamaServerInferenceVerification? LocalAiInferenceVerification { get; set; }
+    internal LocalAiGpuLoadEvidence? LocalAiGpuLoadEvidence { get; set; }
+    internal LocalAiGatewayPriorState? LocalAiGatewayPriorState { get; set; }
+    internal bool IsUninstalling { get; set; }
 
     // Data directory for gateway registry and identity files
     public string DataDir { get; }

@@ -13,6 +13,7 @@ public sealed partial class CompletePage : Page
 {
     private static readonly Regex s_urlRegex = new(@"https?://[^\s)]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private string? _logPath;
+    private string? _serverLogDirectory;
 
     public CompletePage()
     {
@@ -31,28 +32,48 @@ public sealed partial class CompletePage : Page
                 FailureIcon.Visibility = Visibility.Collapsed;
                 StartupToggle.IsOn = args.DefaultAutoStart;
                 StartupRow.Visibility = args.ShowStartupPreference ? Visibility.Visible : Visibility.Collapsed;
-                GatewaySummaryText.Text = (args.ReviewSummary ?? SetupReviewSummaryBuilder.Build(new SetupConfig())).CompletionGatewaySummary;
+                SetupReviewSummary review = args.ReviewSummary ?? SetupReviewSummaryBuilder.Build(new SetupConfig());
+                GatewaySummaryText.Text = review.CompletionGatewaySummary;
                 TitleText.Text = "All set!";
                 SubtitleText.Text = "OpenClaw is ready to go";
+                SubtitleText.Visibility = Visibility.Visible;
                 ErrorCard.Visibility = Visibility.Collapsed;
                 HelpLink.Visibility = Visibility.Collapsed;
+                FallbackButton.Visibility = Visibility.Collapsed;
                 SummaryPanel.Visibility = Visibility.Visible;
+                LocalAiSummaryCard.Visibility = review.LocalAiEnabled ? Visibility.Visible : Visibility.Collapsed;
+                if (review.LocalAiEnabled)
+                {
+                    LocalAiSummaryTitle.Text = review.LocalAiTitle ?? "Local AI verified";
+                    LocalAiSummaryDescription.Text = review.LocalAiDescription ??
+                        "The native llama-server router is ready. The model loads on the first request.";
+                    SubtitleText.Text = "OpenClaw and Local AI are ready";
+                    LaunchButton.Content = "Open chat";
+                }
             }
             else
             {
                 var errorMessage = args.ErrorMessage ?? "Unknown error";
-                var helpUrl = ExtractHelpUrl(errorMessage);
+                // Local AI failures (identified by Detail) carry llama-server's own error text in
+                // errorMessage. That text is diagnostic evidence, not a curated OpenClaw message,
+                // so it must never be scanned for a URL to turn into a clickable help link.
+                var helpUrl = args.Detail is null ? ExtractHelpUrl(errorMessage) : null;
 
                 SuccessIcon.Visibility = Visibility.Collapsed;
                 FailureIcon.Visibility = Visibility.Visible;
                 TitleText.Text = "Setup failed";
-                SubtitleText.Text = helpUrl is null
-                    ? args.ErrorMessage ?? "An error occurred during setup"
-                    : "Follow the steps below to resolve the setup issue and retry.";
+                SubtitleText.Visibility = Visibility.Collapsed;
                 NodeModeBanner.Visibility = Visibility.Collapsed;
                 StartupRow.Visibility = Visibility.Collapsed;
                 SummaryPanel.Visibility = Visibility.Collapsed;
+                LocalAiSummaryCard.Visibility = Visibility.Collapsed;
                 LaunchButton.Content = "Close";
+                FallbackButton.Visibility = args.CanRetryGatewayFallback
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+                FallbackButton.Content = string.IsNullOrWhiteSpace(args.GatewayFallbackVersion)
+                    ? "Retry with validated fallback"
+                    : $"Retry with validated fallback {args.GatewayFallbackVersion}";
 
                 // Show error card with details and log link
                 ErrorCard.Visibility = Visibility.Visible;
@@ -78,8 +99,50 @@ public sealed partial class CompletePage : Page
                 }
                 else
                     ViewLogLink.Visibility = Visibility.Collapsed;
+
+                // llama-server reports the real cause in its own logs, which live outside the
+                // setup log directory above, so surface both the lines and where to find them.
+                ShowServerDiagnostics(args.Detail);
             }
         }
+    }
+
+    private void ShowServerDiagnostics(LocalAiFailureDetail? detail)
+    {
+        if (detail is null)
+        {
+            ServerDiagnosticsText.Visibility = Visibility.Collapsed;
+            ViewServerLogLink.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        if (detail.Diagnostics.Count > 0)
+        {
+            ServerDiagnosticsText.Text = string.Join(
+                Environment.NewLine,
+                detail.Diagnostics.Select(line => $"llama-server: {line}"));
+            ServerDiagnosticsText.Visibility = Visibility.Visible;
+        }
+        else
+            ServerDiagnosticsText.Visibility = Visibility.Collapsed;
+
+        _serverLogDirectory = detail.LogDirectory;
+        var displayDirectory = LogFileLauncher.ResolveRealPath(detail.LogDirectory);
+        // The directory may not exist if setup failed before log initialization or if another
+        // cleanup removed it. The link must not promise a folder that is unavailable.
+        if (Directory.Exists(displayDirectory))
+        {
+            ViewServerLogLink.Content = $"Open Local AI logs → {displayDirectory}";
+            ToolTipService.SetToolTip(ViewServerLogLink, displayDirectory);
+            ViewServerLogLink.Visibility = Visibility.Visible;
+        }
+        else
+            ViewServerLogLink.Visibility = Visibility.Collapsed;
+    }
+
+    private void ViewServerLog_Click(object sender, RoutedEventArgs e)
+    {
+        LogFileLauncher.RevealInExplorer(_serverLogDirectory);
     }
 
     private static Uri? ExtractHelpUrl(string? text)
@@ -109,6 +172,20 @@ public sealed partial class CompletePage : Page
     private void ViewLog_Click(object sender, RoutedEventArgs e)
     {
         LogFileLauncher.RevealInExplorer(_logPath);
+    }
+
+    private void FallbackButton_Click(object sender, RoutedEventArgs e)
+    {
+        string? error = null;
+        if (SetupWindow.Active is { } window &&
+            window.TryRetryWithGatewayFallback(out error))
+        {
+            return;
+        }
+
+        FallbackButton.Visibility = Visibility.Collapsed;
+        if (!string.IsNullOrWhiteSpace(error))
+            ErrorText.Text = $"{ErrorText.Text}{Environment.NewLine}{error}";
     }
 
 }

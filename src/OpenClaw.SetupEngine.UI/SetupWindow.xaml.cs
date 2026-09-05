@@ -4,6 +4,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
+using OpenClaw.Shared.Inference;
 using OpenClaw.SetupEngine.UI.Pages;
 using System.Runtime.InteropServices;
 
@@ -25,6 +26,9 @@ public sealed partial class SetupWindow : Window
     private bool _showStartupPreferenceOnComplete = true;
     private readonly string _dataDir;
     private readonly string _localDataDir;
+    private readonly object _localAiHardwareProbeLock = new();
+    private Task<HostHardwareInfo>? _localAiHardwareProbeTask;
+    private readonly WslViabilityProbe _wslViabilityProbe = new(InspectWslViabilityAsync);
 
     public static SetupWindow? Active { get; private set; }
 
@@ -154,7 +158,15 @@ public sealed partial class SetupWindow : Window
             _config.GatewayPort = gatewayPortOverride.Value;
             _config.GatewayUrl = null;
         }
-        GatewayLkgVersion.ApplyToConfig(_config);
+        try
+        {
+            GatewayReleasePolicy.ResolveAndApply(_config);
+        }
+        catch (GatewayCompatibilityException ex)
+        {
+            ShowConfigurationError(ex.Message);
+            return;
+        }
         _config.ApplyUiDefaults(rollbackOnFailure: setupArguments.RollbackOnFailure);
         if (startAtGatewayInstalledMilestone)
         {
@@ -185,6 +197,35 @@ public sealed partial class SetupWindow : Window
     public void NavigateToWelcome(bool back = false) => NavigateTo(typeof(WelcomePage), _config, back);
     public bool IsWelcomeInstallSelected => _isWelcomeInstallSelected;
     public void SetWelcomeInstallSelected(bool installSelected) => _isWelcomeInstallSelected = installSelected;
+
+    internal Task<HostHardwareInfo> GetLocalAiHardwareAsync(bool forceRefresh = false)
+    {
+        lock (_localAiHardwareProbeLock)
+        {
+            if (forceRefresh ||
+                _localAiHardwareProbeTask is null ||
+                _localAiHardwareProbeTask.IsFaulted ||
+                _localAiHardwareProbeTask.IsCanceled)
+            {
+                _localAiHardwareProbeTask = Task.Run(() => new CudaHostHardwareProbe().Probe());
+            }
+
+            return _localAiHardwareProbeTask;
+        }
+    }
+
+    internal Task<WslViabilityResult> GetWslViabilityAsync(bool refresh = false) =>
+        _wslViabilityProbe.GetAsync(refresh);
+
+    private static async Task<WslViabilityResult> InspectWslViabilityAsync()
+    {
+        using var logger = new SetupLogger(filePath: null);
+        return await WslViabilityInspector.InspectAsync(
+            new CommandRunner(logger),
+            logger,
+            CancellationToken.None);
+    }
+
     public void NavigateToAdvancedSetup() => NavigateTo(typeof(AdvancedSetupPage), _config);
     public void NavigateToCapabilities() => NavigateTo(typeof(CapabilitiesPage), _config);
     public void NavigateToProgress() => NavigateTo(typeof(ProgressPage), CreateProgressPageArgs(showMilestoneOnly: false));
@@ -260,8 +301,18 @@ public sealed partial class SetupWindow : Window
         };
     }
 
-    public void NavigateToComplete(bool success, TimeSpan elapsed, string? logPath, string? errorMessage = null)
-        => NavigateTo(
+    public void NavigateToComplete(
+        bool success,
+        TimeSpan elapsed,
+        string? logPath,
+        string? errorMessage = null,
+        GatewayCompatibilityFailureKind? compatibilityFailure = null,
+        LocalAiFailureDetail? detail = null)
+    {
+        var canRetryFallback =
+            compatibilityFailure is { } failureKind &&
+            GatewayReleasePolicy.CanRetryWithFallback(_config, failureKind);
+        NavigateTo(
             typeof(CompletePage),
             new CompletePageArgs(
                 success,
@@ -270,7 +321,22 @@ public sealed partial class SetupWindow : Window
                 errorMessage,
                 DefaultAutoStart: true,
                 ShowStartupPreference: _showStartupPreferenceOnComplete,
-                ReviewSummary: SetupReviewSummaryBuilder.Build(_config, _dataDir, _localDataDir)));
+                ReviewSummary: SetupReviewSummaryBuilder.Build(_config, _dataDir, _localDataDir),
+                CanRetryGatewayFallback: canRetryFallback,
+                GatewayFallbackVersion: canRetryFallback
+                    ? GatewayReleasePolicy.FallbackVersion
+                    : null,
+                Detail: detail));
+    }
+
+    public bool TryRetryWithGatewayFallback(out string? error)
+    {
+        if (!GatewayReleasePolicy.TryApplyFallback(_config, out error))
+            return false;
+
+        NavigateToProgress();
+        return true;
+    }
 
     private void ShowConfigurationError(string errorMessage)
     {
@@ -299,7 +365,10 @@ public sealed partial class SetupWindow : Window
             "welcome" => typeof(WelcomePage),
             "advanced" => typeof(AdvancedSetupPage),
             "capabilities" => typeof(CapabilitiesPage),
+            "capabilities-review" => typeof(CapabilitiesPage),
+            "capabilities-review-consent" => typeof(CapabilitiesPage),
             "progress" => typeof(ProgressPage),
+            "progress-local-ai" => typeof(ProgressPage),
             "milestone" => typeof(ProgressPage),
             "wizard" => typeof(WizardPage),
             "wizard-error" => typeof(WizardPage),
@@ -309,9 +378,14 @@ public sealed partial class SetupWindow : Window
         },
         page switch
         {
-            "complete" => new CompletePageArgs(true, TimeSpan.FromMinutes(3), null),
+            "complete" => new CompletePageArgs(
+                true,
+                TimeSpan.FromMinutes(3),
+                null,
+                ReviewSummary: SetupReviewSummaryBuilder.Build(_config, _dataDir, _localDataDir)),
             "complete-error" => new CompletePageArgs(false, TimeSpan.FromMinutes(3), null, "Setup could not finish. Review the details, then retry setup when you are ready."),
             "progress" => CreateProgressPageArgs(showMilestoneOnly: false),
+            "progress-local-ai" => CreateProgressPageArgs(showMilestoneOnly: false),
             "milestone" => CreateProgressPageArgs(showMilestoneOnly: true),
             _ => _config,
         });
@@ -426,5 +500,8 @@ public sealed record CompletePageArgs(
     string? ErrorMessage = null,
     bool DefaultAutoStart = true,
     bool ShowStartupPreference = true,
-    SetupReviewSummary? ReviewSummary = null);
+    SetupReviewSummary? ReviewSummary = null,
+    bool CanRetryGatewayFallback = false,
+    string? GatewayFallbackVersion = null,
+    LocalAiFailureDetail? Detail = null);
 public sealed record SetupCompletedEventArgs(bool EnableAutoStart);

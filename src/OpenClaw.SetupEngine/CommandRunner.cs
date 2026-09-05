@@ -16,7 +16,8 @@ public interface ICommandRunner
         IReadOnlyDictionary<string, string>? environment = null,
         string? workingDirectory = null,
         string? stdinInput = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        Stream? stdinStream = null);
 
     /// <summary>
     /// Run a command inside a WSL distro.
@@ -69,7 +70,15 @@ public interface ICommandRunner
 public sealed class CommandRunner : ICommandRunner
 {
     private readonly SetupLogger _logger;
-    private const int DrainTimeoutMs = 5000; // bounded drain for orphan WSL processes
+    private static readonly TimeSpan s_outputDrainGrace = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>
+    /// Upper bound on how long an exited process is given to reach EOF on its redirected
+    /// pipes. Large enough that a saturated thread pool cannot make a process that did
+    /// write output look silent, small enough that a descendant holding the pipes open
+    /// cannot stall the caller.
+    /// </summary>
+    private static readonly TimeSpan s_outputDrainCap = TimeSpan.FromSeconds(3);
     private const int MaxCapturedStreamChars = 1_048_576;
 
     public CommandRunner(SetupLogger logger) => _logger = logger;
@@ -84,8 +93,14 @@ public sealed class CommandRunner : ICommandRunner
         IReadOnlyDictionary<string, string>? environment = null,
         string? workingDirectory = null,
         string? stdinInput = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        Stream? stdinStream = null)
     {
+        ArgumentNullException.ThrowIfNull(executable);
+        ArgumentNullException.ThrowIfNull(arguments);
+        if (stdinInput != null && stdinStream != null)
+            throw new ArgumentException("Only one standard input source may be provided.");
+
         _logger.CommandStarted(executable, arguments, timeout);
         var sw = Stopwatch.StartNew();
 
@@ -94,7 +109,7 @@ public sealed class CommandRunner : ICommandRunner
             FileName = executable,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            RedirectStandardInput = stdinInput != null,
+            RedirectStandardInput = stdinInput != null || stdinStream != null,
             UseShellExecute = false,
             CreateNoWindow = true,
             WorkingDirectory = workingDirectory ?? ""
@@ -112,10 +127,20 @@ public sealed class CommandRunner : ICommandRunner
         using var process = new Process { StartInfo = psi };
         var stdout = new BoundedOutputBuffer(MaxCapturedStreamChars);
         var stderr = new BoundedOutputBuffer(MaxCapturedStreamChars);
+        var stdoutClosed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var stderrClosed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var timedOut = false;
 
-        process.OutputDataReceived += (_, e) => { if (e.Data != null) stdout.AppendLine(e.Data); };
-        process.ErrorDataReceived += (_, e) => { if (e.Data != null) stderr.AppendLine(e.Data); };
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data is null) stdoutClosed.TrySetResult();
+            else stdout.AppendLine(e.Data);
+        };
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data is null) stderrClosed.TrySetResult();
+            else stderr.AppendLine(e.Data);
+        };
 
         try
         {
@@ -137,12 +162,21 @@ public sealed class CommandRunner : ICommandRunner
 
         try
         {
-            if (stdinInput != null)
+            if (stdinInput != null || stdinStream != null)
             {
                 try
                 {
-                    await process.StandardInput.WriteAsync(stdinInput.AsMemory(), timeoutCts.Token);
-                    await process.StandardInput.FlushAsync(timeoutCts.Token);
+                    if (stdinStream != null)
+                    {
+                        await stdinStream.CopyToAsync(process.StandardInput.BaseStream, timeoutCts.Token);
+                        await process.StandardInput.BaseStream.FlushAsync(timeoutCts.Token);
+                    }
+                    else
+                    {
+                        await process.StandardInput.WriteAsync(stdinInput!.AsMemory(), timeoutCts.Token);
+                        await process.StandardInput.FlushAsync(timeoutCts.Token);
+                    }
+
                     process.StandardInput.Close();
                 }
                 catch (IOException) when (process.HasExited)
@@ -151,7 +185,7 @@ public sealed class CommandRunner : ICommandRunner
                 }
             }
 
-            await process.WaitForExitAsync(timeoutCts.Token);
+            await WaitForProcessExitOnlyAsync(process, timeoutCts.Token);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -166,10 +200,20 @@ public sealed class CommandRunner : ICommandRunner
             throw;
         }
 
-        // Flush async output handlers. WaitForExitAsync observes process exit, but the
-        // OutputDataReceived/ErrorDataReceived callbacks can still be draining.
-        if (!timedOut)
-            process.WaitForExit(DrainTimeoutMs);
+        // A surviving descendant can keep inherited pipe handles open after the child
+        // exits, so the EOF wait must stay bounded and cannot simply run to the command
+        // timeout. It also cannot be as tight as a few hundred milliseconds: the
+        // OutputDataReceived callbacks are queued to the thread pool, and on a saturated
+        // pool they can miss that window even though the process already exited and
+        // wrote its output. That surfaced as an exited process being reported with empty
+        // stdout and stderr, which every caller that classifies command output then
+        // misreads as silence. Wait up to a short cap instead, clamped by whatever
+        // remains of the caller's own deadline so the accepted timeout is never exceeded.
+        TimeSpan drainBudget = GetOutputDrainBudget(timeout, sw.Elapsed, timedOut);
+
+        await Task.WhenAny(
+            Task.WhenAll(stdoutClosed.Task, stderrClosed.Task),
+            Task.Delay(drainBudget));
 
         sw.Stop();
         var result = new CommandResult(
@@ -181,6 +225,21 @@ public sealed class CommandRunner : ICommandRunner
 
         _logger.CommandCompleted(executable, result, sw.Elapsed);
         return result;
+    }
+
+    internal static TimeSpan GetOutputDrainBudget(
+        TimeSpan timeout,
+        TimeSpan elapsed,
+        bool timedOut)
+    {
+        if (timedOut)
+            return s_outputDrainGrace;
+
+        TimeSpan remaining = timeout - elapsed;
+        if (remaining <= TimeSpan.Zero)
+            return TimeSpan.Zero;
+
+        return remaining < s_outputDrainCap ? remaining : s_outputDrainCap;
     }
 
     /// <summary>
@@ -261,6 +320,27 @@ public sealed class CommandRunner : ICommandRunner
             return RunAsync("wsl.exe", args.ToArray(), timeout, env, stdinInput: command, ct: ct);
 
         return RunAsync("wsl.exe", args.ToArray(), timeout, env, ct: ct);
+    }
+
+    private static async Task WaitForProcessExitOnlyAsync(Process process, CancellationToken ct)
+    {
+        var exited = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnExited(object? sender, EventArgs e) => exited.TrySetResult();
+
+        process.EnableRaisingEvents = true;
+        process.Exited += OnExited;
+        try
+        {
+            if (!process.HasExited)
+            {
+                using var registration = ct.Register(() => exited.TrySetCanceled(ct));
+                await exited.Task;
+            }
+        }
+        finally
+        {
+            process.Exited -= OnExited;
+        }
     }
 
     private static void TryKill(Process process)

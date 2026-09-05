@@ -1,5 +1,7 @@
 namespace OpenClaw.SetupEngine;
 
+using OpenClaw.Shared.Inference.Catalog;
+
 public sealed record SetupReviewSummary(
     string DistroTitle,
     string DistroDescription,
@@ -8,7 +10,12 @@ public sealed record SetupReviewSummary(
     string GatewayDescription,
     string GatewayEndpoint,
     string ExactCommands,
-    string CompletionGatewaySummary);
+    string CompletionGatewaySummary)
+{
+    public bool LocalAiEnabled { get; init; }
+    public string? LocalAiTitle { get; init; }
+    public string? LocalAiDescription { get; init; }
+}
 
 public static class SetupReviewSummaryBuilder
 {
@@ -20,12 +27,17 @@ public static class SetupReviewSummaryBuilder
         var gatewayPort = config.GatewayPort;
         var installPath = Path.Combine(localDataDir ?? SetupContext.ResolveLocalDataDir(), "wsl", distroName);
         var gatewayDataPath = Path.Combine(dataDir ?? SetupContext.ResolveDataDir(), "gateways.json");
-        var installUrl = config.Gateway.InstallUrl ?? GatewayLkgVersion.DefaultInstallUrl;
+        var release = config.Gateway.ResolvedRelease ?? GatewayReleasePolicy.ResolveAndApply(config);
+        var installUrl = config.Gateway.InstallUrl ?? GatewayReleasePolicy.DefaultInstallUrl;
         var installerHost = TryGetHttpsHost(installUrl);
         var installerDescription = installerHost is null
             ? "Installer URL is not HTTPS; setup will stop before downloading anything."
-            : $"Fetched over HTTPS from {installerHost}; runs as a non-root {Display(config.Wsl.User, "openclaw")} user inside the instance.";
-        var installerBadge = installerHost is null ? "Invalid URL" : "HTTPS";
+            : release.IsCustomInstaller
+                ? $"Unverified custom installer from {installerHost}; exact Gateway {release.Version}, protocol v{release.ProtocolGeneration} is checked after install."
+                : $"Official Gateway {release.Version}; validated for protocol v{release.ProtocolGeneration} and fetched over HTTPS from {installerHost}.";
+        var installerBadge = installerHost is null
+            ? "Invalid URL"
+            : release.IsCustomInstaller ? "Custom" : $"v{release.ProtocolGeneration} validated";
         var isLanBind = gatewayBind.Equals("lan", StringComparison.OrdinalIgnoreCase);
         var tailscaleEnabled = config.Tailscale.Enabled;
         var tailnetDnsSuffix = config.Tailscale.TailnetDnsSuffix?.Trim().Trim('.');
@@ -43,13 +55,29 @@ public static class SetupReviewSummaryBuilder
             ? tailscaleEndpoint
             : isLanBind ? $"LAN:{gatewayPort}" : $"127.0.0.1:{gatewayPort}";
         var wslCommand = "wsl " + string.Join(' ', WslInstallSupport.BuildDirectInstallArgs(baseDistro, distroName, installPath));
-        var installCommand = string.IsNullOrWhiteSpace(config.Gateway.Version)
-            ? "curl -fsSL --proto '=https' --tlsv1.2 <install-url> | bash"
-            : $"curl -fsSL --proto '=https' --tlsv1.2 <install-url> | bash -s -- --version {config.Gateway.Version.Trim()}";
+        var runtimeArgument = release.IsCustomInstaller
+            ? ""
+            : $" --node-version {GatewayReleasePolicy.NodeVersion}";
+        var installCommand =
+            $"curl -fsSL --proto '=https' --tlsv1.2 <install-url> | bash -s -- --version {release.Version}{runtimeArgument}";
+        LocalModelInfo localAiModel =
+            LocalModelCatalog.Find(config.LocalAi.SelectedModelId) ?? LocalModelCatalog.Default;
+        LocalInferenceRunProfile? localAiProfile =
+            LocalModelCatalog.FindProfile(localAiModel, config.LocalAi.SelectedProfileId);
+        string[] localAiCommands = config.LocalAi.Enabled
+            ?
+            [
+                "download verified llama-server + CUDA runtime for Windows",
+                $"download {localAiModel.Weights.RelativePath} from Hugging Face revision " +
+                    ((HuggingFaceRevisionSource)localAiModel.Weights.Source).RevisionSha,
+                $"llama-server router on dynamic 127.0.0.1 port; model loads on first request",
+                $"openclaw provider llamacpp -> /v1; primary llamacpp/{localAiModel.Id}",
+            ]
+            : [];
 
-        return new SetupReviewSummary(
-            DistroTitle: $"Install an isolated {baseDistro} instance",
-            DistroDescription: $"WSL distro \"{distroName}\" at {installPath}. Separate from any Linux distributions you already have.",
+        var summary = new SetupReviewSummary(
+            DistroTitle: $"Install {baseDistro.Replace('-', ' ')} in WSL",
+            DistroDescription: $"Creates a separate {distroName} instance. Uses several GB.",
             InstallerDescription: installerDescription,
             InstallerBadge: installerBadge,
             GatewayDescription: gatewayDescription,
@@ -67,10 +95,57 @@ public static class SetupReviewSummaryBuilder
                             : "install signed Tailscale package · root owns tailscale up/serve"
                         : null,
                     "openclaw gateway install --force   (systemd --user service)",
+                }.Concat(localAiCommands).Concat(new[]
+                {
                     $"writes -> {installPath}",
                     $"writes -> {gatewayDataPath} + identity"
-                }.Where(line => line is not null)),
+                }).Where(line => line is not null)),
             CompletionGatewaySummary: $"{distroName} · {gatewayEndpoint}");
+        return summary with
+        {
+            LocalAiEnabled = config.LocalAi.Enabled,
+            LocalAiTitle = config.LocalAi.Enabled
+                ? $"{DisplayModelName(localAiModel)} installed"
+                : null,
+            LocalAiDescription = config.LocalAi.Enabled
+                ? localAiProfile is null
+                    ? "llama-server for Windows · loads on first request · " +
+                        "context and KV profile selected from detected GPU"
+                    : "llama-server for Windows · loads on first request · " +
+                        $"{FormatContext(localAiProfile.ContextTokens)} context · " +
+                        $"{FormatKvCache(localAiProfile)}"
+                : null,
+        };
+    }
+
+    public static string DisplayModelName(LocalModelInfo model)
+    {
+        string displayName = model.DisplayName;
+        int detailStart = displayName.IndexOf(" (", StringComparison.Ordinal);
+        if (detailStart >= 0)
+            displayName = displayName[..detailStart];
+        if (displayName.StartsWith("Qwen", StringComparison.Ordinal) &&
+            displayName.Length > 4 && char.IsDigit(displayName[4]))
+        {
+            displayName = displayName.Insert(4, " ");
+        }
+        return displayName;
+    }
+
+    private static string FormatContext(int tokens) =>
+        tokens % 1024 == 0
+            ? $"{tokens / 1024}K"
+            : tokens % 1000 == 0
+                ? $"{tokens / 1000}K"
+                : $"{tokens:N0} tokens";
+
+    private static string FormatKvCache(LocalInferenceRunProfile profile)
+    {
+        string target = LocalModelCatalog.ToDisplayCacheType(profile.KeyCachePrecision);
+        string draft = LocalModelCatalog.ToDisplayCacheType(profile.DraftKeyCachePrecision);
+        return target == draft
+            ? $"{target} target and MTP draft KV"
+            : $"{target} target KV and {draft} MTP draft KV";
     }
 
     private static string Display(string? value, string fallback)

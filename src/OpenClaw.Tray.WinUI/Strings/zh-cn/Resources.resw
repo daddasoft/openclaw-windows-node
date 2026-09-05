@@ -781,10 +781,22 @@
     <value>健康检查失败</value>
   </data>
   <data name="Toast_ScreenCaptured" xml:space="preserve">
-    <value>📸 屏幕已捕获</value>
+    <value>📸 正在捕获屏幕</value>
   </data>
   <data name="Toast_ScreenCapturedDetail" xml:space="preserve">
-    <value>OpenClaw 代理捕获了您的屏幕</value>
+    <value>OpenClaw 代理正在捕获您的屏幕</value>
+  </data>
+  <data name="Toast_CameraCaptured" xml:space="preserve">
+    <value>📷 正在拍摄摄像头照片</value>
+  </data>
+  <data name="Toast_CameraCapturedDetail" xml:space="preserve">
+    <value>OpenClaw 代理正在使用您的摄像头拍摄照片</value>
+  </data>
+  <data name="Toast_LocationRead" xml:space="preserve">
+    <value>📍 正在访问位置</value>
+  </data>
+  <data name="Toast_LocationReadDetail" xml:space="preserve">
+    <value>OpenClaw 代理正在访问您的设备位置</value>
   </data>
   <data name="Toast_CameraBlocked" xml:space="preserve">
     <value>📷 相机访问被阻止</value>
@@ -828,22 +840,28 @@
     <value>权限请求</value>
   </data>
   <data name="RecordingConsent_ScreenTitle" xml:space="preserve">
-    <value>允许屏幕录制？</value>
+    <value>允许屏幕捕获？</value>
   </data>
   <data name="RecordingConsent_CameraTitle" xml:space="preserve">
-    <value>允许摄像头录制？</value>
+    <value>允许摄像头捕获？</value>
+  </data>
+  <data name="RecordingConsent_LocationTitle" xml:space="preserve">
+    <value>允许访问位置？</value>
   </data>
   <data name="RecordingConsent_ScreenDescription" xml:space="preserve">
-    <value>代理正在请求录制您的屏幕。这将从您的显示器捕获视频并发送给代理。您的选择将被记住用于以后的请求，直到您在设置中更改。</value>
+    <value>代理正在请求捕获您的屏幕。这可能会从您的显示器捕获图像或视频并发送给代理。您的选择将被记住用于以后的请求。</value>
   </data>
   <data name="RecordingConsent_CameraDescription" xml:space="preserve">
-    <value>代理正在请求从您的摄像头录制。这将从您的网络摄像头捕获视频并发送给代理。您的选择将被记住用于以后的请求，直到您在设置中更改。</value>
+    <value>代理正在请求访问您的摄像头。这可能会捕获照片或视频并发送给代理。您的选择将被记住用于以后的请求。</value>
+  </data>
+  <data name="RecordingConsent_LocationDescription" xml:space="preserve">
+    <value>代理正在请求访问您的设备位置。这会将您的当前位置发送给代理。您的选择将被记住用于以后的请求。</value>
   </data>
   <data name="RecordingConsent_Privacy" xml:space="preserve">
-    <value>您可以稍后在设置中更改此项。</value>
+    <value>仅当您信任已连接的代理和网关时才允许。</value>
   </data>
   <data name="RecordingConsent_Allow" xml:space="preserve">
-    <value>允许录制</value>
+    <value>允许</value>
   </data>
   <data name="RecordingConsent_Deny" xml:space="preserve">
     <value>拒绝</value>
@@ -865,7 +883,7 @@
     <value>隐私</value>
   </data>
   <data name="SettingsPrivacyDescription.Text" xml:space="preserve">
-    <value>预先批准功能，以便代理无需每次都请求权限。录制开始前仍会显示倒计时。</value>
+    <value>允许敏感捕获时无需每次询问。OpenClaw 仍会在每次访问前通知您，并在录制前显示倒计时。</value>
   </data>
   <data name="ScreenRecordingToggle.Header" xml:space="preserve">
     <value>允许屏幕录制</value>
@@ -1056,6 +1074,9 @@
   </data>
   <data name="Onboarding_Connection_Later" xml:space="preserve">
     <value>稍后配置</value>
+  </data>
+  <data name="Onboarding_LocalAi_RecheckAvailabilityButton.Content" xml:space="preserve">
+    <value>重新检查</value>
   </data>
   <data name="Onboarding_Ready_Title" xml:space="preserve">
     <value>一切就绪！</value>
@@ -1903,7 +1924,7 @@
     <value>执行策略</value>
   </data>
   <data name="PermissionsPage_TextBlock_17.Text" xml:space="preserve">
-    <value>控制代理可在此节点上启动哪些可执行文件。规则会匹配解析后的可执行文件路径。</value>
+    <value>控制代理可在此节点上启动哪些可执行文件。可执行文件路径允许列表初始为空。</value>
   </data>
   <data name="DefaultActionCombo.Header" xml:space="preserve">
     <value>默认操作</value>
@@ -1918,22 +1939,22 @@
     <value>询问</value>
   </data>
   <data name="PermissionsPage_TextBlock_28.Text" xml:space="preserve">
-    <value>规则</value>
+    <value>可执行文件路径允许列表</value>
   </data>
   <data name="NewRulePattern.PlaceholderText" xml:space="preserve">
-    <value>可执行文件路径模式（例如 **/git.exe）</value>
+    <value>可执行文件路径模式（例如 **/hostname.exe）</value>
+  </data>
+  <data name="PermissionsPage_ExecAllowlistPatternValidation.Text" xml:space="preserve">
+    <value>请输入可执行文件路径模式，例如 **/hostname.exe。hostname 等仅含基本名称或命令文本的模式无效。</value>
   </data>
   <data name="PermissionsPage_ComboBoxItem_54.Content" xml:space="preserve">
     <value>拒绝</value>
-  </data>
-  <data name="PermissionsPage_ComboBoxItem_55.Content" xml:space="preserve">
-    <value>允许</value>
   </data>
   <data name="PermissionsPage_ComboBoxItem_56.Content" xml:space="preserve">
     <value>询问</value>
   </data>
   <data name="PermissionsPage_Button_57.Content" xml:space="preserve">
-    <value>添加规则</value>
+    <value>添加条目</value>
   </data>
   <data name="PermissionsPage_TextBlock_69.Text" xml:space="preserve">
     <value>节点允许列表</value>
@@ -2559,6 +2580,9 @@
   <data name="VoiceSettingsPage_TtsElevenLabs.Content" xml:space="preserve">
     <value>ElevenLabs(云端,需要 API 密钥)</value>
   </data>
+  <data name="VoiceSettingsPage_TtsMiniMax.Content" xml:space="preserve">
+    <value>MiniMax（云端，需要 API 密钥）</value>
+  </data>
   <data name="VoiceSettingsPage_PiperVoiceCombo.Header" xml:space="preserve">
     <value>语音</value>
   </data>
@@ -2592,8 +2616,32 @@
   <data name="VoiceSettingsPage_ElevenLabsModelBox.Header" xml:space="preserve">
     <value>模型(可选)</value>
   </data>
+  <data name="VoiceSettingsPage_MiniMaxApiKeyBox.Header" xml:space="preserve">
+    <value>API 密钥</value>
+  </data>
+  <data name="VoiceSettingsPage_MiniMaxVoiceIdBox.Header" xml:space="preserve">
+    <value>语音 ID</value>
+  </data>
+  <data name="VoiceSettingsPage_MiniMaxVoiceIdBox.PlaceholderText" xml:space="preserve">
+    <value>例如 male-qn-qingse</value>
+  </data>
+  <data name="VoiceSettingsPage_MiniMaxModelBox.Header" xml:space="preserve">
+    <value>模型</value>
+  </data>
+  <data name="VoiceSettingsPage_MiniMaxModelBox.PlaceholderText" xml:space="preserve">
+    <value>speech-2.8-hd</value>
+  </data>
+  <data name="VoiceSettingsPage_MiniMaxRegionCombo.Header" xml:space="preserve">
+    <value>区域</value>
+  </data>
+  <data name="VoiceSettingsPage_MiniMaxRegionGlobal.Content" xml:space="preserve">
+    <value>全球</value>
+  </data>
+  <data name="VoiceSettingsPage_MiniMaxRegionChina.Content" xml:space="preserve">
+    <value>中国</value>
+  </data>
   <data name="VoiceSettingsPage_PrivacyNote.Text" xml:space="preserve">
-    <value>所有语音处理均完全在您的设备上运行。不会向任何云服务发送音频数据。</value>
+    <value>Piper、Windows 和语音识别在此设备上运行。云端 TTS 提供商会将回复文本发送到其服务进行合成；麦克风音频不会发送给这些服务。</value>
   </data>
   <data name="VoiceSettingsPage_StatusModelReady" xml:space="preserve">
     <value>✅ 模型就绪</value>
@@ -2780,6 +2828,9 @@
   </data>
   <data name="VoiceOverlayWindow_StatusErrorOccurred" xml:space="preserve">
     <value>发生错误</value>
+  </data>
+  <data name="AudioPipeline_FirstAudioTimeout" xml:space="preserve">
+    <value>未收到音频。请检查麦克风是否已连接并在 Windows 中选作输入设备，然后重试。</value>
   </data>
   <data name="VoiceOverlayWindow_winexWindowEx_2.Title" xml:space="preserve">
     <value>Companion Voice</value>
@@ -3337,6 +3388,12 @@
   <data name="PermissionsPage_Cap_Stt_Description" xml:space="preserve">
     <value>Lets agents transcribe microphone audio locally. Download a speech model in Voice &amp; Audio settings before first use.</value>
   </data>
+  <data name="PermissionsPage_Cap_Ollama_Label" xml:space="preserve">
+    <value>Share Windows Ollama</value>
+  </data>
+  <data name="PermissionsPage_Cap_Ollama_Description" xml:space="preserve">
+    <value>Let agents connected through the active local or remote gateway use Ollama models running separately on this PC. This does not change the app-managed Local AI gateway provider.</value>
+  </data>
   <data name="PermissionsPage_Cap_SystemRun_Label" xml:space="preserve">
     <value>System tools</value>
   </data>
@@ -3392,13 +3449,13 @@
     <value>URL copied to clipboard</value>
   </data>
   <data name="PermissionsPage_RulesCount_None" xml:space="preserve">
-    <value>No rules</value>
+    <value>无条目</value>
   </data>
   <data name="PermissionsPage_RulesCount_One" xml:space="preserve">
-    <value>1 rule</value>
+    <value>1 个条目</value>
   </data>
   <data name="PermissionsPage_RulesCount_ManyFormat" xml:space="preserve">
-    <value>{0} rules</value>
+    <value>{0} 个条目</value>
   </data>
   <data name="PermissionsPage_Allowlist_NoConfig" xml:space="preserve">
     <value>No allowlist data available. Connect to a gateway first.</value>
@@ -3725,10 +3782,13 @@
     <value>提示音</value>
   </data>
   <data name="SettingsRow_ScreenRec_Header.Text" xml:space="preserve">
-    <value>允许屏幕录制</value>
+    <value>允许屏幕捕获</value>
   </data>
   <data name="SettingsRow_CamRec_Header.Text" xml:space="preserve">
-    <value>允许摄像头录制</value>
+    <value>允许摄像头捕获</value>
+  </data>
+  <data name="SettingsRow_Location_Header.Text" xml:space="preserve">
+    <value>允许访问位置</value>
   </data>
   <data name="HubWindow_NavigationViewItem_Voice.Content" xml:space="preserve">
     <value>语音和音频</value>
@@ -3978,6 +4038,9 @@
   </data>
   <data name="SettingsRow_CamRec_Description.Text" xml:space="preserve">
     <value>Lets agents capture the camera via camera.* commands.</value>
+  </data>
+  <data name="SettingsRow_Location_Description.Text" xml:space="preserve">
+    <value>允许代理通过 location.* 命令读取设备位置。</value>
   </data>
   <data name="VoiceSettingsPage_ElevenLabsVoiceIdBox.PlaceholderText" xml:space="preserve">
     <value>e.g. 21m00Tcm4TlvDq8ikWAM</value>
@@ -4451,19 +4514,19 @@
     <value>默认操作</value>
   </data>
   <data name="PermissionsPage_WhatHappensWhenA.Text" xml:space="preserve">
-    <value>当命令与下列任何规则都不匹配时发生什么。</value>
+    <value>当命令与下列可执行文件路径允许列表不匹配时发生什么。</value>
   </data>
   <data name="PermissionsPage_PatternsAreMatchedLeft.Text" xml:space="preserve">
-    <value>允许列表模式会匹配解析后的可执行文件路径。可使用 **/git.exe 等通配模式。更改将自动保存。</value>
+    <value>“始终允许”会为符合条件的原生 .exe 命令创建参数绑定条目。在此添加的条目仅按路径匹配，可能允许匹配的可执行文件使用任意参数。“拒绝”和“询问”仍由“默认操作”控制。更改将自动保存。</value>
   </data>
   <data name="PermissionsPage_Saved.Text" xml:space="preserve">
     <value>已保存</value>
   </data>
   <data name="PermissionsPage_0Rules.Text" xml:space="preserve">
-    <value>0 条规则</value>
+    <value>0 个条目</value>
   </data>
   <data name="PermissionsPage_NoRulesYetAdd.Text" xml:space="preserve">
-    <value>尚无规则。在下方添加模式以拒绝、允许或询问特定命令。</value>
+    <value>没有可执行文件路径允许列表条目。使用“始终允许”批准符合条件的原生 .exe 命令，或添加仅按路径匹配的模式，例如 **/hostname.exe。</value>
   </data>
   <data name="PermissionsPage_WindowsPrivacy.Text" xml:space="preserve">
     <value>Windows 隐私</value>
@@ -4626,6 +4689,42 @@
   </data>
   <data name="SandboxPage_LocalNetworkDevicesAnd.Text" xml:space="preserve">
     <value>本地网络设备和共享尚未包含在内。</value>
+  </data>
+  <data name="SandboxPage_CommandCompatibility.Text" xml:space="preserve">
+    <value>🪟 命令兼容性</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUi.Header" xml:space="preserve">
+    <value>允许 Windows UI API</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUi.OffContent" xml:space="preserve">
+    <value>关闭：阻止 Win32k 系统调用</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUi.OnContent" xml:space="preserve">
+    <value>开启：PowerShell 和类似工具可以启动</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUi.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>允许沙盒命令使用 Windows UI API</value>
+  </data>
+  <data name="SandboxPage_WindowsUiCompatibilityDescription.Text" xml:space="preserve">
+    <value>PowerShell（所有版本）和某些控制台工具在启动时会使用 Windows UI API。此设置不提供受支持的完整主机进程清单。</value>
+  </data>
+  <data name="SandboxPage_WindowsUiWarning.Title" xml:space="preserve">
+    <value>Win32k 边界已禁用</value>
+  </data>
+  <data name="SandboxPage_WindowsUiWarning.Message" xml:space="preserve">
+    <value>文件、网络、剪贴板、超时和命令审批控制仍然有效。允许使用 Win32k 系统调用；剪贴板策略和输入注入禁令仍然有效。</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUiDialogTitle" xml:space="preserve">
+    <value>允许 Windows UI API？</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUiDialogContent" xml:space="preserve">
+    <value>这将允许沙盒命令使用 Windows UI 系统调用。当前 MXC 版本中的 PowerShell（所有版本）和某些控制台工具需要此权限才能启动。此设置不会授予受支持的完整主机进程清单：CIM/WMI 主机枚举不受支持，并已观察到失败；tasklist 可能失败或超时；Get-Process 的输出不应被视为完整清单或进程元数据的保密边界。&#xA;&#xA;文件、网络、剪贴板、超时和命令审批控制仍然有效，但 Win32k 系统调用阻止将被禁用。剪贴板策略和输入注入禁令仍然有效。仅在需要更广泛的命令兼容性时启用。</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUiDialogPrimary" xml:space="preserve">
+    <value>允许 UI API</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUiDialogCancel" xml:space="preserve">
+    <value>取消</value>
   </data>
   <data name="SandboxPage_Limits.Text" xml:space="preserve">
     <value>⏱ 限制</value>
@@ -6855,9 +6954,6 @@
   <data name="SettingsPage_GatewayInfoLabel_Uptime.Text" xml:space="preserve">
     <value>Uptime</value>
   </data>
-  <data name="PermissionsPage_NewRuleAction.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>规则操作</value>
-  </data>
   <data name="SandboxPage_UnavailablePrimaryButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>沙盒操作</value>
   </data>
@@ -6912,4 +7008,106 @@
   <data name="SessionsPage_LastRunStopped" xml:space="preserve">
     <value>上次运行已停止</value>
   </data>
+  <data name="ConnectionPage_ProtocolGatewayUpdateRequired" xml:space="preserve">
+    <value>需要更新 Gateway</value>
+  </data>
+  <data name="ConnectionPage_ProtocolGatewayUpdateDetail" xml:space="preserve">
+    <value>此 Gateway 使用协议 v{0}。此 Windows 应用支持协议 v{1} 到 v{2}。该应用的当前协议为 v{3}。请更新 Gateway 以继续。</value>
+  </data>
+  <data name="ConnectionPage_ProtocolWindowsUpdateRequired" xml:space="preserve">
+    <value>需要更新 Windows 应用</value>
+  </data>
+  <data name="ConnectionPage_ProtocolWindowsUpdateDetail" xml:space="preserve">
+    <value>此 Gateway 需要协议 v{0}。此 Windows 应用支持协议 v{1} 到 v{2}。当前协议为 v{3}。请更新 Windows 应用以继续。</value>
+  </data>
+  <data name="ConnectionPage_ProtocolUnknownMismatch" xml:space="preserve">
+    <value>不支持此 Gateway 版本</value>
+  </data>
+  <data name="Chat_AssistantMedia_Preparing" xml:space="preserve"><value>正在准备媒体</value></data>
+  <data name="Chat_AssistantMedia_Unavailable" xml:space="preserve"><value>媒体不可用</value></data>
+  <data name="Chat_AssistantMedia_Retry" xml:space="preserve"><value>重试</value></data>
+  <data name="Chat_AssistantMedia_Image" xml:space="preserve"><value>图像</value></data>
+  <data name="Chat_AssistantMedia_Audio" xml:space="preserve"><value>音频</value></data>
+  <data name="Chat_AssistantMedia_Video" xml:space="preserve"><value>视频</value></data>
+  <data name="Chat_AssistantMedia_File" xml:space="preserve"><value>文件</value></data>
+  <data name="Chat_AssistantMedia_Media" xml:space="preserve"><value>媒体</value></data>
+  <data name="Chat_AssistantMedia_ImagesOmitted" xml:space="preserve"><value>还有 {0} 张图像未显示</value></data>
+  <data name="Chat_AssistantMedia_MediaAttachment" xml:space="preserve"><value>媒体附件</value></data>
+  <data name="Chat_AssistantMedia_OpenImage" xml:space="preserve"><value>打开图像 {0}</value></data>
+  <data name="Chat_AssistantMedia_Close" xml:space="preserve"><value>关闭</value></data>
+  <data name="HubWindow_NavigationViewItem_LocalAi.Content" xml:space="preserve"><value>本地 AI</value></data>
+  <data name="LocalAiPage_Title.Text" xml:space="preserve"><value>本地 AI</value></data>
+  <data name="LocalAiPage_Intro.Text" xml:space="preserve"><value>在此计算机上私密运行经过验证的原生 llama-server。模型仅在收到请求时加载。</value></data>
+  <data name="LocalAiPage_UnavailableInfoBar.Title" xml:space="preserve"><value>本地 AI 不可用</value></data>
+  <data name="LocalAiPage_UnavailableDetailsButton.Content" xml:space="preserve"><value>查看原因</value></data>
+  <data name="LocalAiPage_UnavailableDetailsTip.Title" xml:space="preserve"><value>本地 AI 不可用的原因</value></data>
+  <data name="LocalAiPage_RecheckAvailabilityButton.Content" xml:space="preserve"><value>重新检查</value></data>
+  <data name="LocalAiPage_UnavailableRequirementsMessage" xml:space="preserve"><value>此设备不满足一项或多项本地 AI 要求。</value></data>
+  <data name="LocalAiPage_UnavailableProbeMessage" xml:space="preserve"><value>OpenClaw 目前无法验证本地 AI 要求。请确认 NVIDIA 驱动可用后重试。</value></data>
+  <data name="LocalAiPage_EngineHeading.Text" xml:space="preserve"><value>llama-server</value></data>
+  <data name="LocalAiPage_VersionLabel.Text" xml:space="preserve"><value>版本</value></data>
+  <data name="LocalAiPage_EndpointLabel.Text" xml:space="preserve"><value>终结点</value></data>
+  <data name="LocalAiPage_ProcessLabel.Text" xml:space="preserve"><value>进程</value></data>
+  <data name="LocalAiPage_StartButton.Content" xml:space="preserve"><value>启动路由器</value></data>
+  <data name="LocalAiPage_StopButton.Content" xml:space="preserve"><value>停止</value></data>
+  <data name="LocalAiPage_RestartButton.Content" xml:space="preserve"><value>重新启动</value></data>
+  <data name="LocalAiPage_OpenLogsButton.Content" xml:space="preserve"><value>打开日志</value></data>
+  <data name="LocalAiPage_ModelHeading.Text" xml:space="preserve"><value>模型</value></data>
+  <data name="LocalAiPage_RetrySetupButton.Content" xml:space="preserve"><value>重试设置或下载</value></data>
+  <data name="LocalAiPage_ChangeModelDescription.Text" xml:space="preserve"><value>打开设置以选择其他模型。替换现有本地网关仍需确认。</value></data>
+  <data name="LocalAiPage_ChangeModelButton.Content" xml:space="preserve"><value>更换模型</value></data>
+  <data name="LocalAiPage_GatewayHeading.Text" xml:space="preserve"><value>网关连接</value></data>
+  <data name="LocalAiPage_RepairConnectionButton.Content" xml:space="preserve"><value>修复连接</value></data>
+  <data name="LocalAiPage_OpenChatButton.Content" xml:space="preserve"><value>打开聊天</value></data>
+  <data name="LocalAiPage_Engine_Running" xml:space="preserve"><value>正在运行</value></data>
+  <data name="LocalAiPage_Engine_Starting" xml:space="preserve"><value>正在启动</value></data>
+  <data name="LocalAiPage_Engine_Stopped" xml:space="preserve"><value>已停止</value></data>
+  <data name="LocalAiPage_Engine_Error" xml:space="preserve"><value>错误</value></data>
+  <data name="LocalAiPage_Engine_Managed" xml:space="preserve"><value>由 OpenClaw 管理</value></data>
+  <data name="LocalAiPage_Engine_NotInstalled" xml:space="preserve"><value>未安装</value></data>
+  <data name="LocalAiPage_Model_NotInstalled" xml:space="preserve"><value>未安装</value></data>
+  <data name="LocalAiPage_Model_Unknown" xml:space="preserve"><value>未知</value></data>
+  <data name="LocalAiPage_Model_Verified" xml:space="preserve"><value>已下载并验证</value></data>
+  <data name="LocalAiPage_Model_Loaded" xml:space="preserve"><value>已加载到 GPU</value></data>
+  <data name="LocalAiPage_Gateway_Connected" xml:space="preserve"><value>已连接</value></data>
+  <data name="LocalAiPage_Gateway_Connecting" xml:space="preserve"><value>正在连接</value></data>
+  <data name="LocalAiPage_Gateway_NeedsAttention" xml:space="preserve"><value>需要注意</value></data>
+  <data name="LocalAiPage_Gateway_Error" xml:space="preserve"><value>连接错误</value></data>
+  <data name="LocalAiPage_Gateway_Disconnected" xml:space="preserve"><value>已断开连接</value></data>
+  <data name="LocalAiPage_Value_Unknown" xml:space="preserve"><value>未知</value></data>
+  <data name="LocalAiPage_Process_NotRunning" xml:space="preserve"><value>未运行</value></data>
+  <data name="LocalAiPage_ModelRecipeFormat" xml:space="preserve"><value>{0} 上下文 · {1} KV · 首次请求时加载</value></data>
+  <data name="Command_GoToLocalAi_Title" xml:space="preserve"><value>转到本地 AI</value></data>
+  <data name="Command_GoToLocalAi_Subtitle" xml:space="preserve"><value>查看 llama-server、模型和网关状态</value></data>
+  <data name="Onboarding_LocalAi_UnavailableDetailsButton.Content" xml:space="preserve"><value>查看原因</value></data>
+  <data name="Onboarding_LocalAi_CheckingTitle" xml:space="preserve"><value>正在检查本地 AI 要求</value></data>
+  <data name="Onboarding_LocalAi_CheckingMessage" xml:space="preserve"><value>OpenClaw 正在检查 NVIDIA GPU、驱动、CUDA、内存和 WSL 要求。</value></data>
+  <data name="Onboarding_LocalAi_CheckingHelpText" xml:space="preserve"><value>OpenClaw 正在检查本地 AI 要求。</value></data>
+  <data name="Onboarding_LocalAi_ProbeUnknownTitle" xml:space="preserve"><value>无法验证本地 AI 可用性</value></data>
+  <data name="Onboarding_LocalAi_ProbeUnknownMessage" xml:space="preserve"><value>OpenClaw 目前无法验证本地 AI 要求。请确认 NVIDIA 驱动可用后重试。</value></data>
+  <data name="Onboarding_LocalAi_ProbeUnknownHelpText" xml:space="preserve"><value>OpenClaw 无法验证本地 AI 要求。请重新检查可用性以重试。</value></data>
+  <data name="Onboarding_LocalAi_UnavailableTitle" xml:space="preserve"><value>本地 AI 不可用</value></data>
+  <data name="Onboarding_LocalAi_UnavailableMessage" xml:space="preserve"><value>此电脑不满足一项或多项本地 AI 要求。</value></data>
+  <data name="Onboarding_LocalAi_UnavailableHelpText" xml:space="preserve"><value>不可用,因为此电脑不满足本地 AI 要求。</value></data>
+  <data name="Onboarding_LocalAi_ProbeFailureReason" xml:space="preserve"><value>OpenClaw 无法读取 NVIDIA GPU、驱动、CUDA 或内存信息。请确认 NVIDIA 驱动可用,然后重新检查本地 AI 要求。</value></data>
+  <data name="Onboarding_LocalAi_UnavailableDetailsDialogTitle" xml:space="preserve"><value>本地 AI 不可用的原因</value></data>
+  <data name="Onboarding_LocalAi_UnavailableDetailsDialogClose" xml:space="preserve"><value>关闭</value></data>
+  <data name="LocalAi_Reason_RuntimeUnavailable" xml:space="preserve"><value>此本地 AI 版本不包含适用于检测到的 Windows 体系结构的原生 llama-server 运行时。</value></data>
+  <data name="LocalAi_Reason_NoNvidiaGpu" xml:space="preserve"><value>NVIDIA 驱动未报告任何 NVIDIA GPU。请安装或修复 NVIDIA 驱动,然后重试安装。</value></data>
+  <data name="LocalAi_Reason_UnknownModel" xml:space="preserve"><value>所选模型在此本地 AI 版本中不可用。</value></data>
+  <data name="LocalAi_Reason_HardwareFactsIncomplete" xml:space="preserve"><value>OpenClaw 无法读取稳定的 NVIDIA GPU 标识符、内存、驱动或 CUDA 能力。</value></data>
+  <data name="LocalAi_Reason_InsufficientGpuMemory" xml:space="preserve"><value>{0}需要 {1} 的 GPU 内存用于模型权重、KV 缓存和运行时工作区。OpenClaw 检测到 {2}。</value></data>
+  <data name="LocalAi_Reason_DriverTooOld" xml:space="preserve"><value>检测到 NVIDIA 驱动 {0}。本地 AI 需要 {1} 或更高版本。</value></data>
+  <data name="LocalAi_Reason_CudaCapabilityTooLow" xml:space="preserve"><value>NVIDIA 驱动不支持 CUDA 13。无需单独的 CUDA Toolkit。</value></data>
+  <data name="LocalAi_Reason_Generic" xml:space="preserve"><value>OpenClaw 无法验证此系统上的本地 AI 要求。</value></data>
+  <data name="LocalAi_Reason_UnknownModelName" xml:space="preserve"><value>所选模型</value></data>
+  <data name="LocalAi_Reason_UnknownDriverVersion" xml:space="preserve"><value>未知</value></data>
+  <data name="LocalAi_Reason_UnknownMemoryAmount" xml:space="preserve"><value>未知数量</value></data>
+  <data name="LocalAi_Reason_GigabytesFormat" xml:space="preserve"><value>{0:0.#} GiB</value></data>
+  <data name="Onboarding_Welcome_LocalAiAvailableBadge.Text" xml:space="preserve"><value>支持本地 AI</value></data>
+  <data name="Onboarding_Welcome_LocalAiAvailabilityDetail" xml:space="preserve"><value>您的 {0} 可在此电脑上运行本地 AI。</value></data>
+  <data name="Onboarding_LocalAi_WslConfigReadFailureReason" xml:space="preserve"><value>OpenClaw 无法安全读取全局 .wslconfig 文件。请检查该文件是否有效且可读,然后重试安装。</value></data>
+  <data name="LocalAiPage_UnavailableProbeTitle" xml:space="preserve"><value>无法验证本地 AI 可用性</value></data>
+  <data name="LocalAiPage_CheckingTitle" xml:space="preserve"><value>正在检查本地 AI 可用性</value></data>
+  <data name="LocalAiPage_CheckingMessage" xml:space="preserve"><value>OpenClaw 正在检查此设备是否可以运行本地 AI。这只需要片刻。</value></data>
 </root>

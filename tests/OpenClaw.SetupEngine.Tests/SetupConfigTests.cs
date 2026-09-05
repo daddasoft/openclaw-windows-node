@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Runtime.Versioning;
+using OpenClaw.Shared.Inference.Catalog;
 
 namespace OpenClaw.SetupEngine.Tests;
 
@@ -32,6 +33,7 @@ public class SetupConfigTests : IDisposable
         Assert.Equal("trace", config.LogLevel);
         Assert.False(config.RollbackOnFailure);
         Assert.Equal("loopback", config.Gateway.Bind);
+        Assert.Equal("hybrid", config.Gateway.ReloadMode);
         Assert.False(config.SkipPermissions);
         Assert.False(config.SkipWizard);
         Assert.True(config.WindowsNodeContext.Enabled);
@@ -42,6 +44,37 @@ public class SetupConfigTests : IDisposable
         Assert.Equal(TailscaleAuthMode.Browser, config.Tailscale.AuthMode);
         Assert.Equal(300, config.Tailscale.AuthTimeoutSeconds);
         Assert.Equal(300, config.Tailscale.ServeApprovalTimeoutSeconds);
+        Assert.False(config.LocalAi.Enabled);
+    }
+
+    [Fact]
+    public void BundledConfig_RequiresExplicitLocalAiOptIn()
+    {
+        var config = SetupConfig.LoadFromFile(Path.Combine(
+            RepositoryRoot(),
+            "src",
+            "OpenClaw.SetupEngine",
+            "default-config.json"));
+
+        Assert.False(config.LocalAi.Enabled);
+    }
+
+    [Fact]
+    public void ValidationPackagePath_IsRuntimeOnly()
+    {
+        var config = new SetupConfig
+        {
+            Gateway = new GatewayConfig { ValidationPackagePath = @"C:\candidate\openclaw-current.tgz" }
+        };
+
+        var json = JsonSerializer.Serialize(config, SetupConfig.JsonWriteOptions);
+        var loaded = JsonSerializer.Deserialize<SetupConfig>(
+            """{"Gateway":{"ValidationPackagePath":"C:\\untrusted\\candidate.tgz"}}""",
+            SetupConfig.JsonOptions);
+
+        Assert.DoesNotContain("ValidationPackagePath", json, StringComparison.Ordinal);
+        Assert.NotNull(loaded);
+        Assert.Null(loaded.Gateway.ValidationPackagePath);
     }
 
     [Fact]
@@ -74,7 +107,7 @@ public class SetupConfigTests : IDisposable
     public void EffectiveGatewayUrl_UsesPort()
     {
         var config = new SetupConfig { GatewayPort = 9999 };
-        Assert.Equal("ws://localhost:9999", config.EffectiveGatewayUrl);
+        Assert.Equal("ws://127.0.0.1:9999", config.EffectiveGatewayUrl);
     }
 
     [Fact]
@@ -359,6 +392,21 @@ public class SetupConfigTests : IDisposable
         Assert.False(traySettings.NodeSttEnabled);
     }
 
+    /// <summary>
+    /// The install-review card's WSL title/description in CapabilitiesPage.xaml is a design-time
+    /// placeholder that CapabilitiesPage.xaml.cs immediately overwrites at runtime with
+    /// SetupReviewSummaryBuilder's DistroTitle/DistroDescription. This pins the default-config
+    /// runtime text to the same simplified copy so the two cannot drift again.
+    /// </summary>
+    [Fact]
+    public void SetupReviewSummary_DistroTitleAndDescription_MatchSimplifiedReviewCopy()
+    {
+        var summary = SetupReviewSummaryBuilder.Build(new SetupConfig());
+
+        Assert.Equal("Install Ubuntu 24.04 in WSL", summary.DistroTitle);
+        Assert.Equal("Creates a separate OpenClawGateway instance. Uses several GB.", summary.DistroDescription);
+    }
+
     [Fact]
     public void SetupReviewSummary_UsesActiveSetupConfig()
     {
@@ -368,24 +416,48 @@ public class SetupConfigTests : IDisposable
         {
             Environment.SetEnvironmentVariable("OPENCLAW_TRAY_DATA_DIR", Path.Combine(_tempDir, "roaming"));
             Environment.SetEnvironmentVariable("OPENCLAW_TRAY_LOCAL_DATA_DIR", Path.Combine(_tempDir, "local"));
+            LocalModelInfo qwen35B = LocalModelCatalog.Find(LocalModelCatalog.Qwen35BModelId)!;
             var config = new SetupConfig
             {
                 DistroName = "CustomClaw",
                 BaseDistro = "Debian",
                 GatewayPort = 19999,
-                Gateway = { Bind = "lan", InstallUrl = "https://example.test/install.sh" }
+                Gateway =
+                {
+                    Bind = "lan",
+                    InstallUrl = "https://example.test/install.sh",
+                    Version = GatewayReleasePolicy.SecurityFloor
+                },
+                LocalAi =
+                {
+                    Enabled = true,
+                    SelectedModelId = qwen35B.Id,
+                    SelectedProfileId = LocalModelCatalog.GetProfiles(qwen35B)[1].Id,
+                }
             };
 
             var summary = SetupReviewSummaryBuilder.Build(config);
 
             Assert.Contains("Debian", summary.DistroTitle);
             Assert.Contains("CustomClaw", summary.DistroDescription);
+            Assert.Contains("several GB", summary.DistroDescription);
             Assert.Contains("19999", summary.GatewayEndpoint);
             Assert.Contains("LAN bind enabled", summary.GatewayDescription);
             Assert.Contains("example.test", summary.InstallerDescription);
+            Assert.Contains("Unverified custom installer", summary.InstallerDescription);
             Assert.Contains("CustomClaw", summary.ExactCommands);
             Assert.Contains("19999", summary.ExactCommands);
             Assert.Equal("CustomClaw · LAN:19999", summary.CompletionGatewaySummary);
+            Assert.Equal("Qwen 3.6 35B-A3B installed", summary.LocalAiTitle);
+            Assert.StartsWith(
+                "llama-server for Windows · loads on first request · ",
+                summary.LocalAiDescription,
+                StringComparison.Ordinal);
+            Assert.Contains("256K context", summary.LocalAiDescription, StringComparison.Ordinal);
+            Assert.Contains("Q8_0 target and MTP draft KV", summary.LocalAiDescription, StringComparison.Ordinal);
+            Assert.DoesNotContain("full CUDA offload", summary.LocalAiDescription, StringComparison.Ordinal);
+            Assert.DoesNotContain("immutable revision", summary.LocalAiDescription, StringComparison.Ordinal);
+            Assert.DoesNotContain("llama-server b", summary.LocalAiDescription, StringComparison.Ordinal);
         }
         finally
         {
@@ -547,6 +619,9 @@ public class SetupConfigTests : IDisposable
         Assert.StartsWith(WindowsNodeContextSection.BeginMarker + "\n", block);
         Assert.Contains("This WSL gateway may be paired", block);
         Assert.Contains("exec host=node", block);
+        Assert.Contains("Share Windows Ollama", block);
+        Assert.Contains("ollama.models", block);
+        Assert.Contains("separate from the app-managed Local AI gateway provider", block);
         Assert.DoesNotContain("tools.exec.security full", block);
         Assert.DoesNotContain("tools.exec.ask off", block);
         Assert.EndsWith("\n" + WindowsNodeContextSection.EndMarker, block);
@@ -584,5 +659,22 @@ public class SetupConfigTests : IDisposable
         Assert.Equal(0, new PipelineResult(PipelineOutcome.Success).ExitCode);
         Assert.Equal(1, new PipelineResult(PipelineOutcome.Failed).ExitCode);
         Assert.Equal(3, new PipelineResult(PipelineOutcome.Cancelled).ExitCode);
+    }
+
+    private static string RepositoryRoot()
+    {
+        if (Environment.GetEnvironmentVariable("OPENCLAW_REPO_ROOT") is { Length: > 0 } configured)
+            return configured;
+
+        var directory = AppContext.BaseDirectory;
+        while (!string.IsNullOrWhiteSpace(directory))
+        {
+            if (File.Exists(Path.Combine(directory, "src", "OpenClaw.SetupEngine", "default-config.json")))
+                return directory;
+
+            directory = Directory.GetParent(directory)?.FullName;
+        }
+
+        throw new DirectoryNotFoundException("Could not locate repository root for default-config.json.");
     }
 }

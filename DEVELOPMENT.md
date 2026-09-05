@@ -230,27 +230,26 @@ Useful local scripts:
 
 ## Architecture Overview
 
-### Native chat surface (FunctionalUI + OpenClaw.Chat)
+### Native chat surface (Reactor + OpenClaw.Chat)
 
 The Hub Chat tab (`src/OpenClaw.Tray.WinUI/Pages/ChatPage.xaml`) and the
 tray ChatWindow popup (`src/OpenClaw.Tray.WinUI/Windows/ChatWindow.xaml`)
 render their conversations with native WinUI 3 controls via the in-repo
-`OpenClawTray.FunctionalUI` helper and `OpenClaw.Chat` model/reducer code.
+Reactor components and `OpenClaw.Chat` model/reducer code.
 The standard WebView2-hosted gateway web client remains available as a
 settings-controlled fallback.
 
 **Layering:**
 
 ```
-src/OpenClaw.Tray.WinUI/Chat/    OpenClawChatTimeline · OpenClawComposer · OpenClawSessionHeader
+src/OpenClaw.Tray.WinUI/Chat/    OpenClawReactorChatRoot · ReactorChatTimeline · ReactorChatComposer
                                  OpenClawChatDataProvider (adapts OpenClawGatewayClient → IChatDataProvider)
-                                 OpenClawChatRoot         (FunctionalUI component composing the chat surface)
-                                 FunctionalChatHostExtensions (mounts FunctionalUI into a XAML <Border>)
-                                 IChatGatewayBridge       (testability seam over OpenClawGatewayClient)
+                                 ReactorChatHostExtensions (mounts Reactor into a XAML <Border>)
+                                 IChatGatewayBridge        (testability seam over OpenClawGatewayClient)
         ▲ depends on
 src/OpenClaw.Chat/               ChatThread · ChatTimelineState · IChatDataProvider · ChatTimelineReducer
         ▲ rendered by
-src/OpenClawTray.FunctionalUI/   Component · RenderContext · FunctionalHostControl · WinUI elements
+Reactor.WinUI                    Component · hooks · ReactorHostControl · WinUI elements
 ```
 
 **Lifecycle:**
@@ -259,12 +258,13 @@ src/OpenClawTray.FunctionalUI/   Component · RenderContext · FunctionalHostCon
   created in `InitializeGatewayClient` and disposed inside
   `UnsubscribeGatewayEvents`. Both the Hub Chat tab and the tray ChatWindow
   consume the same provider - opening either surface shows identical state.
-- Each XAML host (`ChatPage`, `ChatWindow`) mounts its own `FunctionalHostControl`
-  with `ContentTarget` pointing at a `<Border x:Name="ChatHost"/>`. The
+- `ReactorChatHostExtensions` mounts a dedicated `ReactorHostControl` for each
+  XAML surface (`ChatPage`, `ChatWindow`) as the child of its
+  `<Border x:Name="ChatHost"/>`. The
   surrounding chrome (NavigationView, popup header) stays XAML.
 - Provider events fire on the WebSocket-receive thread; the provider
   marshals `Changed` / `NotificationRequested` callbacks through a
-  dispatcher post delegate (`DispatcherQueue.AsPost()`), so FunctionalUI
+  dispatcher post delegate (`DispatcherQueue.AsPost()`), so Reactor
   components observe state on the UI thread.
 
 **Adding new chat behavior:** model new events in `OpenClaw.Chat`'s
@@ -491,10 +491,10 @@ Run documentation validation directly with:
 .\scripts\validate-docs.ps1
 ```
 
-`.\build.ps1` runs the same validator before compiling. It checks maintained
-Markdown links and anchors, rejects Mermaid and em dashes, verifies every
-Excalidraw/SVG pair, requires SVG accessibility metadata, and confirms rendered
-labels match the editable source.
+`.\build.ps1` runs the same validator before compiling. It checks the named
+custom Windows proof-pool inventory, maintained Markdown links and anchors,
+rejects Mermaid and em dashes, verifies every Excalidraw/SVG pair, requires SVG
+accessibility metadata, and confirms rendered labels match the editable source.
 
 ## Testing
 
@@ -511,11 +511,14 @@ computer-use, or MCP validation is also appropriate when explicitly requested or
 needed to unblock the work; agents should ask whether to run computer-use or
 provide manual UI proof steps, while still enforcing required automated tests.
 
-PRs should include `## Validation` and `## Real behavior proof` sections. Paste concrete
-after-change output, visible UI evidence for visual changes, `winnode` output or
-raw MCP server JSON-RPC output for node commands, and gateway invoke output for
-gateway-mediated behavior when available; the default PR template includes these
-prompts.
+PRs should include `## Required proof pools`, `## Validation`, and
+`## Real behavior proof` sections. Select stable pool IDs from
+[`docs/PROOF_POOLS.md`](docs/PROOF_POOLS.md), or declare `none` with a reason.
+Pool selection schedules capacity-dependent work but does not claim it ran.
+Paste concrete after-change output, visible UI evidence for visual changes,
+`winnode` output or raw MCP server JSON-RPC output for node commands, and
+gateway invoke output for gateway-mediated behavior when available. The default
+PR template includes these prompts.
 
 ### Running Unit Tests
 
@@ -630,13 +633,37 @@ The repository uses GitHub Actions for continuous integration and release automa
 - Pull requests to `main`
 - Git tags matching `v*` (e.g., `v1.2.3`) for releases
 
-### Gateway LKG version automation
+### Gateway release policy
 
-- The pinned gateway setup version lives in `src/OpenClaw.SetupEngine/GatewayLkgVersion.cs` (`GatewayLkgVersion.LkgVersion`).
-- Setup/E2E consume this as the default source of truth when `Gateway.Version` is not explicitly set.
-- When `Gateway.InstallUrl` points to a custom installer script, SetupEngine does not auto-inject the LKG; set `Gateway.Version` explicitly if your script supports `--version`.
-- The `test` job in `.github/workflows/ci.yml` compares pinned LKG vs npm `openclaw@latest` and emits a **warning** on drift (non-blocking).
-- `.github/workflows/gateway-lkg-update.yml` creates or updates one standing draft PR on branch `automation/gateway-lkg-update` to bump `GatewayLkgVersion.LkgVersion` when upstream latest advances.
+- `src/OpenClaw.SetupEngine/GatewayReleasePolicy.cs` embeds the exact Gateway
+  recommendation, protocol generation, security floor, validation evidence, and
+  any distinct validated fallback for the Windows release.
+- Setup and E2E install the exact recommendation. Product setup never resolves
+  a moving npm dist-tag at runtime.
+- `Gateway.Selection` supports `recommended`, `fallback`, and `exact`.
+  `fallback` currently resolves to exact validated release `2026.6.11` and is
+  never automatic. `exact` accepts only an embedded validated official release
+  in product mode.
+- A custom `Gateway.InstallUrl` must also specify an exact `Gateway.Version`.
+  Setup labels it unverified and still requires an exact protocol-v4 handshake
+  and matching server version after installation.
+- `.github/workflows/gateway-release-candidate.yml` discovers official stable
+  candidates and opens an evidence-only draft PR. It does not promote a
+  candidate. Promotion requires exact-version Windows setup, pairing,
+  reconnect, recovery, and Gateway-to-node invocation proof.
+- `scripts/Test-GatewayReleaseCandidate.ps1` verifies stable GitHub release
+  classification, SHA-512 npm integrity, registry signature, SLSA provenance,
+  exact package/tag commit identity, stable release soak evidence, and protocol
+  v4 at that exact commit. Unembedded candidates require provenance whose source
+  commit matches the tag. Existing embedded recommendation/fallback evidence
+  may use the explicit `-AllowEmbeddedPolicyEvidence` compatibility switch only
+  when the integrity-verified package build commit matches the exact tag and
+  the package integrity is already embedded in policy.
+- Candidate evidence is discovery input only and cannot authorize an
+  unembedded release. To exercise a candidate, first add a reviewed
+  `GatewayReleaseStatus.Candidate` entry to `GatewayReleasePolicy`, then set
+  `OPENCLAW_E2E_GATEWAY_VERSION` and run the setup/connect and recovery E2E
+  shards with `--validate-gateway-candidate`.
 
 ### Build Matrix
 
@@ -870,7 +897,7 @@ Direct `dotnet build` without the script will fail with "WindowsAppSDKSelfContai
 |----------|---------|
 | `OPENCLAW_FORCE_ONBOARDING=1` | Show onboarding wizard even if a token already exists |
 | `OPENCLAW_SKIP_UPDATE_CHECK=1` | Skip the update dialog (useful during testing) |
-| `OPENCLAW_LANGUAGE=fr-fr` | Override UI language (validated: en-us, fr-fr, nl-nl, zh-cn, zh-tw) |
+| `OPENCLAW_LANGUAGE=fr-fr` | Override UI language (validated: en-us, fr-fr, nl-nl, pt-br, zh-cn, zh-tw) |
 | `OPENCLAW_GATEWAY_PORT=19001` | Override default gateway port for local dev |
 | `OPENCLAW_VISUAL_TEST=1` | Enable automatic screenshot capture on page transitions |
 | `OPENCLAW_VISUAL_TEST_DIR=path` | Output directory for visual test screenshots |

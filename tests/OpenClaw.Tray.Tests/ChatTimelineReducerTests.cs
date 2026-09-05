@@ -603,6 +603,35 @@ public class ChatTimelineReducerTests
     }
 
     [Fact]
+    public void PendingToolOutcomes_PreserveSafeSummaryAcrossLaterUnspecifiedError()
+    {
+        var state = ChatTimelineReducer.Apply(
+            ChatTimelineState.Initial(),
+            new ChatToolPresentationEvent(
+                "parent-1",
+                "Bash",
+                ChatToolIdentityStrength.Specific,
+                ChildToolCallId: "child-1"));
+        state = ChatTimelineReducer.Apply(
+            state,
+            new ChatToolErrorEvent(
+                "Safe validation failure",
+                "child-1",
+                ErrorTextQuality: ChatToolErrorTextQuality.SafeSummary));
+        state = ChatTimelineReducer.Apply(
+            state,
+            new ChatToolErrorEvent("raw validator details", "child-1"));
+        state = ChatTimelineReducer.Apply(
+            state,
+            new ChatToolStartEvent("Tool", "Tool", ToolCallId: "parent-1"));
+
+        var entry = Assert.Single(state.Entries);
+        Assert.Equal(ChatToolCallStatus.Error, entry.ToolResult);
+        Assert.Equal("Safe validation failure", entry.ToolOutput);
+        Assert.Equal(ChatToolErrorTextQuality.SafeSummary, entry.ToolErrorTextQuality);
+    }
+
+    [Fact]
     public void ToolPresentation_LegacyUpdateAfterTurnEndDoesNotRewriteTerminalRow()
     {
         var state = ChatTimelineReducer.Apply(
@@ -963,6 +992,117 @@ public class ChatTimelineReducerTests
     }
 
     [Fact]
+    public void ToolReplayRetention_SameRunLateSuccessReplacesInterrupted()
+    {
+        var state = ChatTimelineReducer.Apply(
+            ChatTimelineState.Initial(),
+            new ChatToolStartEvent(
+                "Tool",
+                "Tool",
+                ToolCallId: "tool-1",
+                RunId: "run-1"));
+        state = ChatTimelineReducer.Apply(state, new ChatTurnEndEvent());
+
+        Assert.Equal(ChatToolCallStatus.Interrupted, Assert.Single(state.Entries).ToolResult);
+
+        state = ChatTimelineReducer.Apply(
+            state,
+            new ChatToolOutputEvent("late output", "tool-1", RunId: "run-1"));
+
+        var entry = Assert.Single(state.Entries);
+        Assert.Equal(ChatToolCallStatus.Success, entry.ToolResult);
+        Assert.Equal("late output", entry.ToolOutput);
+    }
+
+    [Fact]
+    public void ToolReplayRetention_AbortedTurnLateSuccessDoesNotReplaceInterrupted()
+    {
+        var state = ChatTimelineReducer.Apply(
+            ChatTimelineState.Initial(),
+            new ChatToolStartEvent(
+                "Tool",
+                "Tool",
+                ToolCallId: "tool-1",
+                RunId: "run-1"));
+        state = ChatTimelineReducer.Apply(
+            state,
+            new ChatTurnEndEvent(RetainToolCorrelations: false));
+
+        state = ChatTimelineReducer.Apply(
+            state,
+            new ChatToolOutputEvent(string.Empty, "tool-1", RunId: "run-1"));
+
+        Assert.Equal(ChatToolCallStatus.Interrupted, Assert.Single(state.Entries).ToolResult);
+    }
+
+    [Fact]
+    public void ToolReplayRetention_AbortPreservesPriorLegacyPendingCorrelation()
+    {
+        var state = ChatTimelineReducer.Apply(
+            ChatTimelineState.Initial(),
+            new ChatToolPresentationEvent(
+                "parent-1",
+                "Bash",
+                ChatToolIdentityStrength.Specific,
+                ChildToolCallId: "child-1",
+                ActivatesTurn: false));
+        state = ChatTimelineReducer.Apply(state, new ChatTurnEndEvent());
+        state = ChatTimelineReducer.Apply(
+            state,
+            new ChatToolStartEvent(
+                "current",
+                "Read",
+                ToolCallId: "current"));
+        state = ChatTimelineReducer.Apply(
+            state,
+            new ChatTurnEndEvent(RetainToolCorrelations: false));
+
+        Assert.Contains(
+            state.PendingToolPresentations!,
+            pair => pair.Key.ToolCallId == "parent-1");
+
+        state = ChatTimelineReducer.Apply(
+            state,
+            new ChatToolStartEvent(
+                "Tool",
+                "Tool",
+                ToolCallId: "parent-1",
+                IdentityStrength: ChatToolIdentityStrength.Fallback));
+        state = ChatTimelineReducer.Apply(
+            state,
+            new ChatToolOutputEvent("late output", "child-1"));
+
+        var parent = Assert.Single(
+            state.Entries,
+            entry => entry.ToolCallId == "parent-1");
+        Assert.Equal("Bash", parent.ToolName);
+        Assert.Equal(ChatToolCallStatus.Interrupted, parent.ToolResult);
+        Assert.Equal("late output", parent.ToolOutput);
+        Assert.False(state.TurnActive);
+    }
+
+    [Fact]
+    public void ToolReplayReset_SameRunLateSuccessDoesNotReplaceInterrupted()
+    {
+        var state = ChatTimelineReducer.Apply(
+            ChatTimelineState.Initial(),
+            new ChatToolStartEvent(
+                "Tool",
+                "Tool",
+                ToolCallId: "tool-1",
+                RunId: "run-1"));
+        state = ChatTimelineReducer.Apply(state, new ChatTurnEndEvent());
+        state = ChatTimelineReducer.Apply(state, new ChatToolReplayResetEvent());
+
+        state = ChatTimelineReducer.Apply(
+            state,
+            new ChatToolOutputEvent(string.Empty, "tool-1", RunId: "run-1"));
+
+        Assert.Equal(ChatToolCallStatus.Interrupted, Assert.Single(state.Entries).ToolResult);
+        Assert.Empty(state.TerminalToolCorrelations!);
+    }
+
+    [Fact]
     public void ToolError_RemainsCorrelatedUntilUserBoundaryAdvancesLegacyGeneration()
     {
         var state = ChatTimelineReducer.Apply(
@@ -1082,8 +1222,7 @@ public class ChatTimelineReducerTests
     // ── Failed tool followed by final assistant response (regression coverage for issue #672) ──
     // When a tool call fails and the assistant then sends a final reply, both
     // entries should be present in state, the turn should end cleanly, and the
-    // ToolCall entry should precede the Assistant entry in the insertion order
-    // (the rendering layer in OpenClawChatTimeline reorders them for display).
+    // ToolCall entry should precede the Assistant entry in insertion and display order.
 
     [Fact]
     public void ToolError_ThenFinalAssistant_ProducesToolAndAssistantEntries()
@@ -1130,10 +1269,8 @@ public class ChatTimelineReducerTests
     [Fact]
     public void ToolError_ThenFinalAssistant_ToolEntryPrecedesAssistantInState()
     {
-        // Pins the state insertion order: ToolCall is added first, then Assistant.
-        // The rendering layer (OpenClawChatTimeline) reorders ToolCall entries to
-        // appear AFTER non-ToolCall entries within a turn, so the failed tool event
-        // ends up at the visual bottom instead of the assistant reply — see #672.
+        // Pins the state insertion order that the Reactor timeline now presents directly:
+        // ToolCall is added first, then Assistant.
         var state = ChatTimelineState.Initial();
         state = ChatTimelineReducer.Apply(state, new ChatToolStartEvent("run nodes", "openclaw", ToolCallId: "tc1"));
         state = ChatTimelineReducer.Apply(state, new ChatToolErrorEvent("failed", ToolCallId: "tc1"));

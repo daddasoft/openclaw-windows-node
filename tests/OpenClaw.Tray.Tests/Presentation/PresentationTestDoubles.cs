@@ -1,5 +1,9 @@
+using OpenClaw.Connection;
+using OpenClaw.Shared;
 using OpenClawTray.Presentation;
 using OpenClawTray.Services;
+using System.Text.Json;
+using System.Threading;
 
 namespace OpenClaw.Tray.Tests.Presentation;
 
@@ -17,8 +21,16 @@ internal sealed class RecordingUiDispatcher : IUiDispatcher, IDisposable
     /// <summary>When false, enqueued actions are held until <see cref="FlushPending"/>.</summary>
     public bool RunEnqueuedImmediately { get; set; } = true;
 
+    /// <summary>When true, <see cref="TryEnqueue"/> refuses the work item (returns
+    /// false without recording/running it), simulating a dispatcher that is
+    /// shutting down.</summary>
+    public bool RejectEnqueue { get; set; }
+
     public bool TryEnqueue(Action action)
     {
+        if (RejectEnqueue)
+            return false;
+
         EnqueuedCount++;
         if (RunEnqueuedImmediately)
         {
@@ -47,30 +59,48 @@ internal sealed class RecordingUiDispatcher : IUiDispatcher, IDisposable
 
 internal sealed class FakeAppCommands : IAppCommands, IDisposable
 {
+    private readonly List<string> _operationLog = new();
+
     public List<string> Navigations { get; } = new();
+    public IReadOnlyList<string> OperationLog => _operationLog;
     public bool Disposed { get; private set; }
+    public int ReconnectCount { get; private set; }
+    public int ShowChatCount { get; private set; }
+    public int ShowOnboardingCount { get; private set; }
+    public int OpenLocalAiLogsCount { get; private set; }
+
+    public void ClearOperationLog() => _operationLog.Clear();
 
     public void OpenDashboard(string? path = null) { }
     public void Navigate(string pageTag) => Navigations.Add(pageTag);
-    public void Reconnect() { }
+    public void Reconnect() => ReconnectCount++;
     public void Disconnect() { }
     public void ShowVoiceOverlay() { }
-    public void ShowChat() { }
+    public void ShowChat() => ShowChatCount++;
     public void CheckForUpdates() { }
-    public void ShowOnboarding() { }
-    public void ShowGatewayWizard() { }
+    public void ShowOnboarding() => ShowOnboardingCount++;
+    public void ShowGatewayWizard() => ShowGatewayWizardCount++;
+    public void OpenLocalAiLogs() => OpenLocalAiLogsCount++;
     public void ShowConnectionStatus() { }
-    public void NotifySettingsSaved() => NotifySettingsSavedCount++;
-    public Task<bool> ApplyAutoStart(bool autoStart)
+    public void NotifySettingsSaved()
     {
+        NotifySettingsSavedCount++;
+        _operationLog.Add("notify");
+    }
+    public Task<bool> ApplyAutoStart(SettingsWriteOrigin origin, bool autoStart)
+    {
+        LastAutoStartOrigin = origin;
         AutoStartApplied = autoStart;
         AutoStartApplyCount++;
+        _operationLog.Add($"autostart:{autoStart}");
         return Task.FromResult(AutoStartResult);
     }
     public Task<bool> ResendOpenTelemetryProbeAsync() => Task.FromResult(true);
 
+    public SettingsWriteOrigin? LastAutoStartOrigin { get; private set; }
     public bool? AutoStartApplied { get; private set; }
     public int AutoStartApplyCount { get; private set; }
+    public int ShowGatewayWizardCount { get; private set; }
 
     /// <summary>Result returned by <see cref="ApplyAutoStart"/> so tests can simulate OS-write failure.</summary>
     public bool AutoStartResult { get; set; } = true;
@@ -79,21 +109,35 @@ internal sealed class FakeAppCommands : IAppCommands, IDisposable
     public void Dispose() => Disposed = true;
 }
 
+internal sealed class FakePermissionsPageRuntimeHost : IPermissionsPageRuntimeHost
+{
+    public event EventHandler? Changed;
+
+    public GatewayConnectionSnapshot ConnectionSnapshot { get; set; } = GatewayConnectionSnapshot.Idle;
+    public GatewayNodeInfo[] Nodes { get; set; } = Array.Empty<GatewayNodeInfo>();
+    public string? LocalNodeDeviceId { get; set; }
+    public JsonElement? GatewayConfig { get; set; }
+    public string? McpStartupError { get; set; }
+    public string McpEndpoint { get; set; } = "http://127.0.0.1:8765/mcp";
+    public bool IsMcpTokenReady { get; set; }
+    public int McpServedCapabilityCount { get; set; }
+    public PermissionsVoiceSetupRequirement VoiceSetupRequirement { get; set; }
+
+    public void RaiseChanged() => Changed?.Invoke(this, EventArgs.Empty);
+}
+
 /// <summary>
-/// App-commands double that mimics the real App-owned settings writes: it persists directly to a
-/// real <see cref="SettingsManager"/> and marks the save as a store self-write via
-/// <see cref="ISettingsStore.BeginSelfWrite"/>, so tests can prove those writes do not echo an
-/// external-change reload (unlike <see cref="FakeAppCommands"/>, which no-ops the save).
+/// App-commands double that mimics the real App-owned settings writes: it persists through the
+/// shared store with the supplied writer token so tests can prove those writes notify other
+/// listeners while the originating view model ignores its own change event.
 /// </summary>
 internal sealed class SelfWritingAppCommands : IAppCommands
 {
     private readonly ISettingsStore _store;
-    private readonly SettingsManager _settings;
 
-    public SelfWritingAppCommands(ISettingsStore store, SettingsManager settings)
+    public SelfWritingAppCommands(ISettingsStore store)
     {
         _store = store;
-        _settings = settings;
     }
 
     public void OpenDashboard(string? path = null) { }
@@ -108,13 +152,9 @@ internal sealed class SelfWritingAppCommands : IAppCommands
     public void ShowConnectionStatus() { }
     public void NotifySettingsSaved() { }
 
-    public Task<bool> ApplyAutoStart(bool autoStart)
+    public Task<bool> ApplyAutoStart(SettingsWriteOrigin origin, bool autoStart)
     {
-        _settings.AutoStart = autoStart;
-        using (_store.BeginSelfWrite())
-        {
-            _settings.Save();
-        }
+        _store.Update(origin, edit => edit.AutoStart = autoStart);
         return Task.FromResult(true);
     }
 
@@ -258,7 +298,22 @@ internal sealed class TempDir : IDisposable
     {
         if (Directory.Exists(Path))
         {
-            Directory.Delete(Path, true);
+            for (var attempt = 0; attempt < 5; attempt++)
+            {
+                try
+                {
+                    Directory.Delete(Path, true);
+                    break;
+                }
+                catch (IOException) when (attempt < 4)
+                {
+                    Thread.Sleep(50);
+                }
+                catch (UnauthorizedAccessException) when (attempt < 4)
+                {
+                    Thread.Sleep(50);
+                }
+            }
         }
     }
 }

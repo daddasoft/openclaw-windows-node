@@ -120,8 +120,12 @@ public sealed class WindowsClientMetadataTests
             var parameters = message.RootElement.GetProperty("params");
 
             Assert.True(client.UseV2Signature);
-            Assert.Equal(3, parameters.GetProperty("minProtocol").GetInt32());
-            Assert.Equal(4, parameters.GetProperty("maxProtocol").GetInt32());
+            Assert.Equal(
+                GatewayProtocolContract.MinimumSupportedVersion,
+                parameters.GetProperty("minProtocol").GetInt32());
+            Assert.Equal(
+                GatewayProtocolContract.MaximumSupportedVersion,
+                parameters.GetProperty("maxProtocol").GetInt32());
             AssertCanonicalMetadata(parameters.GetProperty("client"));
             Assert.Equal(
                 BuildExpectedSignature(client, parameters, useV2: true),
@@ -180,7 +184,7 @@ public sealed class WindowsClientMetadataTests
             "BuildNodeConnectMessage",
             BindingFlags.NonPublic | BindingFlags.Instance);
         Assert.NotNull(method);
-        return (string)method!.Invoke(client, [nonce, 0L])!;
+        return (string)method!.Invoke(client, [nonce, 0L, null])!;
     }
 
     private static void AssertCanonicalMetadata(JsonElement clientMetadata)
@@ -229,14 +233,19 @@ public sealed class WindowsClientMetadataTests
                 "SendConnectMessageAsync",
                 BindingFlags.NonPublic | BindingFlags.Instance);
             Assert.NotNull(method);
-            await (Task)method!.Invoke(this, [nonce])!;
+            await (Task)method!.Invoke(
+                this,
+                [nonce, 0L, CancellationToken.None])!;
             return Assert.Single(_messages);
         }
 
-        protected override Task SendRawAsync(string message)
+        protected override Task<bool> SendRawAsync(
+            string message,
+            long expectedConnectionGeneration,
+            CancellationToken cancellationToken)
         {
             _messages.Enqueue(message);
-            return Task.CompletedTask;
+            return Task.FromResult(true);
         }
     }
 }

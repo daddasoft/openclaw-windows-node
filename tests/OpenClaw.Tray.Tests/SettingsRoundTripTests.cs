@@ -37,7 +37,9 @@ public class SettingsRoundTripTests
             ScreenRecordingConsentGiven = true,
             CameraRecordingConsentGiven = true,
             NodeLocationEnabled = true,
+            LocationConsentGiven = true,
             NodeBrowserProxyEnabled = false,
+            NodeOllamaInferenceEnabled = true,
             NodeSttEnabled = true,
             SttLanguage = "en-GB",
             SttModelName = "tiny",
@@ -49,6 +51,10 @@ public class SettingsRoundTripTests
             TtsElevenLabsApiKey = "elevenlabs-key",
             TtsElevenLabsModel = "eleven_multilingual_v2",
             TtsElevenLabsVoiceId = "voice-123",
+            TtsMiniMaxApiKey = "minimax-key",
+            TtsMiniMaxModel = "speech-2.8-turbo",
+            TtsMiniMaxVoiceId = "voice-456",
+            TtsMiniMaxRegion = "cn_zh",
             TtsWindowsVoiceId = "Microsoft Zira Desktop",
             HubNavPaneOpen = false,
             TtsPiperVoiceId = "fr_FR-siwis-low",
@@ -64,6 +70,7 @@ public class SettingsRoundTripTests
             SystemRunSandboxEnabled = true,
             SystemRunBlockHostFallbackWhenMxcUnavailable = true,
             SystemRunAllowOutbound = true,
+            SystemRunAllowWindowsUi = true,
             UserRules = new List<UserNotificationRule>
             {
                 new() { Pattern = "build.*fail", IsRegex = true, Category = "urgent", Enabled = true }
@@ -101,7 +108,9 @@ public class SettingsRoundTripTests
         Assert.Equal(original.ScreenRecordingConsentGiven, restored.ScreenRecordingConsentGiven);
         Assert.Equal(original.CameraRecordingConsentGiven, restored.CameraRecordingConsentGiven);
         Assert.Equal(original.NodeLocationEnabled, restored.NodeLocationEnabled);
+        Assert.Equal(original.LocationConsentGiven, restored.LocationConsentGiven);
         Assert.Equal(original.NodeBrowserProxyEnabled, restored.NodeBrowserProxyEnabled);
+        Assert.Equal(original.NodeOllamaInferenceEnabled, restored.NodeOllamaInferenceEnabled);
         Assert.Equal(original.NodeSttEnabled, restored.NodeSttEnabled);
         Assert.Equal(original.SttLanguage, restored.SttLanguage);
         Assert.Equal(original.SttModelName, restored.SttModelName);
@@ -113,6 +122,10 @@ public class SettingsRoundTripTests
         Assert.Equal(original.TtsElevenLabsApiKey, restored.TtsElevenLabsApiKey);
         Assert.Equal(original.TtsElevenLabsModel, restored.TtsElevenLabsModel);
         Assert.Equal(original.TtsElevenLabsVoiceId, restored.TtsElevenLabsVoiceId);
+        Assert.Equal(original.TtsMiniMaxApiKey, restored.TtsMiniMaxApiKey);
+        Assert.Equal(original.TtsMiniMaxModel, restored.TtsMiniMaxModel);
+        Assert.Equal(original.TtsMiniMaxVoiceId, restored.TtsMiniMaxVoiceId);
+        Assert.Equal(original.TtsMiniMaxRegion, restored.TtsMiniMaxRegion);
         Assert.Equal(original.TtsWindowsVoiceId, restored.TtsWindowsVoiceId);
         Assert.Equal(original.HubNavPaneOpen, restored.HubNavPaneOpen);
         Assert.Equal(original.TtsPiperVoiceId, restored.TtsPiperVoiceId);
@@ -128,6 +141,7 @@ public class SettingsRoundTripTests
         Assert.Equal(original.SystemRunSandboxEnabled, restored.SystemRunSandboxEnabled);
         Assert.Equal(original.SystemRunBlockHostFallbackWhenMxcUnavailable, restored.SystemRunBlockHostFallbackWhenMxcUnavailable);
         Assert.Equal(original.SystemRunAllowOutbound, restored.SystemRunAllowOutbound);
+        Assert.Equal(original.SystemRunAllowWindowsUi, restored.SystemRunAllowWindowsUi);
         Assert.NotNull(restored.UserRules);
         Assert.Single(restored.UserRules);
         Assert.Equal("build.*fail", restored.UserRules[0].Pattern);
@@ -181,7 +195,9 @@ public class SettingsRoundTripTests
         Assert.False(settings.ScreenRecordingConsentGiven);
         Assert.False(settings.CameraRecordingConsentGiven);
         Assert.True(settings.NodeLocationEnabled);
+        Assert.False(settings.LocationConsentGiven);
         Assert.True(settings.NodeBrowserProxyEnabled);
+        Assert.False(settings.NodeOllamaInferenceEnabled);
         Assert.False(settings.NodeSttEnabled);
         Assert.Equal("auto", settings.SttLanguage);
         Assert.False(settings.NodeTtsEnabled);
@@ -189,6 +205,10 @@ public class SettingsRoundTripTests
         Assert.Null(settings.TtsElevenLabsApiKey);
         Assert.Null(settings.TtsElevenLabsModel);
         Assert.Null(settings.TtsElevenLabsVoiceId);
+        Assert.Null(settings.TtsMiniMaxApiKey);
+        Assert.Equal("speech-2.8-hd", settings.TtsMiniMaxModel);
+        Assert.Null(settings.TtsMiniMaxVoiceId);
+        Assert.Equal("global_en", settings.TtsMiniMaxRegion);
         Assert.False(settings.HasSeenActivityStreamTip);
         Assert.Null(settings.SkippedUpdateTag);
         Assert.True(settings.NotifyChatResponses);
@@ -201,6 +221,7 @@ public class SettingsRoundTripTests
         Assert.True(settings.SystemRunSandboxEnabled);
         Assert.False(settings.SystemRunBlockHostFallbackWhenMxcUnavailable);
         Assert.False(settings.SystemRunAllowOutbound);
+        Assert.False(settings.SystemRunAllowWindowsUi);
         // HubNavPaneOpen defaults to true (NavView starts expanded for new
         // installs and for any settings file that predates the field).
         Assert.True(settings.HubNavPaneOpen);
@@ -426,6 +447,7 @@ public class SettingsRoundTripTests
         Assert.False(settings.CameraRecordingConsentGiven);
         Assert.True(settings.NodeLocationEnabled);
         Assert.True(settings.NodeBrowserProxyEnabled);
+        Assert.False(settings.NodeOllamaInferenceEnabled);
         Assert.False(settings.NodeSttEnabled);
         Assert.Equal("auto", settings.SttLanguage);
         Assert.False(settings.NodeTtsEnabled);
@@ -433,6 +455,10 @@ public class SettingsRoundTripTests
         Assert.Null(settings.TtsElevenLabsApiKey);
         Assert.Null(settings.TtsElevenLabsModel);
         Assert.Null(settings.TtsElevenLabsVoiceId);
+        Assert.Null(settings.TtsMiniMaxApiKey);
+        Assert.Equal("speech-2.8-hd", settings.TtsMiniMaxModel);
+        Assert.Null(settings.TtsMiniMaxVoiceId);
+        Assert.Equal("global_en", settings.TtsMiniMaxRegion);
         Assert.False(settings.HasSeenActivityStreamTip);
         Assert.Null(settings.SkippedUpdateTag);
         Assert.True(settings.GlobalHotkeyEnabled);
@@ -561,24 +587,31 @@ public class SettingsRoundTripTests
         {
             var settings = new SettingsManager(dir)
             {
-                TtsElevenLabsApiKey = "elevenlabs-key"
+                TtsElevenLabsApiKey = "elevenlabs-key",
+                TtsMiniMaxApiKey = "minimax-key"
             };
 
             settings.Save();
             Assert.Equal("elevenlabs-key", settings.TtsElevenLabsApiKey);
+            Assert.Equal("minimax-key", settings.TtsMiniMaxApiKey);
 
             using (var saved = JsonDocument.Parse(File.ReadAllText(settingsPath)))
             {
                 var stored = saved.RootElement.GetProperty(nameof(SettingsData.TtsElevenLabsApiKey)).GetString();
                 Assert.StartsWith("dpapi:", stored);
                 Assert.DoesNotContain("elevenlabs-key", stored);
+                var miniMaxStored = saved.RootElement.GetProperty(nameof(SettingsData.TtsMiniMaxApiKey)).GetString();
+                Assert.StartsWith("dpapi:", miniMaxStored);
+                Assert.DoesNotContain("minimax-key", miniMaxStored);
             }
 
             settings.Save();
             Assert.Equal("elevenlabs-key", settings.TtsElevenLabsApiKey);
+            Assert.Equal("minimax-key", settings.TtsMiniMaxApiKey);
 
             var reloaded = new SettingsManager(dir);
             Assert.Equal("elevenlabs-key", reloaded.TtsElevenLabsApiKey);
+            Assert.Equal("minimax-key", reloaded.TtsMiniMaxApiKey);
         }
         finally
         {

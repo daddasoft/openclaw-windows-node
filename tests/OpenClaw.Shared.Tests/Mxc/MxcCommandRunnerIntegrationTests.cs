@@ -27,11 +27,11 @@ public class MxcCommandRunnerIntegrationTests
         }
 
         var availability = MxcAvailability.Probe(NullLogger.Instance);
-        if (!availability.HasAnyBackend)
+        if (!availability.CanRunSystemRunSandbox)
         {
             Console.WriteLine(
-                $"[mxc-integration] SKIPPING: MXC not available. Reasons: " +
-                string.Join("; ", availability.UnsupportedReasons));
+                $"[mxc-integration] SKIPPING: MXC BaseContainer not available. Reasons: " +
+                string.Join("; ", availability.SystemRunSandboxUnsupportedReasons));
             return null;
         }
 
@@ -108,9 +108,9 @@ public class MxcCommandRunnerIntegrationTests
     }
 
     [IntegrationFact]
-    public async Task SystemRun_DirectArgv_ExecutesInsideAppContainer()
+    public async Task SystemRun_DirectArgvWithWindowsUiAccess_ExecutesInsideAppContainer()
     {
-        var runner = TryBuildRunner();
+        var runner = TryBuildRunner(configure: settings => settings.SystemRunAllowWindowsUi = true);
         if (runner is null) return;
 
         var result = await runner.RunAsync(new CommandRequest

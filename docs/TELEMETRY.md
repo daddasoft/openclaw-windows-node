@@ -100,9 +100,24 @@ The tray exports gateway lifecycle diagnostics when an endpoint is configured:
 - structured state logs in the `OpenClaw.Telemetry.Connection` category
 
 Lifecycle attributes are limited to role, operation, outcome, coarse error
-category, and finite operator/node/overall states. Gateway URLs, IDs, device
-IDs, pairing request IDs, credentials, error messages, and diagnostic-ring
+category, finite operator/node/overall states, and these protocol fields:
+
+- `openclaw.protocol.client`: the current client wire protocol integer; Windows
+  currently advertises support from protocol 3 through protocol 4
+- `openclaw.protocol.gateway`: the finite relative bucket `older`, `current`,
+  `newer`, or `unknown`, relative to the advertised 3-through-4 range; this
+  bucket is not itself a compatibility verdict
+- `openclaw.protocol.compatibility`: `unknown`, `compatible`,
+  `gateway_too_old`, `gateway_too_new`, or `mismatch`
+
+Gateway package versions are not protocol values and are not exported by this
+instrumentation. Gateway URLs, IDs, device IDs, pairing request IDs,
+credentials, integrity values, error messages, raw frames, and diagnostic-ring
 text are not exported.
+
+Only an explicit protocol mismatch maps to the `protocolmismatch` error
+category. Unknown or otherwise unclassified Gateway errors map to
+`internalerror`; they are never promoted to protocol mismatch.
 
 The operator phase spans distinguish local credential/client/tunnel preparation,
 WebSocket transport establishment, and the gateway challenge/hello handshake.
@@ -110,6 +125,8 @@ The Windows node initiates its gateway connection: its prepare span includes
 credential resolution, client creation, and synchronous capability registration;
 its transport span covers the outbound WebSocket; and its handshake span covers
 the gateway's `connect.challenge`, the signed connect request, and `hello-ok`.
+`NodeConnectionCoordinator` owns this node attempt/phase instrumentation; the
+manager continues to own operator and overall state-transition instrumentation.
 
 A node attempt succeeds only after `hello-ok` yields connected and paired
 readiness. Pending approval completes the attempt as `pairing_required`; human

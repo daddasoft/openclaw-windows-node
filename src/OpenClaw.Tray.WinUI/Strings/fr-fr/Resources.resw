@@ -781,10 +781,22 @@ Utilisez l'une de ces options :
     <value>Vérification de l'état échouée</value>
   </data>
   <data name="Toast_ScreenCaptured" xml:space="preserve">
-    <value>📸 Capture d'écran effectuée</value>
+    <value>📸 Capture de l’écran en cours</value>
   </data>
   <data name="Toast_ScreenCapturedDetail" xml:space="preserve">
-    <value>L'agent OpenClaw a réalisé une capture d'écran</value>
+    <value>L’agent OpenClaw capture votre écran</value>
+  </data>
+  <data name="Toast_CameraCaptured" xml:space="preserve">
+    <value>📷 Capture d’une photo par webcam</value>
+  </data>
+  <data name="Toast_CameraCapturedDetail" xml:space="preserve">
+    <value>L’agent OpenClaw capture une photo avec votre caméra</value>
+  </data>
+  <data name="Toast_LocationRead" xml:space="preserve">
+    <value>📍 Accès à la localisation</value>
+  </data>
+  <data name="Toast_LocationReadDetail" xml:space="preserve">
+    <value>L’agent OpenClaw accède à la localisation de votre appareil</value>
   </data>
   <data name="Toast_CameraBlocked" xml:space="preserve">
     <value>📷 Accès à la caméra bloqué</value>
@@ -828,22 +840,28 @@ Utilisez l'une de ces options :
     <value>Demande d'autorisation</value>
   </data>
   <data name="RecordingConsent_ScreenTitle" xml:space="preserve">
-    <value>Autoriser l'enregistrement d'écran ?</value>
+    <value>Autoriser la capture d'écran ?</value>
   </data>
   <data name="RecordingConsent_CameraTitle" xml:space="preserve">
-    <value>Autoriser l'enregistrement de la caméra ?</value>
+    <value>Autoriser la capture par la caméra ?</value>
+  </data>
+  <data name="RecordingConsent_LocationTitle" xml:space="preserve">
+    <value>Autoriser l'accès à la localisation ?</value>
   </data>
   <data name="RecordingConsent_ScreenDescription" xml:space="preserve">
-    <value>Un agent demande d'enregistrer votre écran. Cela capturera la vidéo de votre affichage et l'enverra à l'agent. Votre choix sera mémorisé pour les prochaines demandes jusqu'à ce que vous le modifiiez dans les Paramètres.</value>
+    <value>Un agent demande l'accès à la capture de votre écran. Cela peut capturer des images ou une vidéo de votre affichage et les envoyer à l'agent. Votre choix sera mémorisé pour les prochaines demandes.</value>
   </data>
   <data name="RecordingConsent_CameraDescription" xml:space="preserve">
-    <value>Un agent demande d'enregistrer depuis votre caméra. Cela capturera la vidéo de votre webcam et l'enverra à l'agent. Votre choix sera mémorisé pour les prochaines demandes jusqu'à ce que vous le modifiiez dans les Paramètres.</value>
+    <value>Un agent demande l'accès à votre caméra. Cela peut capturer des photos ou une vidéo et les envoyer à l'agent. Votre choix sera mémorisé pour les prochaines demandes.</value>
+  </data>
+  <data name="RecordingConsent_LocationDescription" xml:space="preserve">
+    <value>Un agent demande l'accès à la localisation de votre appareil. Cela enverra votre position actuelle à l'agent. Votre choix sera mémorisé pour les prochaines demandes.</value>
   </data>
   <data name="RecordingConsent_Privacy" xml:space="preserve">
-    <value>Vous pouvez modifier cela ultérieurement dans les Paramètres.</value>
+    <value>Autorisez uniquement si vous faites confiance à l'agent et à la passerelle connectés.</value>
   </data>
   <data name="RecordingConsent_Allow" xml:space="preserve">
-    <value>Autoriser l'enregistrement</value>
+    <value>Autoriser</value>
   </data>
   <data name="RecordingConsent_Deny" xml:space="preserve">
     <value>Refuser</value>
@@ -865,7 +883,7 @@ Utilisez l'une de ces options :
     <value>Confidentialité</value>
   </data>
   <data name="SettingsPrivacyDescription.Text" xml:space="preserve">
-    <value>Pré-approuvez les fonctionnalités afin que les agents puissent les utiliser sans demander la permission à chaque fois. Un compte à rebours s'affichera toujours avant l'enregistrement.</value>
+    <value>Autorisez les captures sensibles sans nouvelle demande à chaque fois. OpenClaw vous avertit toujours avant chaque accès et affiche un compte à rebours avant les enregistrements.</value>
   </data>
   <data name="ScreenRecordingToggle.Header" xml:space="preserve">
     <value>Autoriser l'enregistrement d'écran</value>
@@ -1056,6 +1074,9 @@ Utilisez l'une de ces options :
   </data>
   <data name="Onboarding_Connection_Later" xml:space="preserve">
     <value>Configurer plus tard</value>
+  </data>
+  <data name="Onboarding_LocalAi_RecheckAvailabilityButton.Content" xml:space="preserve">
+    <value>Revérifier</value>
   </data>
   <data name="Onboarding_Ready_Title" xml:space="preserve">
     <value>Tout est prêt !</value>
@@ -1903,7 +1924,7 @@ Utilisez l'une de ces options :
     <value>Stratégie d’exécution</value>
   </data>
   <data name="PermissionsPage_TextBlock_17.Text" xml:space="preserve">
-    <value>Contrôle les exécutables que l’agent peut lancer sur ce nœud. Les règles correspondent aux chemins d’accès résolus des exécutables.</value>
+    <value>Contrôle les exécutables que l’agent peut lancer sur ce nœud. La liste d’autorisation des chemins d’exécutables est vide au départ.</value>
   </data>
   <data name="DefaultActionCombo.Header" xml:space="preserve">
     <value>Action par défaut</value>
@@ -1918,22 +1939,22 @@ Utilisez l'une de ces options :
     <value>Demander</value>
   </data>
   <data name="PermissionsPage_TextBlock_28.Text" xml:space="preserve">
-    <value>Règles</value>
+    <value>Liste d’autorisation des chemins d’exécutables</value>
   </data>
   <data name="NewRulePattern.PlaceholderText" xml:space="preserve">
-    <value>Motif de chemin d’exécutable (p. ex. **/git.exe)</value>
+    <value>Motif de chemin d’exécutable (p. ex. **/hostname.exe)</value>
+  </data>
+  <data name="PermissionsPage_ExecAllowlistPatternValidation.Text" xml:space="preserve">
+    <value>Entrez un motif de chemin d’exécutable tel que **/hostname.exe. Un nom de base ou un texte de commande tel que hostname n’est pas valide.</value>
   </data>
   <data name="PermissionsPage_ComboBoxItem_54.Content" xml:space="preserve">
     <value>Refuser</value>
-  </data>
-  <data name="PermissionsPage_ComboBoxItem_55.Content" xml:space="preserve">
-    <value>Autoriser</value>
   </data>
   <data name="PermissionsPage_ComboBoxItem_56.Content" xml:space="preserve">
     <value>Demander</value>
   </data>
   <data name="PermissionsPage_Button_57.Content" xml:space="preserve">
-    <value>Ajouter une règle</value>
+    <value>Ajouter une entrée</value>
   </data>
   <data name="PermissionsPage_TextBlock_69.Text" xml:space="preserve">
     <value>Liste d’autorisation des nœuds</value>
@@ -2559,6 +2580,9 @@ Utilisez l'une de ces options :
   <data name="VoiceSettingsPage_TtsElevenLabs.Content" xml:space="preserve">
     <value>ElevenLabs (cloud, clé API requise)</value>
   </data>
+  <data name="VoiceSettingsPage_TtsMiniMax.Content" xml:space="preserve">
+    <value>MiniMax (cloud, clé API requise)</value>
+  </data>
   <data name="VoiceSettingsPage_PiperVoiceCombo.Header" xml:space="preserve">
     <value>Voix</value>
   </data>
@@ -2592,8 +2616,32 @@ Utilisez l'une de ces options :
   <data name="VoiceSettingsPage_ElevenLabsModelBox.Header" xml:space="preserve">
     <value>Modèle (facultatif)</value>
   </data>
+  <data name="VoiceSettingsPage_MiniMaxApiKeyBox.Header" xml:space="preserve">
+    <value>Clé API</value>
+  </data>
+  <data name="VoiceSettingsPage_MiniMaxVoiceIdBox.Header" xml:space="preserve">
+    <value>ID de la voix</value>
+  </data>
+  <data name="VoiceSettingsPage_MiniMaxVoiceIdBox.PlaceholderText" xml:space="preserve">
+    <value>p. ex. male-qn-qingse</value>
+  </data>
+  <data name="VoiceSettingsPage_MiniMaxModelBox.Header" xml:space="preserve">
+    <value>Modèle</value>
+  </data>
+  <data name="VoiceSettingsPage_MiniMaxModelBox.PlaceholderText" xml:space="preserve">
+    <value>speech-2.8-hd</value>
+  </data>
+  <data name="VoiceSettingsPage_MiniMaxRegionCombo.Header" xml:space="preserve">
+    <value>Région</value>
+  </data>
+  <data name="VoiceSettingsPage_MiniMaxRegionGlobal.Content" xml:space="preserve">
+    <value>Monde</value>
+  </data>
+  <data name="VoiceSettingsPage_MiniMaxRegionChina.Content" xml:space="preserve">
+    <value>Chine</value>
+  </data>
   <data name="VoiceSettingsPage_PrivacyNote.Text" xml:space="preserve">
-    <value>Tout le traitement vocal s'exécute entièrement sur votre appareil. Aucune donnée audio n'est envoyée à un service cloud.</value>
+    <value>Piper, Windows et la reconnaissance vocale s'exécutent sur cet appareil. Les fournisseurs TTS cloud envoient le texte des réponses à leurs services pour la synthèse ; le son du microphone ne leur est pas envoyé.</value>
   </data>
   <data name="VoiceSettingsPage_StatusModelReady" xml:space="preserve">
     <value>✅ Modèle prêt</value>
@@ -2780,6 +2828,9 @@ Utilisez l'une de ces options :
   </data>
   <data name="VoiceOverlayWindow_StatusErrorOccurred" xml:space="preserve">
     <value>Une erreur s'est produite</value>
+  </data>
+  <data name="AudioPipeline_FirstAudioTimeout" xml:space="preserve">
+    <value>Aucun son n’a été reçu. Vérifiez que votre microphone est connecté et sélectionné comme périphérique d’entrée Windows, puis réessayez.</value>
   </data>
   <data name="VoiceOverlayWindow_winexWindowEx_2.Title" xml:space="preserve">
     <value>Companion Voice</value>
@@ -3337,6 +3388,12 @@ Les commandes sont bloquées tant que le sandboxing est indisponible, car le blo
   <data name="PermissionsPage_Cap_Stt_Description" xml:space="preserve">
     <value>Lets agents transcribe microphone audio locally. Download a speech model in Voice &amp; Audio settings before first use.</value>
   </data>
+  <data name="PermissionsPage_Cap_Ollama_Label" xml:space="preserve">
+    <value>Share Windows Ollama</value>
+  </data>
+  <data name="PermissionsPage_Cap_Ollama_Description" xml:space="preserve">
+    <value>Let agents connected through the active local or remote gateway use Ollama models running separately on this PC. This does not change the app-managed Local AI gateway provider.</value>
+  </data>
   <data name="PermissionsPage_Cap_SystemRun_Label" xml:space="preserve">
     <value>System tools</value>
   </data>
@@ -3392,13 +3449,13 @@ Les commandes sont bloquées tant que le sandboxing est indisponible, car le blo
     <value>URL copied to clipboard</value>
   </data>
   <data name="PermissionsPage_RulesCount_None" xml:space="preserve">
-    <value>No rules</value>
+    <value>Aucune entrée</value>
   </data>
   <data name="PermissionsPage_RulesCount_One" xml:space="preserve">
-    <value>1 rule</value>
+    <value>1 entrée</value>
   </data>
   <data name="PermissionsPage_RulesCount_ManyFormat" xml:space="preserve">
-    <value>{0} rules</value>
+    <value>{0} entrées</value>
   </data>
   <data name="PermissionsPage_Allowlist_NoConfig" xml:space="preserve">
     <value>No allowlist data available. Connect to a gateway first.</value>
@@ -3725,10 +3782,13 @@ Les commandes sont bloquées tant que le sandboxing est indisponible, car le blo
     <value>Son</value>
   </data>
   <data name="SettingsRow_ScreenRec_Header.Text" xml:space="preserve">
-    <value>Autoriser l’enregistrement de l’écran</value>
+    <value>Autoriser la capture de l’écran</value>
   </data>
   <data name="SettingsRow_CamRec_Header.Text" xml:space="preserve">
-    <value>Autoriser l’enregistrement de la caméra</value>
+    <value>Autoriser la capture par la caméra</value>
+  </data>
+  <data name="SettingsRow_Location_Header.Text" xml:space="preserve">
+    <value>Autoriser l’accès à la localisation</value>
   </data>
   <data name="HubWindow_NavigationViewItem_Voice.Content" xml:space="preserve">
     <value>Voix et audio</value>
@@ -3978,6 +4038,9 @@ Les commandes sont bloquées tant que le sandboxing est indisponible, car le blo
   </data>
   <data name="SettingsRow_CamRec_Description.Text" xml:space="preserve">
     <value>Lets agents capture the camera via camera.* commands.</value>
+  </data>
+  <data name="SettingsRow_Location_Description.Text" xml:space="preserve">
+    <value>Permet aux agents de lire la localisation de l’appareil via les commandes location.*.</value>
   </data>
   <data name="VoiceSettingsPage_ElevenLabsVoiceIdBox.PlaceholderText" xml:space="preserve">
     <value>e.g. 21m00Tcm4TlvDq8ikWAM</value>
@@ -4451,19 +4514,19 @@ Les commandes sont bloquées tant que le sandboxing est indisponible, car le blo
     <value>Action par défaut</value>
   </data>
   <data name="PermissionsPage_WhatHappensWhenA.Text" xml:space="preserve">
-    <value>Ce qui se passe lorsqu'une commande ne correspond à aucune règle ci-dessous.</value>
+    <value>Ce qui se passe lorsqu’une commande ne correspond pas à la liste d’autorisation des chemins d’exécutables ci-dessous.</value>
   </data>
   <data name="PermissionsPage_PatternsAreMatchedLeft.Text" xml:space="preserve">
-    <value>Les motifs de liste d’autorisation correspondent aux chemins d’accès résolus des exécutables. Utilisez des caractères génériques tels que **/git.exe. Les modifications sont enregistrées automatiquement.</value>
+    <value>Toujours autoriser crée une entrée liée aux arguments pour une commande .exe native admissible. Les entrées ajoutées ici sont basées uniquement sur le chemin et peuvent autoriser les exécutables correspondants avec n’importe quels arguments. Refuser et Demander restent contrôlés par Action par défaut. Les modifications sont enregistrées automatiquement.</value>
   </data>
   <data name="PermissionsPage_Saved.Text" xml:space="preserve">
     <value>Enregistré</value>
   </data>
   <data name="PermissionsPage_0Rules.Text" xml:space="preserve">
-    <value>0 règle</value>
+    <value>0 entrée</value>
   </data>
   <data name="PermissionsPage_NoRulesYetAdd.Text" xml:space="preserve">
-    <value>Aucune règle pour l'instant. Ajoutez un motif ci-dessous pour refuser, autoriser ou demander pour des commandes spécifiques.</value>
+    <value>Aucune entrée dans la liste d’autorisation des chemins d’exécutables. Approuvez une commande .exe native admissible avec Toujours autoriser, ou ajoutez un motif basé uniquement sur le chemin tel que **/hostname.exe.</value>
   </data>
   <data name="PermissionsPage_WindowsPrivacy.Text" xml:space="preserve">
     <value>Confidentialité Windows</value>
@@ -4626,6 +4689,42 @@ Les commandes sont bloquées tant que le sandboxing est indisponible, car le blo
   </data>
   <data name="SandboxPage_LocalNetworkDevicesAnd.Text" xml:space="preserve">
     <value>Les périphériques et partages réseau locaux ne sont pas encore inclus.</value>
+  </data>
+  <data name="SandboxPage_CommandCompatibility.Text" xml:space="preserve">
+    <value>🪟 Compatibilité des commandes</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUi.Header" xml:space="preserve">
+    <value>Autoriser les API d’interface Windows</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUi.OffContent" xml:space="preserve">
+    <value>Désactivé : bloque les appels système Win32k</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUi.OnContent" xml:space="preserve">
+    <value>Activé : PowerShell et les outils similaires peuvent démarrer</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUi.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Autoriser les API d’interface Windows pour les commandes en bac à sable</value>
+  </data>
+  <data name="SandboxPage_WindowsUiCompatibilityDescription.Text" xml:space="preserve">
+    <value>PowerShell (toutes les versions) et certains outils de console utilisent les API d’interface Windows au démarrage. Ce paramètre ne fournit pas d’inventaire pris en charge de tous les processus hôtes.</value>
+  </data>
+  <data name="SandboxPage_WindowsUiWarning.Title" xml:space="preserve">
+    <value>Limite Win32k désactivée</value>
+  </data>
+  <data name="SandboxPage_WindowsUiWarning.Message" xml:space="preserve">
+    <value>Les contrôles des fichiers, du réseau, du presse-papiers, du délai d’expiration et de l’approbation des commandes restent actifs. Les appels système Win32k sont autorisés ; la stratégie du presse-papiers et l’interdiction de l’injection d’entrée restent appliquées.</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUiDialogTitle" xml:space="preserve">
+    <value>Autoriser les API d’interface Windows ?</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUiDialogContent" xml:space="preserve">
+    <value>Cette option permet aux commandes en bac à sable d’utiliser les appels système de l’interface Windows. PowerShell (toutes les versions) et certains outils de console en ont besoin pour démarrer avec les versions actuelles de MXC. Ce paramètre n’accorde pas d’inventaire pris en charge de tous les processus hôtes : l’énumération CIM/WMI de l’hôte n’est pas prise en charge et a été observée en échec, tasklist peut échouer ou expirer et la sortie de Get-Process ne doit pas être considérée comme un inventaire complet ni comme une limite de confidentialité des métadonnées de processus.&#xA;&#xA;Les contrôles des fichiers, du réseau, du presse-papiers, du délai d’expiration et de l’approbation des commandes restent actifs, mais le blocage des appels système Win32k sera désactivé. La stratégie du presse-papiers et l’interdiction de l’injection d’entrée restent appliquées. Activez cette option uniquement si vous avez besoin d’une compatibilité de commande plus large.</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUiDialogPrimary" xml:space="preserve">
+    <value>Autoriser les API d’interface</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUiDialogCancel" xml:space="preserve">
+    <value>Annuler</value>
   </data>
   <data name="SandboxPage_Limits.Text" xml:space="preserve">
     <value>⏱ Limites</value>
@@ -6855,9 +6954,6 @@ Le binaire wxc-exec est introuvable. {1} S'il s'agit d'une build développeur, c
   <data name="SettingsPage_GatewayInfoLabel_Uptime.Text" xml:space="preserve">
     <value>Uptime</value>
   </data>
-  <data name="PermissionsPage_NewRuleAction.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Action de la règle</value>
-  </data>
   <data name="SandboxPage_UnavailablePrimaryButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Action du bac à sable</value>
   </data>
@@ -6912,4 +7008,106 @@ Le binaire wxc-exec est introuvable. {1} S'il s'agit d'une build développeur, c
   <data name="SessionsPage_LastRunStopped" xml:space="preserve">
     <value>Dernière exécution arrêtée</value>
   </data>
+  <data name="ConnectionPage_ProtocolGatewayUpdateRequired" xml:space="preserve">
+    <value>Mise à jour de la Gateway requise</value>
+  </data>
+  <data name="ConnectionPage_ProtocolGatewayUpdateDetail" xml:space="preserve">
+    <value>Cette Gateway utilise le protocole v{0}. Cette application Windows prend en charge les protocoles v{1} à v{2}. Le protocole actuel de l’application est v{3}. Mettez à jour la Gateway pour continuer.</value>
+  </data>
+  <data name="ConnectionPage_ProtocolWindowsUpdateRequired" xml:space="preserve">
+    <value>Mise à jour de l’application Windows requise</value>
+  </data>
+  <data name="ConnectionPage_ProtocolWindowsUpdateDetail" xml:space="preserve">
+    <value>Cette Gateway nécessite le protocole v{0}. Cette application Windows prend en charge les protocoles v{1} à v{2}. Son protocole actuel est v{3}. Mettez à jour l’application Windows pour continuer.</value>
+  </data>
+  <data name="ConnectionPage_ProtocolUnknownMismatch" xml:space="preserve">
+    <value>Version de Gateway non prise en charge</value>
+  </data>
+  <data name="Chat_AssistantMedia_Preparing" xml:space="preserve"><value>Préparation du média</value></data>
+  <data name="Chat_AssistantMedia_Unavailable" xml:space="preserve"><value>Média indisponible</value></data>
+  <data name="Chat_AssistantMedia_Retry" xml:space="preserve"><value>Réessayer</value></data>
+  <data name="Chat_AssistantMedia_Image" xml:space="preserve"><value>Illustration</value></data>
+  <data name="Chat_AssistantMedia_Audio" xml:space="preserve"><value>Son</value></data>
+  <data name="Chat_AssistantMedia_Video" xml:space="preserve"><value>Vidéo</value></data>
+  <data name="Chat_AssistantMedia_File" xml:space="preserve"><value>Fichier</value></data>
+  <data name="Chat_AssistantMedia_Media" xml:space="preserve"><value>Média</value></data>
+  <data name="Chat_AssistantMedia_ImagesOmitted" xml:space="preserve"><value>{0} images supplémentaires non affichées</value></data>
+  <data name="Chat_AssistantMedia_MediaAttachment" xml:space="preserve"><value>Pièce jointe multimédia</value></data>
+  <data name="Chat_AssistantMedia_OpenImage" xml:space="preserve"><value>Ouvrir l’image {0}</value></data>
+  <data name="Chat_AssistantMedia_Close" xml:space="preserve"><value>Fermer</value></data>
+  <data name="HubWindow_NavigationViewItem_LocalAi.Content" xml:space="preserve"><value>IA locale</value></data>
+  <data name="LocalAiPage_Title.Text" xml:space="preserve"><value>IA locale</value></data>
+  <data name="LocalAiPage_Intro.Text" xml:space="preserve"><value>Exécutez le llama-server natif vérifié en privé sur cet ordinateur. Les modèles ne sont chargés qu'à la demande.</value></data>
+  <data name="LocalAiPage_UnavailableInfoBar.Title" xml:space="preserve"><value>L'IA locale n'est pas disponible</value></data>
+  <data name="LocalAiPage_UnavailableDetailsButton.Content" xml:space="preserve"><value>Voir pourquoi</value></data>
+  <data name="LocalAiPage_UnavailableDetailsTip.Title" xml:space="preserve"><value>Pourquoi l'IA locale n'est pas disponible</value></data>
+  <data name="LocalAiPage_RecheckAvailabilityButton.Content" xml:space="preserve"><value>Revérifier</value></data>
+  <data name="LocalAiPage_UnavailableRequirementsMessage" xml:space="preserve"><value>Cet appareil ne répond pas à une ou plusieurs exigences de l'IA locale.</value></data>
+  <data name="LocalAiPage_UnavailableProbeMessage" xml:space="preserve"><value>OpenClaw n'a pas pu vérifier les exigences de l'IA locale pour le moment. Vérifiez la disponibilité du pilote NVIDIA puis réessayez.</value></data>
+  <data name="LocalAiPage_EngineHeading.Text" xml:space="preserve"><value>llama-server</value></data>
+  <data name="LocalAiPage_VersionLabel.Text" xml:space="preserve"><value>Version du moteur</value></data>
+  <data name="LocalAiPage_EndpointLabel.Text" xml:space="preserve"><value>Point de terminaison</value></data>
+  <data name="LocalAiPage_ProcessLabel.Text" xml:space="preserve"><value>Processus</value></data>
+  <data name="LocalAiPage_StartButton.Content" xml:space="preserve"><value>Démarrer le routeur</value></data>
+  <data name="LocalAiPage_StopButton.Content" xml:space="preserve"><value>Arrêter</value></data>
+  <data name="LocalAiPage_RestartButton.Content" xml:space="preserve"><value>Redémarrer</value></data>
+  <data name="LocalAiPage_OpenLogsButton.Content" xml:space="preserve"><value>Ouvrir les journaux</value></data>
+  <data name="LocalAiPage_ModelHeading.Text" xml:space="preserve"><value>Modèle</value></data>
+  <data name="LocalAiPage_RetrySetupButton.Content" xml:space="preserve"><value>Réessayer la configuration ou le téléchargement</value></data>
+  <data name="LocalAiPage_ChangeModelDescription.Text" xml:space="preserve"><value>Ouvre la configuration pour choisir un autre modèle. Le remplacement de la passerelle locale existante nécessite toujours une confirmation.</value></data>
+  <data name="LocalAiPage_ChangeModelButton.Content" xml:space="preserve"><value>Changer de modèle</value></data>
+  <data name="LocalAiPage_GatewayHeading.Text" xml:space="preserve"><value>Connexion à la passerelle</value></data>
+  <data name="LocalAiPage_RepairConnectionButton.Content" xml:space="preserve"><value>Réparer la connexion</value></data>
+  <data name="LocalAiPage_OpenChatButton.Content" xml:space="preserve"><value>Ouvrir la discussion</value></data>
+  <data name="LocalAiPage_Engine_Running" xml:space="preserve"><value>En cours d'exécution</value></data>
+  <data name="LocalAiPage_Engine_Starting" xml:space="preserve"><value>Démarrage</value></data>
+  <data name="LocalAiPage_Engine_Stopped" xml:space="preserve"><value>Arrêté</value></data>
+  <data name="LocalAiPage_Engine_Error" xml:space="preserve"><value>Erreur</value></data>
+  <data name="LocalAiPage_Engine_Managed" xml:space="preserve"><value>Géré par OpenClaw</value></data>
+  <data name="LocalAiPage_Engine_NotInstalled" xml:space="preserve"><value>Non installé</value></data>
+  <data name="LocalAiPage_Model_NotInstalled" xml:space="preserve"><value>Non installé</value></data>
+  <data name="LocalAiPage_Model_Unknown" xml:space="preserve"><value>Inconnu</value></data>
+  <data name="LocalAiPage_Model_Verified" xml:space="preserve"><value>Téléchargé et vérifié</value></data>
+  <data name="LocalAiPage_Model_Loaded" xml:space="preserve"><value>Chargé sur le GPU</value></data>
+  <data name="LocalAiPage_Gateway_Connected" xml:space="preserve"><value>Connecté</value></data>
+  <data name="LocalAiPage_Gateway_Connecting" xml:space="preserve"><value>Connexion</value></data>
+  <data name="LocalAiPage_Gateway_NeedsAttention" xml:space="preserve"><value>Attention requise</value></data>
+  <data name="LocalAiPage_Gateway_Error" xml:space="preserve"><value>Erreur de connexion</value></data>
+  <data name="LocalAiPage_Gateway_Disconnected" xml:space="preserve"><value>Déconnecté</value></data>
+  <data name="LocalAiPage_Value_Unknown" xml:space="preserve"><value>Inconnu</value></data>
+  <data name="LocalAiPage_Process_NotRunning" xml:space="preserve"><value>Non actif</value></data>
+  <data name="LocalAiPage_ModelRecipeFormat" xml:space="preserve"><value>Contexte {0} · KV {1} · Chargement à la première demande</value></data>
+  <data name="Command_GoToLocalAi_Title" xml:space="preserve"><value>Accéder à l'IA locale</value></data>
+  <data name="Command_GoToLocalAi_Subtitle" xml:space="preserve"><value>Afficher l'état de llama-server, du modèle et de la passerelle</value></data>
+  <data name="Onboarding_LocalAi_UnavailableDetailsButton.Content" xml:space="preserve"><value>Voir pourquoi</value></data>
+  <data name="Onboarding_LocalAi_CheckingTitle" xml:space="preserve"><value>Vérification des exigences de l'IA locale</value></data>
+  <data name="Onboarding_LocalAi_CheckingMessage" xml:space="preserve"><value>OpenClaw vérifie le GPU NVIDIA, le pilote, CUDA, la mémoire et les exigences WSL.</value></data>
+  <data name="Onboarding_LocalAi_CheckingHelpText" xml:space="preserve"><value>OpenClaw vérifie les exigences de l'IA locale.</value></data>
+  <data name="Onboarding_LocalAi_ProbeUnknownTitle" xml:space="preserve"><value>La disponibilité de l'IA locale n'a pas pu être vérifiée</value></data>
+  <data name="Onboarding_LocalAi_ProbeUnknownMessage" xml:space="preserve"><value>OpenClaw n'a pas pu vérifier les exigences de l'IA locale pour le moment. Vérifiez la disponibilité du pilote NVIDIA puis réessayez.</value></data>
+  <data name="Onboarding_LocalAi_ProbeUnknownHelpText" xml:space="preserve"><value>OpenClaw n'a pas pu vérifier les exigences de l'IA locale. Revérifiez la disponibilité pour réessayer.</value></data>
+  <data name="Onboarding_LocalAi_UnavailableTitle" xml:space="preserve"><value>L'IA locale n'est pas disponible</value></data>
+  <data name="Onboarding_LocalAi_UnavailableMessage" xml:space="preserve"><value>Cet ordinateur ne répond pas à une ou plusieurs exigences de l'IA locale.</value></data>
+  <data name="Onboarding_LocalAi_UnavailableHelpText" xml:space="preserve"><value>Non disponible car cet ordinateur ne répond pas aux exigences de l'IA locale.</value></data>
+  <data name="Onboarding_LocalAi_ProbeFailureReason" xml:space="preserve"><value>OpenClaw n'a pas pu lire les informations du GPU NVIDIA, du pilote, de CUDA ou de la mémoire. Vérifiez la disponibilité du pilote NVIDIA, puis revérifiez les exigences de l'IA locale.</value></data>
+  <data name="Onboarding_LocalAi_UnavailableDetailsDialogTitle" xml:space="preserve"><value>Pourquoi l'IA locale n'est pas disponible</value></data>
+  <data name="Onboarding_LocalAi_UnavailableDetailsDialogClose" xml:space="preserve"><value>Fermer</value></data>
+  <data name="LocalAi_Reason_RuntimeUnavailable" xml:space="preserve"><value>Cette version de l'IA locale n'inclut pas de runtime llama-server natif pour l'architecture Windows détectée.</value></data>
+  <data name="LocalAi_Reason_NoNvidiaGpu" xml:space="preserve"><value>Aucun GPU NVIDIA n'a été signalé par le pilote NVIDIA. Installez ou réparez le pilote NVIDIA, puis réessayez la configuration.</value></data>
+  <data name="LocalAi_Reason_UnknownModel" xml:space="preserve"><value>Le modèle sélectionné n'est pas disponible dans cette version de l'IA locale.</value></data>
+  <data name="LocalAi_Reason_HardwareFactsIncomplete" xml:space="preserve"><value>OpenClaw n'a pas pu lire un identifiant GPU NVIDIA stable, la mémoire, le pilote ou la capacité CUDA.</value></data>
+  <data name="LocalAi_Reason_InsufficientGpuMemory" xml:space="preserve"><value>{0} nécessite {1} de mémoire GPU pour les poids du modèle, le cache KV et l'espace de travail d'exécution. OpenClaw a détecté {2}.</value></data>
+  <data name="LocalAi_Reason_DriverTooOld" xml:space="preserve"><value>Le pilote NVIDIA {0} a été détecté. L'IA locale nécessite la version {1} ou ultérieure.</value></data>
+  <data name="LocalAi_Reason_CudaCapabilityTooLow" xml:space="preserve"><value>Le pilote NVIDIA ne prend pas en charge CUDA 13. Un CUDA Toolkit séparé n'est pas requis.</value></data>
+  <data name="LocalAi_Reason_Generic" xml:space="preserve"><value>OpenClaw n'a pas pu vérifier les exigences de l'IA locale sur ce système.</value></data>
+  <data name="LocalAi_Reason_UnknownModelName" xml:space="preserve"><value>Le modèle sélectionné</value></data>
+  <data name="LocalAi_Reason_UnknownDriverVersion" xml:space="preserve"><value>inconnu</value></data>
+  <data name="LocalAi_Reason_UnknownMemoryAmount" xml:space="preserve"><value>une quantité inconnue</value></data>
+  <data name="LocalAi_Reason_GigabytesFormat" xml:space="preserve"><value>{0:0.#} GiB</value></data>
+  <data name="Onboarding_Welcome_LocalAiAvailableBadge.Text" xml:space="preserve"><value>IA locale prise en charge</value></data>
+  <data name="Onboarding_Welcome_LocalAiAvailabilityDetail" xml:space="preserve"><value>Votre {0} peut exécuter l’IA locale sur ce PC.</value></data>
+  <data name="Onboarding_LocalAi_WslConfigReadFailureReason" xml:space="preserve"><value>OpenClaw ne peut pas lire le fichier .wslconfig global en toute sécurité. Vérifiez que le fichier est valide et lisible, puis réessayez la configuration.</value></data>
+  <data name="LocalAiPage_UnavailableProbeTitle" xml:space="preserve"><value>La disponibilité de l'IA locale n'a pas pu être vérifiée</value></data>
+  <data name="LocalAiPage_CheckingTitle" xml:space="preserve"><value>Vérification de la disponibilité de l'IA locale</value></data>
+  <data name="LocalAiPage_CheckingMessage" xml:space="preserve"><value>OpenClaw vérifie si cet appareil peut exécuter l'IA locale. Cela ne prend qu'un instant.</value></data>
 </root>

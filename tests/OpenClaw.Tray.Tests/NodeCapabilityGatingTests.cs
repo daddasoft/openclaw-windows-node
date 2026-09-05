@@ -86,6 +86,18 @@ public sealed class NodeCapabilityGatingTests : IDisposable
         Assert.False(NodeCapabilityGating.ShouldRegisterBrowserProxy(s, sharedGatewayToken: "   ", hasGatewayClient: true));
         Assert.False(NodeCapabilityGating.ShouldRegisterBrowserProxy(s, sharedGatewayToken: "shared-token", hasGatewayClient: false));
         Assert.True(NodeCapabilityGating.ShouldRegisterBrowserProxy(s, sharedGatewayToken: "shared-token", hasGatewayClient: true));
+        Assert.False(NodeCapabilityGating.ShouldRegisterBrowserProxy(
+            s,
+            sharedGatewayToken: "shared-token",
+            hasGatewayClient: true,
+            browserEndpointVerified: false));
+        Assert.Equal(
+            BrowserProxyActivation.RegistrationBlock.UnverifiedBrowserEndpoint,
+            NodeCapabilityGating.ResolveBrowserProxyRegistrationBlock(
+                s,
+                sharedGatewayToken: "shared-token",
+                hasGatewayClient: true,
+                browserEndpointVerified: false));
     }
 
     [Fact]
@@ -145,6 +157,23 @@ public sealed class NodeCapabilityGatingTests : IDisposable
         s.NodeSttEnabled = true;
         Assert.False(NodeCapabilityGating.ShouldRegisterTts(s));
         Assert.True(NodeCapabilityGating.ShouldRegisterStt(s));
+    }
+
+    [Fact]
+    public void Ollama_OnlyAdvertisedWhenExplicitlyEnabled()
+    {
+        var s = NewSettings();
+        Assert.False(NodeCapabilityGating.ShouldRegisterOllama(s));
+        s.NodeOllamaInferenceEnabled = true;
+        Assert.True(NodeCapabilityGating.ShouldRegisterOllama(s));
+        s.NodeOllamaInferenceEnabled = false;
+        Assert.False(NodeCapabilityGating.ShouldRegisterOllama(s));
+    }
+
+    [Fact]
+    public void Ollama_NullSettings_IsFalse()
+    {
+        Assert.False(NodeCapabilityGating.ShouldRegisterOllama(null));
     }
 
     [Fact]
@@ -213,6 +242,51 @@ public sealed class NodeCapabilityGatingTests : IDisposable
         s.NodeTtsEnabled = true;
         s.NodeSttEnabled = true;
         Assert.Equal(baseline + 2, NodeCapabilityGating.CountMcpServedCapabilities(s));
+    }
+
+    [Fact]
+    public void CountMcpServed_OllamaOptIn_IncrementsCount()
+    {
+        var s = NewSettings();
+        var baseline = NodeCapabilityGating.CountMcpServedCapabilities(s);
+        s.NodeOllamaInferenceEnabled = true;
+        Assert.Equal(baseline + 1, NodeCapabilityGating.CountMcpServedCapabilities(s));
+        s.NodeOllamaInferenceEnabled = false;
+        Assert.Equal(baseline, NodeCapabilityGating.CountMcpServedCapabilities(s));
+    }
+
+    [Fact]
+    public void McpOnlyRestart_CameraDisabledWhileStoppedUsesFreshCompleteSet()
+    {
+        var s = NewSettings();
+        Assert.True(NodeCapabilityGating.ShouldRegisterCamera(s));
+        Assert.Equal(6, NodeCapabilityGating.CountMcpServedCapabilities(s));
+
+        s.NodeCameraEnabled = false;
+        var plan = McpRuntimeStatePolicy.PlanCapabilityEnable(
+            hasGatewayClient: false,
+            hasCapabilities: true);
+
+        Assert.Equal(McpCapabilityEnablePlan.RebuildFromCurrentSettings, plan);
+        Assert.False(NodeCapabilityGating.ShouldRegisterCamera(s));
+        Assert.Equal(5, NodeCapabilityGating.CountMcpServedCapabilities(s));
+    }
+
+    [Fact]
+    public void McpOnlyRestart_CameraRestoredWhileStoppedUsesFreshCompleteSet()
+    {
+        var s = NewSettings();
+        s.NodeCameraEnabled = false;
+        Assert.Equal(5, NodeCapabilityGating.CountMcpServedCapabilities(s));
+
+        s.NodeCameraEnabled = true;
+        var plan = McpRuntimeStatePolicy.PlanCapabilityEnable(
+            hasGatewayClient: false,
+            hasCapabilities: true);
+
+        Assert.Equal(McpCapabilityEnablePlan.RebuildFromCurrentSettings, plan);
+        Assert.True(NodeCapabilityGating.ShouldRegisterCamera(s));
+        Assert.Equal(6, NodeCapabilityGating.CountMcpServedCapabilities(s));
     }
 
     // ── GetLocalNodeCapabilities ──────────────────────────────────────────────

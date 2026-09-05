@@ -106,6 +106,9 @@ public class SettingsManager
     public bool ScreenRecordingConsentGiven { get => _data.ScreenRecordingConsentGiven; set => _data = _data with { ScreenRecordingConsentGiven = value }; }
     public bool CameraRecordingConsentGiven { get => _data.CameraRecordingConsentGiven; set => _data = _data with { CameraRecordingConsentGiven = value }; }
     public bool NodeLocationEnabled { get => _data.NodeLocationEnabled; set => _data = _data with { NodeLocationEnabled = value }; }
+    public bool LocationConsentGiven { get => _data.LocationConsentGiven; set => _data = _data with { LocationConsentGiven = value }; }
+    /// <summary>Fail-closed timeout (ms) for an unanswered capture consent prompt. See <see cref="SettingsData.CaptureConsentTimeoutMs"/>.</summary>
+    public int CaptureConsentTimeoutMs { get => _data.CaptureConsentTimeoutMs; set => _data = _data with { CaptureConsentTimeoutMs = value }; }
     public bool NodeBrowserProxyEnabled { get => _data.NodeBrowserProxyEnabled; set => _data = _data with { NodeBrowserProxyEnabled = value }; }
     /// <summary>
     /// Master switch for the <c>system.run</c> / <c>system.run.prepare</c>
@@ -128,10 +131,21 @@ public class SettingsManager
     /// <summary>Play audio feedback chimes on listen start/stop.</summary>
     public bool VoiceAudioFeedback { get => _data.VoiceAudioFeedback; set => _data = _data with { VoiceAudioFeedback = value }; }
     public bool NodeTtsEnabled { get => _data.NodeTtsEnabled; set => _data = _data with { NodeTtsEnabled = value }; }
+    /// <summary>
+    /// Opt-in: lets any paired active gateway (local or remote) invoke the
+    /// separately installed Windows Ollama service through this node's
+    /// <c>local-inference</c> capability. Default <c>false</c>. Distinct
+    /// from, and does not change, the app-managed Local AI gateway provider.
+    /// </summary>
+    public bool NodeOllamaInferenceEnabled { get => _data.NodeOllamaInferenceEnabled; set => _data = _data with { NodeOllamaInferenceEnabled = value }; }
     public string TtsProvider { get => string.IsNullOrWhiteSpace(_data.TtsProvider) ? TtsCapability.PiperProvider : _data.TtsProvider; set => _data = _data with { TtsProvider = value }; }
     public string TtsElevenLabsApiKey { get => _data.TtsElevenLabsApiKey ?? ""; set => _data = _data with { TtsElevenLabsApiKey = value }; }
     public string TtsElevenLabsModel { get => _data.TtsElevenLabsModel ?? ""; set => _data = _data with { TtsElevenLabsModel = value }; }
     public string TtsElevenLabsVoiceId { get => _data.TtsElevenLabsVoiceId ?? ""; set => _data = _data with { TtsElevenLabsVoiceId = value }; }
+    public string TtsMiniMaxApiKey { get => _data.TtsMiniMaxApiKey ?? ""; set => _data = _data with { TtsMiniMaxApiKey = value }; }
+    public string TtsMiniMaxModel { get => string.IsNullOrWhiteSpace(_data.TtsMiniMaxModel) ? MiniMaxTextToSpeechClient.DefaultModel : _data.TtsMiniMaxModel; set => _data = _data with { TtsMiniMaxModel = value }; }
+    public string TtsMiniMaxVoiceId { get => _data.TtsMiniMaxVoiceId ?? ""; set => _data = _data with { TtsMiniMaxVoiceId = value }; }
+    public string TtsMiniMaxRegion { get => string.IsNullOrWhiteSpace(_data.TtsMiniMaxRegion) ? MiniMaxTextToSpeechClient.GlobalRegion : _data.TtsMiniMaxRegion; set => _data = _data with { TtsMiniMaxRegion = value }; }
     public string TtsWindowsVoiceId { get => _data.TtsWindowsVoiceId ?? ""; set => _data = _data with { TtsWindowsVoiceId = value }; }
     /// <summary>Hub NavigationView pane expanded (true) vs compact (false). Default true.</summary>
     public bool HubNavPaneOpen { get => _data.HubNavPaneOpen; set => _data = _data with { HubNavPaneOpen = value }; }
@@ -163,6 +177,8 @@ public class SettingsManager
     public bool SystemRunBlockHostFallbackWhenMxcUnavailable { get => _data.SystemRunBlockHostFallbackWhenMxcUnavailable; set => _data = _data with { SystemRunBlockHostFallbackWhenMxcUnavailable = value }; }
     /// <summary>When sandboxed, allow system.run commands to reach the public internet. Default false.</summary>
     public bool SystemRunAllowOutbound { get => _data.SystemRunAllowOutbound; set => _data = _data with { SystemRunAllowOutbound = value }; }
+    /// <summary>When sandboxed, allow Windows UI system calls required by PowerShell and some console utilities. Default false.</summary>
+    public bool SystemRunAllowWindowsUi { get => _data.SystemRunAllowWindowsUi; set => _data = _data with { SystemRunAllowWindowsUi = value }; }
     // ── MXC sandbox: additional knobs (Sandbox page) ─────────────────
     public SandboxClipboardMode SandboxClipboard { get => _data.SandboxClipboard; set => _data = _data with { SandboxClipboard = value }; }
     public SandboxFolderAccess? SandboxDocumentsAccess { get => _data.SandboxDocumentsAccess; set => _data = _data with { SandboxDocumentsAccess = value }; }
@@ -260,6 +276,7 @@ public class SettingsManager
         ScreenRecordingConsentGiven = false,
         CameraRecordingConsentGiven = false,
         NodeLocationEnabled = true,
+        LocationConsentGiven = false,
         NodeBrowserProxyEnabled = true,
         NodeSystemRunEnabled = true,
         NodeSttEnabled = false,
@@ -269,10 +286,15 @@ public class SettingsManager
         VoiceTtsEnabled = true,
         VoiceAudioFeedback = true,
         NodeTtsEnabled = false,
+        NodeOllamaInferenceEnabled = false,
         TtsProvider = TtsCapability.PiperProvider,
         TtsElevenLabsApiKey = "",
         TtsElevenLabsModel = "",
         TtsElevenLabsVoiceId = "",
+        TtsMiniMaxApiKey = "",
+        TtsMiniMaxModel = MiniMaxTextToSpeechClient.DefaultModel,
+        TtsMiniMaxVoiceId = "",
+        TtsMiniMaxRegion = MiniMaxTextToSpeechClient.GlobalRegion,
         TtsWindowsVoiceId = "",
         HubNavPaneOpen = true,
         TtsPiperVoiceId = "en_US-amy-low",
@@ -284,6 +306,7 @@ public class SettingsManager
         SystemRunSandboxEnabled = true,
         SystemRunBlockHostFallbackWhenMxcUnavailable = false,
         SystemRunAllowOutbound = false,
+        SystemRunAllowWindowsUi = false,
         SandboxClipboard = SandboxClipboardMode.None,
         SandboxDocumentsAccess = null,
         SandboxDownloadsAccess = null,
@@ -313,6 +336,10 @@ public class SettingsManager
             TtsElevenLabsApiKey = UnprotectSettingSecret(loaded.TtsElevenLabsApiKey) ?? defaults.TtsElevenLabsApiKey,
             TtsElevenLabsModel = loaded.TtsElevenLabsModel ?? defaults.TtsElevenLabsModel,
             TtsElevenLabsVoiceId = loaded.TtsElevenLabsVoiceId ?? defaults.TtsElevenLabsVoiceId,
+            TtsMiniMaxApiKey = UnprotectSettingSecret(loaded.TtsMiniMaxApiKey) ?? defaults.TtsMiniMaxApiKey,
+            TtsMiniMaxModel = loaded.TtsMiniMaxModel ?? defaults.TtsMiniMaxModel,
+            TtsMiniMaxVoiceId = loaded.TtsMiniMaxVoiceId ?? defaults.TtsMiniMaxVoiceId,
+            TtsMiniMaxRegion = loaded.TtsMiniMaxRegion ?? defaults.TtsMiniMaxRegion,
             TtsWindowsVoiceId = loaded.TtsWindowsVoiceId ?? defaults.TtsWindowsVoiceId,
             TtsPiperVoiceId = string.IsNullOrWhiteSpace(loaded.TtsPiperVoiceId) ? defaults.TtsPiperVoiceId : loaded.TtsPiperVoiceId,
             A2UIImageHosts = loaded.A2UIImageHosts is { Count: > 0 } hosts ? new List<string>(hosts) : new(),
@@ -403,6 +430,10 @@ public class SettingsManager
         TtsElevenLabsApiKey = TtsElevenLabsApiKey,
         TtsElevenLabsModel = string.IsNullOrWhiteSpace(TtsElevenLabsModel) ? null : TtsElevenLabsModel,
         TtsElevenLabsVoiceId = string.IsNullOrWhiteSpace(TtsElevenLabsVoiceId) ? null : TtsElevenLabsVoiceId,
+        TtsMiniMaxApiKey = TtsMiniMaxApiKey,
+        TtsMiniMaxModel = string.IsNullOrWhiteSpace(TtsMiniMaxModel) ? MiniMaxTextToSpeechClient.DefaultModel : TtsMiniMaxModel,
+        TtsMiniMaxVoiceId = string.IsNullOrWhiteSpace(TtsMiniMaxVoiceId) ? null : TtsMiniMaxVoiceId,
+        TtsMiniMaxRegion = string.IsNullOrWhiteSpace(TtsMiniMaxRegion) ? MiniMaxTextToSpeechClient.GlobalRegion : TtsMiniMaxRegion,
         TtsWindowsVoiceId = string.IsNullOrWhiteSpace(TtsWindowsVoiceId) ? null : TtsWindowsVoiceId,
         TtsPiperVoiceId = TtsPiperVoiceId,
         AppTheme = AppTheme,
@@ -433,30 +464,43 @@ public class SettingsManager
 
     public void Save()
     {
+        try
+        {
+            SaveOrThrow();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Failed to save settings: {ex.Message}");
+        }
+    }
+
+    internal void SaveOrThrow()
+    {
         lock (_saveLock)
         {
+            Directory.CreateDirectory(_settingsDirectory);
+            // Lock the tray data dir to current user + SYSTEM + Administrators —
+            // it co-locates the MCP bearer token, settings.json (which embeds
+            // gateway/bootstrap credentials), and diagnostics jsonl. Other apps
+            // running as the same user could otherwise read these freely.
+            OpenClaw.Shared.Mcp.McpAuthToken.TryRestrictDataDirectoryAcl(_settingsDirectory);
+
+            var data = ToSettingsData();
+            // Apply DPAPI protection to the API key for on-disk storage only
+            data.TtsElevenLabsApiKey = ProtectSettingSecret(data.TtsElevenLabsApiKey);
+            data.TtsMiniMaxApiKey = ProtectSettingSecret(data.TtsMiniMaxApiKey);
+
+            var json = data.ToJson();
+            File.WriteAllText(_settingsFilePath, json);
+
+            Logger.Info("Settings saved");
             try
             {
-                Directory.CreateDirectory(_settingsDirectory);
-                // Lock the tray data dir to current user + SYSTEM + Administrators —
-                // it co-locates the MCP bearer token, settings.json (which embeds
-                // gateway/bootstrap credentials), and diagnostics jsonl. Other apps
-                // running as the same user could otherwise read these freely.
-                OpenClaw.Shared.Mcp.McpAuthToken.TryRestrictDataDirectoryAcl(_settingsDirectory);
-
-                var data = ToSettingsData();
-                // Apply DPAPI protection to the API key for on-disk storage only
-                data.TtsElevenLabsApiKey = ProtectSettingSecret(data.TtsElevenLabsApiKey);
-
-                var json = data.ToJson();
-                File.WriteAllText(_settingsFilePath, json);
-                
-                Logger.Info("Settings saved");
                 Saved?.Invoke(this, EventArgs.Empty);
             }
             catch (Exception ex)
             {
-                Logger.Error($"Failed to save settings: {ex.Message}");
+                Logger.Warn($"Settings saved, but a notification subscriber failed: {ex.Message}");
             }
         }
     }

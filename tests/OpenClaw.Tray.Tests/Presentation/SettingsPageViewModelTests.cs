@@ -64,6 +64,22 @@ public sealed class SettingsPageViewModelTests
     }
 
     [Fact]
+    public void LocationConsent_PersistsField()
+    {
+        var vm = NewVm(out var settings, out var appCommands, out _, out var temp);
+        using (temp)
+        {
+            vm.Activate(null);
+
+            var target = !vm.LocationConsentGiven;
+            vm.LocationConsentGiven = target;
+
+            Assert.Equal(target, settings.LocationConsentGiven);
+            Assert.Equal(1, appCommands.NotifySettingsSavedCount);
+        }
+    }
+
+    [Fact]
     public void ShowDiagnostics_WritesOverride_NotEffectiveOnly()
     {
         var vm = NewVm(out var settings, out _, out _, out var temp);
@@ -111,6 +127,7 @@ public sealed class SettingsPageViewModelTests
             // With a completed (successful) task, the saved flash runs after the awaited apply.
             Assert.Equal((bool?)target, appCommands.AutoStartApplied);
             Assert.Equal(1, appCommands.AutoStartApplyCount);
+            Assert.NotNull(appCommands.LastAutoStartOrigin);
             Assert.Equal(0, appCommands.NotifySettingsSavedCount);
             Assert.Equal(1, savedFlashes);
         }
@@ -141,7 +158,7 @@ public sealed class SettingsPageViewModelTests
         var settings = new SettingsManager(temp.Path);
         var dispatcher = new RecordingUiDispatcher();
         var store = new SettingsStore(settings, dispatcher);
-        var appCommands = new SelfWritingAppCommands(store, settings);
+        var appCommands = new SelfWritingAppCommands(store);
         var vm = new SettingsPageViewModel(store, appCommands);
 
         vm.Activate(null);

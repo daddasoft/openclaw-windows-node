@@ -1,5 +1,7 @@
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading.Tasks;
+using System.Windows.Automation;
 using Axe.Windows.Core.Enums;
 using Xunit;
 
@@ -64,11 +66,67 @@ public sealed class AccessibilityScanTests
         string pageTag,
         string pageMarkerAutomationId)
     {
-        await _app.NavigateAsync(pageTag, pageMarkerAutomationId);
+        await _app.NavigateAsync(
+            pageTag,
+            pageName,
+            pageMarkerAutomationId);
         PageRuleExclusions.TryGetValue(pageName, out var exclusions);
         AxeHelper.AssertNoAccessibilityErrors(
             _app.HubWindowHandle,
             exclusions,
             context: pageName);
+    }
+
+    [Fact]
+    [Trait("Category", "Accessibility")]
+    public async Task ChatComposerControls_ExposeOnscreenLayoutThroughUia()
+    {
+        await _app.NavigateAsync(
+            "chat",
+            "ChatPage",
+            "ChatComposerInput");
+        var hub = AutomationElement.FromHandle(_app.HubWindowHandle);
+        foreach (var automationId in new[]
+        {
+            "ChatComposerInput",
+            "ChatComposerAttach",
+            "ChatComposerSpeakerToggle",
+        })
+        {
+            var element = await WaitForOnscreenLayoutAsync(hub, automationId);
+            Assert.False(element.Current.IsOffscreen);
+            Assert.True(element.Current.BoundingRectangle.Width > 0);
+            Assert.True(element.Current.BoundingRectangle.Height > 0);
+        }
+    }
+
+    private static async Task<AutomationElement> WaitForOnscreenLayoutAsync(
+        AutomationElement hub,
+        string automationId)
+    {
+        var timeout = Stopwatch.StartNew();
+        while (timeout.Elapsed < TimeSpan.FromSeconds(5))
+        {
+            var element = hub.FindFirst(
+                TreeScope.Descendants,
+                new PropertyCondition(
+                    AutomationElement.AutomationIdProperty,
+                    automationId));
+            if (element is not null)
+            {
+                var bounds = element.Current.BoundingRectangle;
+                if (!element.Current.IsOffscreen
+                    && bounds.Width > 0
+                    && bounds.Height > 0)
+                {
+                    return element;
+                }
+            }
+
+            await Task.Delay(50);
+        }
+
+        throw new TimeoutException(
+            $"Composer control '{automationId}' did not expose onscreen nonzero UIA bounds.");
     }
 }

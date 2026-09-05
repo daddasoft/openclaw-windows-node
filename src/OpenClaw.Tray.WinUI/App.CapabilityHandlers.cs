@@ -3,6 +3,7 @@ using OpenClaw.Chat;
 using OpenClaw.Shared;
 using OpenClaw.Shared.Capabilities;
 using OpenClawTray.Helpers;
+using OpenClawTray.Presentation;
 using OpenClawTray.Services;
 using System;
 using System.Collections.Generic;
@@ -133,6 +134,7 @@ public partial class App
             "EnableNodeMode", "EnableMcpServer", "PreferStructuredCategories",
             "NodeCanvasEnabled", "NodeScreenEnabled", "NodeCameraEnabled",
             "NodeLocationEnabled", "NodeBrowserProxyEnabled", "NodeTtsEnabled",
+            "NodeOllamaInferenceEnabled",
             "HasSeenActivityStreamTip", "TtsProvider"
         };
 
@@ -155,9 +157,25 @@ public partial class App
             try
             {
                 var converted = Convert.ChangeType(value, prop.PropertyType);
-                prop.SetValue(_settings, converted);
-                _settings.Save();
-                OnSettingsSaved(this, EventArgs.Empty);
+                if (TryGetStoreManagedPermissionValue(name, converted, out var permissionValue))
+                {
+                    if (!TryPersistPermissionSetting(
+                        ref _appCapabilityPermissionWriteOrigin,
+                        $"app.settings.set({name})",
+                        edit => ApplyStoreManagedPermissionSetting(edit, name, permissionValue),
+                        settings => ApplyStoreManagedPermissionSetting(settings, name, permissionValue),
+                        out var persistError))
+                    {
+                        return new { error = persistError ?? $"Failed to persist setting '{name}'" };
+                    }
+                }
+                else
+                {
+                    prop.SetValue(_settings, converted);
+                    _settings.Save();
+                }
+
+                ApplySettingsSavedAndWait();
                 var runtimeError = McpRuntimeStatePolicy.GetSettingsSetError(
                     name,
                     converted,
@@ -196,8 +214,8 @@ public partial class App
 
         app.SearchHandler = (query) =>
         {
-            if (_hubWindow == null) return Array.Empty<object>();
-            var commands = _hubWindow.BuildCommandList();
+            if (ActiveHubWindow is not OpenClawTray.Windows.HubWindow hubWindow) return Array.Empty<object>();
+            var commands = hubWindow.BuildCommandList();
             var matches = commands
                 .Where(c => c.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
                     || (c.Subtitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))
@@ -252,7 +270,8 @@ public partial class App
                 mcpError: mcpPlan.ShouldShow ? mcpPlan.Message : null,
                 nodeBrowserProxyEnabled: _settings?.NodeBrowserProxyEnabled != false,
                 recentDiagnostics: recentDiagnostics,
-                diagnosticEventCount: diagnostics?.Count ?? recentDiagnostics.Count));
+                diagnosticEventCount: diagnostics?.Count ?? recentDiagnostics.Count,
+                gatewaySelf: _appState?.GatewaySelf));
         };
 
         connection.GatewaysHandler = () =>
@@ -286,8 +305,18 @@ public partial class App
         {
             if (_connectionManager == null)
                 return new { outcome = "ConnectionFailed", error = "Connection manager is not initialized", connected = false };
+            if (_gatewayDirectConnectService is null)
+                return new { outcome = "ConnectionFailed", error = "Gateway settings service is not initialized", connected = false };
 
-            var result = await _connectionManager.ConnectWithSharedTokenAsync(gatewayUrl, token);
+            var result = await _connectionManager.ConnectWithSharedTokenAsync(
+                gatewayUrl,
+                token,
+                sshTunnel: null,
+                onGatewayCommitted: (record, _) =>
+                {
+                    _gatewayDirectConnectService.SynchronizeSettingsWithCommittedGateway(record);
+                    return Task.CompletedTask;
+                });
             return new
             {
                 outcome = result.Outcome.ToString(),
@@ -396,6 +425,105 @@ public partial class App
 
             return new { reconnected = true };
         };
+    }
+
+    private static bool TryGetStoreManagedPermissionValue(string name, object? converted, out bool value)
+    {
+        switch (name)
+        {
+            case nameof(SettingsManager.EnableNodeMode):
+            case nameof(SettingsManager.EnableMcpServer):
+            case nameof(SettingsManager.NodeCanvasEnabled):
+            case nameof(SettingsManager.NodeScreenEnabled):
+            case nameof(SettingsManager.NodeCameraEnabled):
+            case nameof(SettingsManager.NodeLocationEnabled):
+            case nameof(SettingsManager.NodeBrowserProxyEnabled):
+            case nameof(SettingsManager.NodeTtsEnabled):
+                value = converted is bool booleanValue
+                    ? booleanValue
+                    : throw new InvalidCastException($"Setting '{name}' must be a boolean.");
+                return true;
+            case nameof(SettingsManager.NodeOllamaInferenceEnabled):
+                value = converted is bool ollamaBooleanValue
+                    ? ollamaBooleanValue
+                    : throw new InvalidCastException($"Setting '{name}' must be a boolean.");
+                return true;
+            default:
+                value = false;
+                return false;
+        }
+    }
+
+    private static void ApplyStoreManagedPermissionSetting(ISettingsEditor edit, string name, bool value)
+    {
+        switch (name)
+        {
+            case nameof(SettingsManager.EnableNodeMode):
+                edit.EnableNodeMode = value;
+                break;
+            case nameof(SettingsManager.EnableMcpServer):
+                edit.EnableMcpServer = value;
+                break;
+            case nameof(SettingsManager.NodeCanvasEnabled):
+                edit.NodeCanvasEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeScreenEnabled):
+                edit.NodeScreenEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeCameraEnabled):
+                edit.NodeCameraEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeLocationEnabled):
+                edit.NodeLocationEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeBrowserProxyEnabled):
+                edit.NodeBrowserProxyEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeTtsEnabled):
+                edit.NodeTtsEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeOllamaInferenceEnabled):
+                edit.NodeOllamaInferenceEnabled = value;
+                break;
+            default:
+                throw new InvalidOperationException($"Setting '{name}' is not store-managed.");
+        }
+    }
+
+    private static void ApplyStoreManagedPermissionSetting(SettingsManager settings, string name, bool value)
+    {
+        switch (name)
+        {
+            case nameof(SettingsManager.EnableNodeMode):
+                settings.EnableNodeMode = value;
+                break;
+            case nameof(SettingsManager.EnableMcpServer):
+                settings.EnableMcpServer = value;
+                break;
+            case nameof(SettingsManager.NodeCanvasEnabled):
+                settings.NodeCanvasEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeScreenEnabled):
+                settings.NodeScreenEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeCameraEnabled):
+                settings.NodeCameraEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeLocationEnabled):
+                settings.NodeLocationEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeBrowserProxyEnabled):
+                settings.NodeBrowserProxyEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeTtsEnabled):
+                settings.NodeTtsEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeOllamaInferenceEnabled):
+                settings.NodeOllamaInferenceEnabled = value;
+                break;
+            default:
+                throw new InvalidOperationException($"Setting '{name}' is not store-managed.");
+        }
     }
 
     private async Task<object?> GetPendingApprovalsForMcpAsync()

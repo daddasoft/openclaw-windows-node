@@ -52,6 +52,19 @@ public record class SettingsData
     public bool ScreenRecordingConsentGiven { get; set; } = false;
     public bool CameraRecordingConsentGiven { get; set; } = false;
     public bool NodeLocationEnabled { get; set; } = true;
+    public bool LocationConsentGiven { get; set; } = false;
+    /// <summary>
+    /// Maximum time (ms) to wait for a human response to a screen/camera/location
+    /// capture consent prompt before failing closed (treating the capture as
+    /// denied). Protects unattended or non-interactive callers - a local MCP
+    /// HTTP client, an automated agent, a hosted test - from hanging forever on
+    /// a consent window nobody can answer. Never auto-grants: a timeout always
+    /// resolves to denial, the same fail-closed direction Windows' own secure
+    /// desktop consent prompts (UAC) take when nobody responds. A real user who
+    /// takes longer than this to decide can simply retry; the prompt reappears.
+    /// Default 120000ms (2 minutes).
+    /// </summary>
+    public int CaptureConsentTimeoutMs { get; set; } = 120_000;
     public bool NodeBrowserProxyEnabled { get; set; } = true;
 
     /// <summary>
@@ -88,6 +101,16 @@ public record class SettingsData
     /// <summary>Play audio feedback chimes on listen start/stop.</summary>
     public bool VoiceAudioFeedback { get; set; } = true;
     public bool NodeTtsEnabled { get; set; } = false;
+    /// <summary>
+    /// Opt-in switch for the <c>local-inference</c> capability
+    /// (<c>ollama.models</c> / <c>ollama.chat</c>). When <c>true</c>, any
+    /// paired active gateway - local or remote - can invoke the separately
+    /// installed Windows Ollama service through this node. Default
+    /// <c>false</c>: sharing a locally installed inference service is an
+    /// explicit user choice, distinct from the app-managed Local AI gateway
+    /// provider (which is unaffected by this setting).
+    /// </summary>
+    public bool NodeOllamaInferenceEnabled { get; set; } = false;
     public string TtsProvider { get; set; } = OpenClaw.Shared.Capabilities.TtsCapability.PiperProvider;
     /// <summary>Persisted: whether the Hub's NavigationView pane is expanded
     /// (true) or collapsed/compact (false). Default true.</summary>
@@ -101,6 +124,14 @@ public record class SettingsData
     public string? TtsElevenLabsApiKey { get; set; }
     public string? TtsElevenLabsModel { get; set; }
     public string? TtsElevenLabsVoiceId { get; set; }
+    /// <summary>
+    /// MiniMax API key storage slot. When persisted by the Windows tray's
+    /// SettingsManager this is an opaque dpapi:-prefixed blob, not plaintext.
+    /// </summary>
+    public string? TtsMiniMaxApiKey { get; set; }
+    public string? TtsMiniMaxModel { get; set; } = "speech-2.8-hd";
+    public string? TtsMiniMaxVoiceId { get; set; }
+    public string? TtsMiniMaxRegion { get; set; } = "global_en";
     /// <summary>Piper voice identifier, e.g. "en_US-amy-low". Voice file is downloaded on first use.</summary>
     public string TtsPiperVoiceId { get; set; } = "en_US-amy-low";
     /// <summary>Run the local MCP HTTP server. Independent of EnableNodeMode.</summary>
@@ -180,6 +211,13 @@ public record class SettingsData
     /// Default false — most shell commands are local-only.
     /// </summary>
     public bool SystemRunAllowOutbound { get; set; } = false;
+
+    /// <summary>
+    /// When sandboxed, allow system.run commands to use Windows UI system calls.
+    /// This is required by PowerShell and some console utilities on current MXC
+    /// processcontainer backends. Default false preserves Win32k syscall blocking.
+    /// </summary>
+    public bool SystemRunAllowWindowsUi { get; set; } = false;
 
     /// <summary>
     /// Clipboard access policy inside the sandbox. Default <c>None</c> — the

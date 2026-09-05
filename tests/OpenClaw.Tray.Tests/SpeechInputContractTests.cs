@@ -26,6 +26,16 @@ public sealed class SpeechInputContractTests
     }
 
     [Fact]
+    public void AudioPipeline_FirstAudioTimeout_UsesLocalizedActionableMessage()
+    {
+        var pipeline = Read("src", "OpenClaw.Tray.WinUI", "Services", "AudioPipeline.cs");
+        var resources = Read("src", "OpenClaw.Tray.WinUI", "Strings", "en-us", "Resources.resw");
+
+        Assert.Contains("LocalizationHelper.GetString(\"AudioPipeline_FirstAudioTimeout\")", pipeline);
+        Assert.Contains("Check that your microphone is connected and selected as the Windows input device", resources);
+    }
+
+    [Fact]
     public void ChatVoiceDialogs_RouteDisabledSttCapabilityToPermissions_AndMissingModelToVoiceSettings()
     {
         var chatPage = Read("src", "OpenClaw.Tray.WinUI", "Pages", "ChatPage.xaml.cs");
@@ -86,7 +96,9 @@ public sealed class SpeechInputContractTests
         Assert.Contains("ShowHub(\"permissions\")", chatWindow);
         Assert.DoesNotContain("ChatVoiceDialog_TtsSetupRequired", chatWindow);
 
-        Assert.Contains("SpeechSetupReadiness.IsConfiguredTtsProviderSetupRequired", permissionsPage);
+        Assert.Contains("VoiceSettingsHelpPanel.Visibility", permissionsPage);
+        Assert.DoesNotContain("SpeechSetupReadiness.IsConfiguredTtsProviderSetupRequired", permissionsPage);
+        Assert.Contains("SpeechSetupReadiness.IsConfiguredTtsProviderSetupRequired", Read("src", "OpenClaw.Tray.WinUI", "App.xaml.cs"));
         Assert.Contains("SpeechSetupReadiness.IsAutomaticChatTtsEnabled", Read("src", "OpenClaw.Tray.WinUI", "App.xaml.cs"));
         Assert.Contains("IsAutomaticChatTtsEnabled", Read("src", "OpenClaw.Tray.WinUI", "Services", "SpeechSetupReadiness.cs"));
         Assert.Contains("return settings?.NodeTtsEnabled == true;", Read("src", "OpenClaw.Tray.WinUI", "Services", "SpeechSetupReadiness.cs"));

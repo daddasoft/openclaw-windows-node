@@ -23,6 +23,15 @@ public sealed class TrayAppFixture : IAsyncLifetime
     public const string SeededExecApprovalPattern = "**/where.exe";
     public const string SeededExecApprovalId = "11111111-1111-1111-1111-111111111111";
 
+    // A generated, argument-bound entry. Remote updates may retain it verbatim but must
+    // not be able to keep the path while dropping the binding that keeps it narrow.
+    public const string SeededBoundExecApprovalPattern = @"C:\Windows\System32\hostname.exe";
+    public const string SeededBoundExecApprovalId = "22222222-2222-2222-2222-222222222222";
+    public const string SeededBoundExecApprovalArgPattern = "^--version\u0000$";
+    // Escaped for embedding in the JSON template above.
+    public const string SeededBoundExecApprovalArgPatternJson = @"^--version\u0000$";
+    public const string SeededBoundExecApprovalPatternJson = @"C:\\Windows\\System32\\hostname.exe";
+
     public string DataDir { get; }
     public int McpPort { get; }
     public string McpEndpoint => $"http://127.0.0.1:{McpPort}/mcp";
@@ -157,6 +166,13 @@ public sealed class TrayAppFixture : IAsyncLifetime
         // Disable the MXC sandbox for these tray/MCP wiring smokes because hosted
         // CI does not provide MXC; fail-closed sandbox behavior is covered by
         // OpenClaw.Shared.Tests.Mxc.
+        // CaptureConsentTimeoutMs is cut way down from the 120s production default:
+        // screen.snapshot/camera.snap now require recording consent (see
+        // NodeService.EnsureCaptureConsentAsync), and no human is present in this
+        // hosted process to click the consent prompt. The fail-closed timeout
+        // still denies (never auto-grants) — it just does so in seconds instead
+        // of never, so ScreenSnapshot/CameraSnap integration tests get a
+        // deterministic tool error well inside McpClient's 30s HTTP timeout.
         var settings = new SettingsData
         {
             EnableMcpServer = true,
@@ -165,7 +181,10 @@ public sealed class TrayAppFixture : IAsyncLifetime
             AutoStart = false,
             GlobalHotkeyEnabled = false,
             ShowNotifications = false,
+            ScreenRecordingConsentGiven = true,
+            CameraRecordingConsentGiven = true,
             HasSeenActivityStreamTip = true,
+            CaptureConsentTimeoutMs = 3000,
         };
         File.WriteAllText(Path.Combine(DataDir, "settings.json"), settings.ToJson());
     }
@@ -193,6 +212,12 @@ public sealed class TrayAppFixture : IAsyncLifetime
                     {
                       "id": "{{SeededExecApprovalId}}",
                       "pattern": "{{SeededExecApprovalPattern}}"
+                    },
+                    {
+                      "id": "{{SeededBoundExecApprovalId}}",
+                      "pattern": "{{SeededBoundExecApprovalPatternJson}}",
+                      "source": "allow-always",
+                      "argPattern": "{{SeededBoundExecApprovalArgPatternJson}}"
                     }
                   ]
                 }

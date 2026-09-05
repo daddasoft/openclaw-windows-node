@@ -18,6 +18,7 @@ namespace OpenClaw.Shared;
 public class WindowsNodeClient : WebSocketClientBase
 {
     private readonly DeviceIdentity _deviceIdentity;
+    private IConnectEnvelopeSigner _connectEnvelopeSigner;
     
     // Node capabilities registry
     private readonly List<INodeCapability> _capabilities = new();
@@ -26,6 +27,7 @@ public class WindowsNodeClient : WebSocketClientBase
     private readonly NodeRegistration _registration;
     // Connection state
     private bool _isConnected;
+    private string? _pendingConnectRequestId;
     private string? _nodeId;
     private string? _pendingNonce;  // Store nonce from challenge for signing
     private bool _isPendingApproval;  // True when connected but awaiting pairing approval
@@ -36,8 +38,15 @@ public class WindowsNodeClient : WebSocketClientBase
     // even after OnDisconnected clears _isPendingApproval.
     private volatile bool _pairingBlocked;
     private volatile bool _rateLimited;
+    private volatile bool _protocolMismatch;
     private bool _useV2Signature; // true after v3 signature rejected by gateway
     public bool UseV2Signature { get => _useV2Signature; set => _useV2Signature = value; }
+    private readonly HandshakeChallengeGate _handshakeChallengeGate = new();
+    internal IConnectEnvelopeSigner ConnectEnvelopeSigner
+    {
+        get => _connectEnvelopeSigner;
+        set => _connectEnvelopeSigner = value;
+    }
     // Bug 3: source-side idempotency for PairingStatusChanged. HandleHelloOk runs on every
     // WS reconnect and re-fires PairingStatus.Paired even when nothing changed, causing a
     // toast storm in the tray UI. Track the last emitted status and only fire on transitions.
@@ -76,6 +85,14 @@ public class WindowsNodeClient : WebSocketClientBase
     public event EventHandler? TransportConnected;
     /// <summary>Raised with a finite classification before a terminal handshake error is published.</summary>
     public event EventHandler<GatewayErrorKind>? ConnectionFailure;
+    /// <summary>
+    /// Optional fail-closed authorization invoked after connect.challenge and immediately before
+    /// the credential-bearing node connect frame.
+    /// </summary>
+    public Func<CancellationToken, Task<ReconnectAuthorizationResult>>?
+        HandshakeAuthorizationAsync { get; set; }
+    /// <summary>Raised with sanitized wire-protocol compatibility details for the current handshake.</summary>
+    public event EventHandler<GatewayProtocolCompatibility>? ProtocolCompatibilityChanged;
 
     protected override void OnReconnectAuthorizationDenied(
         ReconnectAuthorizationResult authorization)
@@ -122,6 +139,9 @@ public class WindowsNodeClient : WebSocketClientBase
 
     protected override Task OnConnectedAsync()
     {
+        _isConnected = false;
+        _handshakeChallengeGate.Reset(CurrentConnectionGeneration);
+        Volatile.Write(ref _pendingConnectRequestId, null);
         TransportConnected?.Invoke(this, EventArgs.Empty);
         return Task.CompletedTask;
     }
@@ -135,6 +155,7 @@ public class WindowsNodeClient : WebSocketClientBase
         // Initialize device identity
         _deviceIdentity = new DeviceIdentity(dataPath, _logger);
         _deviceIdentity.Initialize();
+        _connectEnvelopeSigner = new DeviceIdentityConnectEnvelopeSigner(_deviceIdentity);
         _useV2Signature |= !string.IsNullOrEmpty(_bootstrapToken) && string.IsNullOrEmpty(_deviceIdentity.NodeDeviceToken);
         
         // Initialize registration
@@ -251,6 +272,19 @@ public class WindowsNodeClient : WebSocketClientBase
 
     protected override async Task ProcessMessageAsync(string json)
     {
+        await ProcessMessageForConnectionAsync(
+                json,
+                CurrentConnectionGeneration)
+            .ConfigureAwait(false);
+    }
+
+    protected override async Task ProcessMessageForConnectionAsync(
+        string json,
+        long sourceConnectionGeneration)
+    {
+        if (!IsCurrentConnectionGeneration(sourceConnectionGeneration))
+            return;
+
         try
         {
             // Log raw messages at debug level (visible in dbgview, not in log file noise)
@@ -266,14 +300,22 @@ public class WindowsNodeClient : WebSocketClientBase
             }
             var type = typeProp.GetString();
             _logger.Debug($"[NODE] Processing message type: {type}");
+
+            if (_protocolMismatch)
+            {
+                _logger.Warn("[NODE] Ignoring message after terminal protocol mismatch");
+                return;
+            }
             
             switch (type)
             {
                 case "event":
-                    await HandleEventAsync(root);
+                    await HandleEventForConnectionAsync(
+                        root,
+                        sourceConnectionGeneration);
                     break;
                 case "res":
-                    HandleResponse(root);
+                    HandleResponseForConnection(root, sourceConnectionGeneration);
                     break;
                 case "req":
                     await HandleRequestAsync(root);
@@ -293,10 +335,26 @@ public class WindowsNodeClient : WebSocketClientBase
         }
     }
     
-    private async Task HandleEventAsync(JsonElement root)
+    private Task HandleEventAsync(JsonElement root) =>
+        HandleEventForConnectionAsync(root, CurrentConnectionGeneration);
+
+    private async Task HandleEventForConnectionAsync(
+        JsonElement root,
+        long sourceConnectionGeneration)
     {
         if (!root.TryGetProperty("event", out var eventProp)) return;
         var eventType = eventProp.GetString();
+
+        if (!_isConnected &&
+            eventType is not "connect.challenge"
+                and not "node.pair.requested"
+                and not "device.pair.requested"
+                and not "node.pair.resolved"
+                and not "device.pair.resolved")
+        {
+            _logger.Warn($"[NODE] Ignoring pre-authentication event: {eventType}");
+            return;
+        }
         
         // Log all events except health/tick/agent for debugging
         if (eventType != "health" && eventType != "tick" && eventType != "agent" && eventType != "chat")
@@ -307,7 +365,9 @@ public class WindowsNodeClient : WebSocketClientBase
         switch (eventType)
         {
             case "connect.challenge":
-                await HandleConnectChallengeAsync(root);
+                await HandleConnectChallengeForConnectionAsync(
+                    root,
+                    sourceConnectionGeneration);
                 break;
             case "node.pair.requested":
             case "device.pair.requested":
@@ -318,7 +378,7 @@ public class WindowsNodeClient : WebSocketClientBase
                 await HandlePairingResolvedEventAsync(root, eventType);
                 break;
             case "node.invoke.request":
-                await HandleNodeInvokeEventAsync(root);
+                await StartNodeInvokeEventAsync(root.Clone());
                 break;
             case "node.invoke.cancel":
                 await HandleNodeInvokeCancelAsync(root, "payload", responseId: null);
@@ -422,7 +482,7 @@ public class WindowsNodeClient : WebSocketClientBase
         }
     }
     
-    private async Task HandleNodeInvokeEventAsync(JsonElement root)
+    private async Task StartNodeInvokeEventAsync(JsonElement root)
     {
         var telemetry = new NodeToolInvocation(NodeToolTransport.Gateway);
         _logger.Info("[NODE] Received node.invoke.request event");
@@ -508,7 +568,7 @@ public class WindowsNodeClient : WebSocketClientBase
             }
         }
 
-        var sessionKey = ExtractNodeInvokeSessionKey(payload, args);
+        var sessionKey = ExtractGatewayNodeInvokeSessionKey(payload);
         
         _logger.Info($"[NODE] Invoking command: {command}");
         
@@ -604,33 +664,110 @@ public class WindowsNodeClient : WebSocketClientBase
         await SendRawAsync(json);
     }
     
-    private async Task HandleConnectChallengeAsync(JsonElement root)
+    private Task HandleConnectChallengeAsync(JsonElement root) =>
+        HandleConnectChallengeForConnectionAsync(
+            root,
+            CurrentConnectionGeneration);
+
+    private async Task HandleConnectChallengeForConnectionAsync(
+        JsonElement root,
+        long sourceConnectionGeneration)
     {
-        string? nonce = null;
-        long? challengeTimestampMs = null;
-        
-        if (root.TryGetProperty("payload", out var payload))
+        if (!IsCurrentConnectionGeneration(sourceConnectionGeneration))
+            return;
+
+        if (!root.TryGetProperty("payload", out var payload) ||
+            payload.ValueKind != JsonValueKind.Object)
         {
-            if (payload.TryGetProperty("nonce", out var nonceProp))
+            _logger.Warn("[HANDSHAKE] Ignoring malformed node challenge without an object payload.");
+            return;
+        }
+
+        string? nonce = null;
+        if (payload.TryGetProperty("nonce", out var nonceProp))
+        {
+            if (nonceProp.ValueKind != JsonValueKind.String)
             {
-                nonce = nonceProp.GetString();
+                _logger.Warn("[HANDSHAKE] Ignoring malformed node challenge with a non-string nonce.");
+                return;
             }
-            challengeTimestampMs = ConnectAuthTimestamp.ReadChallengeTimestamp(payload);
+            nonce = nonceProp.GetString();
+        }
+        var challengeTimestampMs = ConnectAuthTimestamp.ReadChallengeTimestamp(payload);
+
+        if (!_handshakeChallengeGate.TryBegin(sourceConnectionGeneration))
+        {
+            _logger.Warn("[HANDSHAKE] Ignoring duplicate node challenge on the current socket.");
+            return;
         }
 
         _logger.Info($"[HANDSHAKE] Received connect.challenge: nonce={nonce}, ts={challengeTimestampMs?.ToString() ?? "missing"}");
-        
+
         _pendingNonce = nonce;
-        await SendNodeConnectAsync(nonce, challengeTimestampMs);
+        try
+        {
+            if (HandshakeAuthorizationAsync is not null)
+            {
+                var authorization = await HandshakeAuthorizationAsync(CancellationToken)
+                    .ConfigureAwait(false);
+                if (!IsCurrentConnectionGeneration(sourceConnectionGeneration))
+                    return;
+                if (!authorization.Allowed)
+                {
+                    if (!_handshakeChallengeGate.TryBlock(sourceConnectionGeneration))
+                        return;
+                    _logger.Warn(
+                        $"[HANDSHAKE] Node credential handoff blocked: {authorization.Detail}");
+                    ConnectionFailure?.Invoke(this, authorization.FailureKind);
+                    AbortCurrentWebSocket(sourceConnectionGeneration);
+                    RaiseStatusChanged(ConnectionStatus.Error);
+                    return;
+                }
+                if (!_handshakeChallengeGate.TryAuthorize(sourceConnectionGeneration))
+                    return;
+            }
+            else if (!_handshakeChallengeGate.TryAuthorize(sourceConnectionGeneration))
+            {
+                return;
+            }
+
+            var sent = await SendNodeConnectAsync(
+                    nonce,
+                    challengeTimestampMs,
+                    sourceConnectionGeneration,
+                    CancellationToken)
+                .ConfigureAwait(false);
+            if (!sent && IsCurrentConnectionGeneration(sourceConnectionGeneration))
+                AbortCurrentWebSocket(sourceConnectionGeneration);
+        }
+        catch (OperationCanceledException) when (
+            CancellationToken.IsCancellationRequested ||
+            !IsCurrentConnectionGeneration(sourceConnectionGeneration))
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"[HANDSHAKE] Node connect handoff failed: {ex.Message}");
+            if (_handshakeChallengeGate.TryBlock(sourceConnectionGeneration))
+            {
+                ConnectionFailure?.Invoke(this, GatewayErrorKind.Network);
+                AbortCurrentWebSocket(sourceConnectionGeneration);
+                RaiseStatusChanged(ConnectionStatus.Error);
+            }
+        }
     }
     
     private const string ClientId = "node-host";  // Must be "node-host" for nodes
     
-    private async Task SendNodeConnectAsync(string? nonce, long? challengeTimestampMs)
+    private async Task<bool> SendNodeConnectAsync(
+        string? nonce,
+        long? challengeTimestampMs,
+        long connectionGeneration,
+        CancellationToken cancellationToken)
     {
         var isPaired = !string.IsNullOrEmpty(_deviceIdentity.NodeDeviceToken);
         var usingBootstrap = !isPaired && !string.IsNullOrEmpty(_bootstrapToken);
-        var (auth, tokenForSig) = BuildConnectAuth();
+        var (auth, _) = BuildConnectAuth();
         var authType = auth.ContainsKey("deviceToken") ? "deviceToken"
             : auth.ContainsKey("bootstrapToken") ? "bootstrapToken" : "token";
 
@@ -644,28 +781,46 @@ public class WindowsNodeClient : WebSocketClientBase
         _logger.Info($"[HANDSHAKE]   signature format={(_useV2Signature ? "v2" : "v3")}, platform={_registration.Platform}, family={_registration.DeviceFamily}");
         _logger.Info($"[HANDSHAKE]   auth: {{{authType}}}");
 
-        await SendRawAsync(BuildNodeConnectMessage(nonce, challengeTimestampMs));
+        var requestId = Guid.NewGuid().ToString();
+        Volatile.Write(ref _pendingConnectRequestId, requestId);
+        var sent = await SendRawAsync(
+                BuildNodeConnectMessage(nonce, challengeTimestampMs, requestId),
+                connectionGeneration,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!sent)
+            Interlocked.CompareExchange(ref _pendingConnectRequestId, null, requestId);
+        return sent;
     }
 
-    private string BuildNodeConnectMessage(string? nonce, long? challengeTimestampMs)
+    private string BuildNodeConnectMessage(
+        string? nonce,
+        long? challengeTimestampMs,
+        string? requestId = null)
     {
-        // Sign the full payload with Ed25519 - this is how device pairing works
+        var credential = SelectConnectCredential();
+        var envelope = ConnectEnvelopeBuilder.PrepareNode(
+            new NodeConnectEnvelopeOptions(
+                requestId ?? Guid.NewGuid().ToString(),
+                _registration.Version,
+                _registration.Platform,
+                _registration.DeviceFamily,
+                _registration.DisplayName,
+                _registration.Capabilities,
+                _registration.Commands,
+                _registration.Permissions,
+                credential,
+                nonce,
+                challengeTimestampMs,
+                _useV2Signature),
+            _connectEnvelopeSigner);
+
         string? signature = null;
-        var signedAt = ConnectAuthTimestamp.ResolveSignedAt(challengeTimestampMs);
-        var (auth, tokenForSignature) = BuildConnectAuth();
-        
-        if (!string.IsNullOrEmpty(nonce))
+        if (envelope.CanSign)
         {
             try
             {
-                signature = _useV2Signature
-                    ? _deviceIdentity.SignConnectPayloadV2(
-                        nonce, signedAt, ClientId, "node", "node",
-                        Array.Empty<string>(), tokenForSignature)
-                    : _deviceIdentity.SignConnectPayloadV3(
-                        nonce, signedAt, ClientId, "node", "node",
-                        Array.Empty<string>(), tokenForSignature,
-                        _registration.Platform, _registration.DeviceFamily);
+                signature = envelope.Sign();
             }
             catch (Exception ex)
             {
@@ -673,85 +828,106 @@ public class WindowsNodeClient : WebSocketClientBase
             }
         }
 
-        // Always include device identity - this is required for pairing
-        var msg = new
-        {
-            type = "req",
-            id = Guid.NewGuid().ToString(),
-            method = "connect",
-            @params = new
-            {
-                minProtocol = 3,
-                maxProtocol = 4,
-                client = new
-                {
-                    id = ClientId,  // Must match what we sign in payload
-                    version = _registration.Version,
-                    platform = _registration.Platform,
-                    deviceFamily = _registration.DeviceFamily,
-                    mode = "node",
-                    displayName = _registration.DisplayName
-                },
-                role = "node",
-                scopes = Array.Empty<string>(),
-                caps = _registration.Capabilities,
-                commands = _registration.Commands,
-                permissions = _registration.Permissions,
-                auth,
-                locale = "en-US",
-                userAgent = $"openclaw-windows-node/{_registration.Version}",
-                device = new
-                {
-                    id = _deviceIdentity.DeviceId,
-                    publicKey = _deviceIdentity.PublicKeyBase64Url,  // Base64url encoded
-                    signature = signature,
-                    signedAt = signedAt,
-                    nonce = nonce
-                }
-            }
-        };
-
-        return JsonSerializer.Serialize(msg, s_ignoreNullOptions);
+        return envelope.Serialize(signature);
     }
 
     private (Dictionary<string, string> Auth, string TokenForSignature) BuildConnectAuth()
     {
+        var credential = SelectConnectCredential();
+        return (credential.ToAuthPayload(), credential.Value);
+    }
+
+    private ConnectCredential SelectConnectCredential()
+    {
         if (!string.IsNullOrEmpty(_deviceIdentity.NodeDeviceToken))
-        {
-            return (new Dictionary<string, string> { ["deviceToken"] = _deviceIdentity.NodeDeviceToken }, _deviceIdentity.NodeDeviceToken);
-        }
+            return new DeviceTokenConnectCredential(_deviceIdentity.NodeDeviceToken);
 
         if (!string.IsNullOrEmpty(_bootstrapToken))
-        {
-            return (new Dictionary<string, string> { ["bootstrapToken"] = _bootstrapToken }, _bootstrapToken);
-        }
+            return new BootstrapTokenConnectCredential(_bootstrapToken);
 
-        return (new Dictionary<string, string> { ["token"] = _gatewayToken }, _gatewayToken);
+        return new TokenConnectCredential(_gatewayToken);
     }
     
-    internal void HandleResponse(JsonElement root)
+    internal void HandleResponse(JsonElement root) =>
+        HandleResponseForConnection(root, CurrentConnectionGeneration);
+
+    private void HandleResponseForConnection(
+        JsonElement root,
+        long sourceConnectionGeneration)
     {
+        if (!IsCurrentConnectionGeneration(sourceConnectionGeneration))
+            return;
+
+        var responseId = root.TryGetProperty("id", out var idProp)
+            ? idProp.GetString()
+            : null;
+        var pendingConnectRequestId = Volatile.Read(ref _pendingConnectRequestId);
+        var isConnectResponse =
+            !string.IsNullOrWhiteSpace(pendingConnectRequestId) &&
+            string.Equals(responseId, pendingConnectRequestId, StringComparison.Ordinal);
+
         if (root.TryGetProperty("ok", out var okProp) &&
             okProp.ValueKind == JsonValueKind.False)
         {
+            if (isConnectResponse &&
+                !_handshakeChallengeGate.IsAuthorized(sourceConnectionGeneration))
+            {
+                _logger.Warn("[HANDSHAKE] Ignoring stale node connect denial.");
+                return;
+            }
+            if (isConnectResponse)
+                Volatile.Write(ref _pendingConnectRequestId, null);
             HandleRequestError(root);
             return;
         }
 
         if (!root.TryGetProperty("payload", out var payload))
         {
-            _logger.Warn("[NODE] Response has no payload");
+            if (isConnectResponse)
+                HandleProtocolMismatch("connect success response has no payload");
             return;
         }
+
+        var isHelloOk = GatewayProtocolContract.IsHelloOk(payload);
+        if (isHelloOk && !isConnectResponse)
+        {
+            _logger.Warn("[HANDSHAKE] Ignoring uncorrelated node hello-ok.");
+            return;
+        }
+
+        if (isConnectResponse &&
+            !GatewayProtocolContract.TryValidateHelloOk(payload, out var protocolError))
+        {
+            var compatibility = GatewayProtocolCompatibility.FromGatewayExpectation(
+                GatewayProtocolContract.TryGetProtocol(payload, out var protocol) ? protocol : null);
+            HandleProtocolMismatch(protocolError, compatibility);
+            return;
+        }
+
+        if (!isHelloOk)
+            return;
         
         // Handle hello-ok (successful registration)
-        if (payload.TryGetProperty("type", out var t) && t.GetString() == "hello-ok")
+        if (isHelloOk)
         {
+            if (!isConnectResponse ||
+                !_handshakeChallengeGate.IsAuthorized(sourceConnectionGeneration))
+            {
+                _logger.Warn("[HANDSHAKE] Ignoring stale or uncorrelated node hello-ok.");
+                return;
+            }
+
+            Volatile.Write(ref _pendingConnectRequestId, null);
             _logger.Info("[HANDSHAKE] Received hello-ok!");
             PublishGatewaySelf(GatewaySelfInfo.FromHelloOk(payload));
             var reconnectingAfterApproval = _pairingApprovedAwaitingReconnect;
             _isConnected = true;
             _rateLimited = false; // Clear transient rate-limit on successful connect
+            _protocolMismatch = false;
+            _ = GatewayProtocolContract.TryGetProtocol(payload, out var acceptedProtocol);
+            ProtocolCompatibilityChanged?.Invoke(
+                this,
+                GatewayProtocolCompatibility.Compatible(acceptedProtocol));
             ResetReconnectAttempts();
             
             // Extract node ID if returned
@@ -890,6 +1066,13 @@ public class WindowsNodeClient : WebSocketClientBase
         var effectiveErrorCode = detailCode ?? errorCode;
         _logger.Info($"[HANDSHAKE] Connect error: message=\"{error}\", code={errorCode}, detailCode={detailCode ?? "none"}");
 
+        if (!_isConnected &&
+            ClassifyConnectionFailure(error, errorCode, detailCode) == GatewayErrorKind.ProtocolMismatch)
+        {
+            HandleProtocolMismatch(error, GatewayProtocolContract.ParseMismatch(root));
+            return;
+        }
+
         if (string.Equals(errorCode, "NOT_PAIRED", StringComparison.OrdinalIgnoreCase))
         {
             if (_isPendingApproval)
@@ -969,6 +1152,22 @@ public class WindowsNodeClient : WebSocketClientBase
             return GatewayErrorKind.Auth;
 
         return GatewayErrorClassifier.ClassifyWithCode(error, errorCode, detailsCode);
+    }
+
+    private void HandleProtocolMismatch(
+        string detail,
+        GatewayProtocolCompatibility? compatibility = null)
+    {
+        _protocolMismatch = true;
+        _isConnected = false;
+        Volatile.Write(ref _pendingConnectRequestId, null);
+        AbortCurrentWebSocket(CurrentConnectionGeneration);
+        _logger.Warn($"[NODE] Gateway protocol mismatch: {TokenSanitizer.Sanitize(detail)}");
+        ProtocolCompatibilityChanged?.Invoke(
+            this,
+            compatibility ?? GatewayProtocolCompatibility.FromGatewayExpectation(expectedProtocol: null));
+        ConnectionFailure?.Invoke(this, GatewayErrorKind.ProtocolMismatch);
+        RaiseStatusChanged(ConnectionStatus.Error);
     }
 
     // Structured terminal-auth codes (wrong shared/bootstrap token, rate limit, token not
@@ -1104,6 +1303,12 @@ public class WindowsNodeClient : WebSocketClientBase
     
     private async Task HandleRequestAsync(JsonElement root)
     {
+        if (!_isConnected)
+        {
+            _logger.Warn("[NODE] Ignoring pre-authentication request.");
+            return;
+        }
+
         if (!root.TryGetProperty("method", out var methodProp)) return;
         var method = methodProp.GetString();
         
@@ -1183,8 +1388,6 @@ public class WindowsNodeClient : WebSocketClientBase
         var args = paramsEl.TryGetProperty("args", out var argsEl) 
             ? argsEl.Clone() 
             : default;
-        var sessionKey = ExtractNodeInvokeSessionKey(paramsEl, args);
-        
         _logger.Info($"Received node.invoke: {command}");
         
         var request = new NodeInvokeRequest
@@ -1192,7 +1395,7 @@ public class WindowsNodeClient : WebSocketClientBase
             Id = requestId,
             Command = command,
             Args = args,
-            SessionKey = sessionKey,
+            SessionKey = ExtractGatewayNodeInvokeSessionKey(paramsEl),
             Telemetry = telemetry
         };
         
@@ -1569,25 +1772,19 @@ public class WindowsNodeClient : WebSocketClientBase
         return false;
     }
 
-    private static string? ExtractNodeInvokeSessionKey(JsonElement envelope, JsonElement args)
+    private static string? ExtractGatewayNodeInvokeSessionKey(JsonElement envelope)
     {
-        if (envelope.TryGetProperty("sessionKey", out var envelopeSessionKey) &&
-            envelopeSessionKey.ValueKind == JsonValueKind.String)
+        if (envelope.TryGetProperty("sessionKey", out var envelopeSessionKey))
         {
-            var sessionKey = envelopeSessionKey.GetString();
-            if (!string.IsNullOrWhiteSpace(sessionKey))
-                return sessionKey;
-        }
+            if (envelopeSessionKey.ValueKind == JsonValueKind.String)
+            {
+                var sessionKey = envelopeSessionKey.GetString();
+                if (!string.IsNullOrWhiteSpace(sessionKey))
+                    return sessionKey;
+            }
 
-        if (args.ValueKind == JsonValueKind.Object &&
-            args.TryGetProperty("sessionKey", out var argsSessionKey) &&
-            argsSessionKey.ValueKind == JsonValueKind.String)
-        {
-            var sessionKey = argsSessionKey.GetString();
-            if (!string.IsNullOrWhiteSpace(sessionKey))
-                return sessionKey;
+            return null;
         }
-
         return null;
     }
 
@@ -1736,6 +1933,9 @@ public class WindowsNodeClient : WebSocketClientBase
         if (_rateLimited)
             return false;
 
+        if (_protocolMismatch)
+            return false;
+
         return true;
     }
 
@@ -1743,6 +1943,7 @@ public class WindowsNodeClient : WebSocketClientBase
     {
         _activeInvocations.CancelAll();
         _isConnected = false;
+        Volatile.Write(ref _pendingConnectRequestId, null);
         // Don't reset pairing state when disconnected due to pairing — gateway
         // closes the socket after PAIRING_REQUIRED but we're still waiting for approval
         if (!_pairingBlocked)

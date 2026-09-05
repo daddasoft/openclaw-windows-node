@@ -73,6 +73,92 @@ public sealed class ConnectionDiagnosticsProjectionTests
     }
 
     [Fact]
+    public void BuildStatus_SeparatesGatewayPackageVersionFromWireProtocolCompatibility()
+    {
+        var compatibility = GatewayProtocolCompatibility.FromGatewayExpectation(5, 3);
+        var snapshot = new GatewayConnectionSnapshot
+        {
+            OverallState = OverallConnectionState.Error,
+            OperatorState = RoleConnectionState.Error,
+            OperatorErrorKind = GatewayErrorKind.ProtocolMismatch,
+            OperatorProtocolCompatibility = compatibility,
+            ProtocolCompatibility = compatibility,
+            ProtocolCompatibilityRole = GatewayProtocolCompatibilityRole.Operator,
+            GatewayId = "gw-1",
+            GatewayUrl = "wss://gateway.example"
+        };
+
+        var status = ConnectionDiagnosticsProjection.BuildStatus(
+            snapshot,
+            new GatewayRecord { Id = "gw-1", Url = "wss://gateway.example" },
+            enableNodeMode: false,
+            enableMcpServer: true,
+            isMcpRunning: true,
+            mcpError: null,
+            nodeBrowserProxyEnabled: false,
+            recentDiagnostics: [],
+            diagnosticEventCount: 0,
+            gatewaySelf: new GatewaySelfInfo
+            {
+                ServerVersion = "2026.6.11-1",
+                Protocol = 4
+            });
+
+        Assert.Equal(2, status.SchemaVersion);
+        Assert.Equal("2026.6.11-1", status.Gateway!.PackageVersion);
+        Assert.Null(status.Protocol.SelectedProtocol);
+        Assert.Equal(4, status.Protocol.CurrentProtocol);
+        Assert.Equal(3, status.Protocol.MinimumSupportedProtocol);
+        Assert.Equal(4, status.Protocol.MaximumSupportedProtocol);
+        Assert.Equal("gateway_too_new", status.Protocol.Compatibility);
+        Assert.Equal("operator", status.Protocol.Source);
+        Assert.Equal(5, status.Protocol.GatewayExpectedProtocol);
+        Assert.Equal(3, status.Protocol.GatewayMinimumProtocol);
+        Assert.False(status.Protocol.Retryable);
+        Assert.Equal("gateway_too_new", status.Protocol.Operator.Compatibility);
+        Assert.Equal("unknown", status.Protocol.Node.Compatibility);
+    }
+
+    [Theory]
+    [InlineData(3)]
+    [InlineData(5)]
+    public void BuildStatus_PreservesAcceptedProtocolAcrossTopLevelAndRoles(int protocol)
+    {
+        var compatibility = GatewayProtocolCompatibility.Compatible(protocol);
+        var snapshot = new GatewayConnectionSnapshot
+        {
+            OverallState = OverallConnectionState.Ready,
+            OperatorState = RoleConnectionState.Connected,
+            NodeConnectionIntended = true,
+            NodeState = RoleConnectionState.Connected,
+            OperatorProtocolCompatibility = compatibility,
+            NodeProtocolCompatibility = compatibility,
+            ProtocolCompatibility = compatibility,
+            ProtocolCompatibilityRole = GatewayProtocolCompatibilityRole.Operator,
+            GatewayId = "gw-1",
+            GatewayUrl = "wss://gateway.example"
+        };
+
+        var status = ConnectionDiagnosticsProjection.BuildStatus(
+            snapshot,
+            new GatewayRecord { Id = "gw-1", Url = "wss://gateway.example" },
+            enableNodeMode: true,
+            enableMcpServer: true,
+            isMcpRunning: true,
+            mcpError: null,
+            nodeBrowserProxyEnabled: false,
+            recentDiagnostics: [],
+            diagnosticEventCount: 0,
+            gatewaySelf: new GatewaySelfInfo { Protocol = 4 });
+
+        Assert.Equal(protocol, status.Protocol.SelectedProtocol);
+        Assert.Equal(protocol, status.Protocol.Operator.SelectedProtocol);
+        Assert.Equal(protocol, status.Protocol.Node.SelectedProtocol);
+        Assert.Equal("operator", status.Protocol.Source);
+        Assert.Equal("compatible", status.Protocol.Compatibility);
+    }
+
+    [Fact]
     public void BuildStatus_OmitsBrowserProxyCaveatWhenNodeSessionIsNotLive()
     {
         var gateway = new GatewayRecord
@@ -261,6 +347,100 @@ public sealed class ConnectionDiagnosticsProjectionTests
             diagnosticEventCount: 0);
 
         Assert.NotNull(status.BrowserProxy.Caveat);
+        Assert.Contains("shared token", status.BrowserProxy.Caveat!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("SSH browser-proxy forward", status.BrowserProxy.Caveat!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BuildStatus_SshOverrideMismatchExplainsVerifiedEndpointRequirement()
+    {
+        var gateway = new GatewayRecord
+        {
+            Id = "gw-ssh",
+            FriendlyName = "SSH Remote",
+            Url = "ws://127.0.0.1:9100",
+            IsLocal = false,
+            SharedGatewayToken = "shared-token",
+            BrowserControlPort = 19000,
+            SshTunnel = new SshTunnelConfig(
+                "dev",
+                "remote.example",
+                RemotePort: 18789,
+                LocalPort: 9100,
+                IncludeBrowserProxyForward: true)
+        };
+        var snapshot = new GatewayConnectionSnapshot
+        {
+            OverallState = OverallConnectionState.Ready,
+            OperatorState = RoleConnectionState.Connected,
+            NodeConnectionIntended = true,
+            NodeState = RoleConnectionState.Connected,
+            NodePairingStatus = PairingStatus.Paired,
+            GatewayId = gateway.Id,
+            GatewayUrl = gateway.Url
+        };
+
+        var status = ConnectionDiagnosticsProjection.BuildStatus(
+            snapshot,
+            gateway,
+            enableNodeMode: true,
+            enableMcpServer: false,
+            isMcpRunning: false,
+            mcpError: null,
+            nodeBrowserProxyEnabled: true,
+            recentDiagnostics: [],
+            diagnosticEventCount: 0);
+
+        Assert.NotNull(status.BrowserProxy.Caveat);
+        Assert.Contains(
+            "managed browser-proxy forward",
+            status.BrowserProxy.Caveat!,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            "shared token",
+            status.BrowserProxy.Caveat!,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BuildStatus_SshOverrideMismatchWithMissingTokenPrioritizesToken()
+    {
+        var gateway = new GatewayRecord
+        {
+            Id = "gw-ssh",
+            Url = "ws://127.0.0.1:9100",
+            BrowserControlPort = 19000,
+            SshTunnel = new SshTunnelConfig(
+                "dev",
+                "remote.example",
+                RemotePort: 18789,
+                LocalPort: 9100,
+                IncludeBrowserProxyForward: true)
+        };
+        var snapshot = new GatewayConnectionSnapshot
+        {
+            OverallState = OverallConnectionState.Ready,
+            OperatorState = RoleConnectionState.Connected,
+            NodeConnectionIntended = true,
+            NodeState = RoleConnectionState.Connected,
+            NodePairingStatus = PairingStatus.Paired,
+            GatewayId = gateway.Id,
+            GatewayUrl = gateway.Url
+        };
+
+        var status = ConnectionDiagnosticsProjection.BuildStatus(
+            snapshot,
+            gateway,
+            enableNodeMode: true,
+            enableMcpServer: false,
+            isMcpRunning: false,
+            mcpError: null,
+            nodeBrowserProxyEnabled: true,
+            recentDiagnostics: [],
+            diagnosticEventCount: 0);
+
+        Assert.NotNull(status.BrowserProxy.Caveat);
+        Assert.Contains("shared token", status.BrowserProxy.Caveat!, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("SSH browser-proxy forward", status.BrowserProxy.Caveat!, StringComparison.OrdinalIgnoreCase);
     }
 

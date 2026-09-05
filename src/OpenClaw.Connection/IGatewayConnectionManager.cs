@@ -3,9 +3,9 @@ using OpenClaw.Shared;
 namespace OpenClaw.Connection;
 
 /// <summary>
-/// Single owner of the complete connection lifecycle for the active gateway.
-/// Manages operator connection, node connection, credential resolution,
-/// state transitions, and diagnostics.
+/// Stable public façade for the complete active-gateway connection lifecycle.
+/// The implementation owns operator/state orchestration and delegates cohesive
+/// node, bootstrap-token, and device-pair workflows to internal domain owners.
 /// </summary>
 public interface IGatewayConnectionManager : IDisposable, IAsyncDisposable
 {
@@ -26,6 +26,8 @@ public interface IGatewayConnectionManager : IDisposable, IAsyncDisposable
     Task ReconnectAsync();
     Task<bool> ReconnectIfCurrentAsync(string gatewayId, CancellationToken cancellationToken = default);
     Task<bool> RecoverSshTunnelAsync(SshTunnelExit tunnelExit);
+    Task<bool> RestartSshTunnelAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(false);
     Task SwitchGatewayAsync(string gatewayId);
     void SetGatewayConnectionIntent(string gatewayId, bool shouldBeConnected);
     bool IsAutomaticReconnectAllowed(string gatewayId);
