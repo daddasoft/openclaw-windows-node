@@ -44,7 +44,7 @@ internal static class WslViabilityInspector
         CommandResult versionResult;
         try
         {
-            versionResult = await commands.RunAsync(
+            versionResult = await commands.RunAsyncAllowingInheritedPipeHandleEscape(
                 WslConstants.WslExePath,
                 ["--version"],
                 TimeSpan.FromSeconds(5),
@@ -102,7 +102,7 @@ internal static class WslViabilityInspector
         CommandResult status;
         try
         {
-            status = await commands.RunAsync(
+            status = await commands.RunAsyncAllowingInheritedPipeHandleEscape(
                 WslConstants.WslExePath,
                 ["--status"],
                 TimeSpan.FromSeconds(10),
@@ -188,6 +188,7 @@ public sealed class PreflightWslStep : SetupStep
 
     public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
     {
+        ctx.WslViability = null;
         WslViabilityResult viability = await WslViabilityInspector.InspectAsync(
             ctx.Commands,
             ctx.Logger,
@@ -200,7 +201,7 @@ public sealed class PreflightWslStep : SetupStep
 
     internal static async Task<string?> DetectEnvironmentIssueAsync(SetupContext ctx, CancellationToken ct)
     {
-        var status = await ctx.Commands.RunAsync(
+        var status = await ctx.Commands.RunAsyncAllowingInheritedPipeHandleEscape(
             WslConstants.WslExePath,
             ["--status"],
             TimeSpan.FromSeconds(10),
@@ -244,7 +245,7 @@ public sealed class PreflightWslStep : SetupStep
                 return StepResult.Fail(WslPlatformInstallDiagnostics.DescribeFailure(process.ExitCode, quota));
             }
 
-            var probe = await ctx.Commands.RunAsync(
+            var probe = await ctx.Commands.RunAsyncAllowingInheritedPipeHandleEscape(
                 WslConstants.WslExePath,
                 ["--version"],
                 TimeSpan.FromSeconds(5),
@@ -279,15 +280,25 @@ public sealed class PreflightWslStep : SetupStep
 public sealed class EnsureWslPlatformStep : SetupStep
 {
     private readonly Func<SetupContext, CancellationToken, Task<StepResult>> _installer;
+    private readonly bool _reusePreflightResult;
 
     public EnsureWslPlatformStep()
-        : this(PreflightWslStep.InstallWslPlatformAsync)
+        : this(PreflightWslStep.InstallWslPlatformAsync, reusePreflightResult: false)
+    {
+    }
+
+    internal EnsureWslPlatformStep(bool reusePreflightResult)
+        : this(PreflightWslStep.InstallWslPlatformAsync, reusePreflightResult)
     {
     }
 
     internal EnsureWslPlatformStep(
-        Func<SetupContext, CancellationToken, Task<StepResult>> installer) =>
+        Func<SetupContext, CancellationToken, Task<StepResult>> installer,
+        bool reusePreflightResult = false)
+    {
         _installer = installer ?? throw new ArgumentNullException(nameof(installer));
+        _reusePreflightResult = reusePreflightResult;
+    }
 
     public override string Id => "ensure-wsl-platform";
     public override string DisplayName => "Prepare WSL platform";
@@ -295,10 +306,16 @@ public sealed class EnsureWslPlatformStep : SetupStep
 
     public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
     {
-        WslViabilityResult viability = await WslViabilityInspector.InspectAsync(
-            ctx.Commands,
-            ctx.Logger,
-            ct);
+        WslViabilityResult viability;
+        if (_reusePreflightResult && ctx.WslViability is { } preflightViability)
+        {
+            viability = preflightViability;
+        }
+        else
+        {
+            ctx.WslViability = null;
+            viability = await WslViabilityInspector.InspectAsync(ctx.Commands, ctx.Logger, ct);
+        }
         ctx.WslViability = viability;
 
         if (viability.Kind == WslViabilityKind.Ready)
@@ -306,6 +323,7 @@ public sealed class EnsureWslPlatformStep : SetupStep
         if (viability.BlocksSetup)
             return StepResult.Terminal(viability.Description);
 
+        ctx.WslViability = null;
         StepResult install = await _installer(ctx, ct);
         if (!install.IsSuccess)
             return install;
