@@ -125,6 +125,7 @@ rerun setup with a supported new name.
     "Bind": "loopback",
     "InstallUrl": null,
     "Version": null,
+    "FallbackVersion": null,
     "HealthTimeoutSeconds": 90,
     "ReloadMode": "hot",
     "AuthMode": "token",
@@ -199,6 +200,44 @@ Executed sequentially. Each step is a small class (30–120 lines) in its own fi
 | 22 | `RunGatewayWizardStep` | Run/configure the gateway wizard unless skipped |
 | 23 | `WindowsNodeBootstrapContextStep` | Inject Windows-node context into the WSL workspace `AGENTS.md` |
 | 24 | `StartKeepaliveStep` | Background WSL keepalive to prevent VM shutdown |
+
+The Windows port preflight requires a free port before installation. Installing
+the gateway service can start it immediately, so the subsequent WSL port check
+accepts listeners only when every reported owner PID matches the installed
+`openclaw-gateway.service` systemd `MainPID` in the configured distro. A process
+name such as `node` or `openclaw` alone is insufficient. Conflicts retain the
+port-in-use error and include owning process names when available. Missing
+listener ownership or a failed listener inspection does not bypass the check.
+
+### Local AI Hugging Face cache rollout
+
+Normal Local AI model acquisition writes verified GGUF files to the standard
+Hugging Face hub cache selected by `HF_HUB_CACHE`,
+`HUGGINGFACE_HUB_CACHE`, or the platform default. The installer reuses a
+snapshot or content-addressed blob only through
+`HuggingFaceHubCache.TryOpenVerifiedCacheFileAsync`, and cross-volume
+materialization copies from that same verified open handle. A configured cache
+root equal to or below the app-owned `LocalAI` directory is rejected before
+mutation because uninstall removes that managed tree recursively.
+
+Manifest schema 3 remains the compatibility format for existing app-owned
+model paths. Passive manifest loads, status refresh, recovery inspection, and
+uninstall reads do not migrate it. Setup reconciliation is the explicit
+promotion gate: it verifies and copies the legacy model, atomically records a
+schema-4 cache receipt, then selects the verified snapshot path as active.
+Fresh installs write schema 4 directly while retaining the legacy relative
+`ModelPath` and a verified app-owned compatibility copy for recovery and for
+rollback to schema-4-aware transitional builds containing #1388
+(feat(local-ai): add verified legacy model cache migration). Schema-3-only
+releases do not understand a schema-4 `state.json`; the retained model bytes
+alone do not make a direct downgrade to those releases compatible. Rollback
+may remove a compatibility copy created by the current transaction, but it
+never removes the verified shared-cache source.
+
+Completed cache files and pre-existing resumable partials are shared state.
+Setup rollback and uninstall do not delete them. Unsafe links, reparse points,
+hard-linked partials, destination conflicts, receipt mismatches, and concurrent
+manifest changes fail closed.
 
 ### Step Base Class
 
@@ -326,7 +365,18 @@ OpenClaw.SetupEngine.Program.Main(["--log-path", "./trace.log"])
 ```
 
 Common flags include `--config`, `--headless`, `--dry-run`, `--rollback-on-failure`, `--no-rollback-on-failure`, `--log-path`, `--gateway-port`, and uninstall safety flags such as `--uninstall` plus `--confirm-destructive`.
-The cross-repository release gate may also pass `--gateway-candidate-package <absolute-tgz>` together with `--validate-gateway-candidate`, headless mode, and rollback-on-failure. This runtime-only input is not deserialized from setup config and does not authorize normal product setup to install an unvalidated release.
+Normal setup uses npm `latest`. `Gateway.Version` may select an upstream npm
+channel tag or an exact OpenClaw package version. `Gateway.FallbackVersion` may
+name an exact stable release to offer after a typed compatibility failure.
+Legacy `recommended`, `exact`, and `fallback` selections are migrated when the
+configuration is loaded. Legacy recommendation and fallback configurations
+without a recorded version follow the upstream `latest` and `extended-stable`
+tags. Explicit legacy versions remain exact. Custom installers still require an
+explicit exact version because they cannot resolve npm tags. The cross-repository
+release gate may pass
+`--gateway-candidate-package <absolute-tgz>` with
+`--validate-gateway-candidate`, headless mode, and rollback-on-failure. The
+package input is runtime-only and does not change normal npm setup.
 
 SetupEngine option names are case-insensitive. Value options accept either separated
 syntax (`--config custom.json`) or equals syntax (`--config=custom.json`). Unknown

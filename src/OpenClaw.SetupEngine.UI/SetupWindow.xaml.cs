@@ -160,7 +160,7 @@ public sealed partial class SetupWindow : Window
         }
         try
         {
-            GatewayReleasePolicy.ResolveAndApply(_config);
+            GatewayInstallPolicy.ValidateAndApply(_config);
         }
         catch (GatewayCompatibilityException ex)
         {
@@ -312,7 +312,7 @@ public sealed partial class SetupWindow : Window
     {
         var canRetryFallback =
             compatibilityFailure is { } failureKind &&
-            GatewayReleasePolicy.CanRetryWithFallback(_config, failureKind);
+            GatewayInstallPolicy.CanRetryWithFallback(_config, failureKind);
         NavigateTo(
             typeof(CompletePage),
             new CompletePageArgs(
@@ -325,7 +325,7 @@ public sealed partial class SetupWindow : Window
                 ReviewSummary: SetupReviewSummaryBuilder.Build(_config, _dataDir, _localDataDir),
                 CanRetryGatewayFallback: canRetryFallback,
                 GatewayFallbackVersion: canRetryFallback
-                    ? GatewayReleasePolicy.FallbackVersion
+                    ? _config.Gateway.FallbackVersion
                     : null,
                 Detail: detail)
             {
@@ -335,7 +335,7 @@ public sealed partial class SetupWindow : Window
 
     public bool TryRetryWithGatewayFallback(out string? error)
     {
-        if (!GatewayReleasePolicy.TryApplyFallback(_config, out error))
+        if (!GatewayInstallPolicy.TryApplyFallback(_config, out error))
             return false;
 
         NavigateToProgress();
