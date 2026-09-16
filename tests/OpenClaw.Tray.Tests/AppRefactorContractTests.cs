@@ -32,7 +32,6 @@ public sealed class AppRefactorContractTests
             "AppUserModelIdRegistrar.RegisterCurrentProcess(AppIdentity.AppUserModelId);",
             "appUserModelIdRegistration.Attempted",
             "_settings = new SettingsManager();",
-            "CheckForUpdatesAsync();",
             "ToastNotificationManagerCompat.OnActivated += OnToastActivated;",
             "InitializeTrayIcon();",
             "_gatewayRegistry = new GatewayRegistry",
@@ -40,7 +39,19 @@ public sealed class AppRefactorContractTests
             "await ShowOnboardingAsync();",
             "EnsureNodeService(_settings);",
             "InitializeGatewayClient();",
+            "CheckForUpdatesAsync();",
             "await _activationRouter.StartForwardedActivationListenerAsync(this, CancellationToken.None);");
+    }
+
+    [Fact]
+    public void ExtendedStableUpdatePolicy_RemainsOutsideAppCompositionRoot()
+    {
+        var source = ReadAppSources();
+
+        Assert.Contains("() => _connectionManager?.OperatorClient,", source);
+        AssertInOrder(source, "InitializeGatewayClient();", "CheckForUpdatesAsync();");
+        Assert.DoesNotContain("extended-stable", source);
+        Assert.DoesNotContain("GetUpdateStatusAsync", source);
     }
 
     [Fact]
@@ -1809,6 +1820,29 @@ public sealed class AppRefactorContractTests
             "if (wslViability.BlocksSetup)",
             "PrimaryButtonText = \"Try again\"",
             "if (retry != ContentDialogResult.Primary)");
+    }
+
+    [Fact]
+    public void SetupWelcomePage_ConstrainsTheViewportAndStretchesItsChoices()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var page = XDocument.Load(Path.Combine(
+            root, "src", "OpenClaw.SetupEngine.UI", "Pages", "WelcomePage.xaml"));
+        XNamespace xaml = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+        XNamespace names = "http://schemas.microsoft.com/winfx/2006/xaml";
+        var choices = Assert.Single(page.Descendants(xaml + "ListView"),
+            element => (string?)element.Attribute(names + "Name") == "GatewayChoiceSelector");
+        var viewport = choices.Parent!;
+
+        Assert.Equal(xaml + "ScrollViewer", viewport.Name);
+        Assert.Equal("560", (string?)viewport.Attribute("MaxWidth"));
+        Assert.Equal("Stretch", (string?)viewport.Attribute("HorizontalAlignment"));
+        Assert.Equal("Stretch", (string?)viewport.Attribute("HorizontalContentAlignment"));
+        Assert.Null(choices.Attribute("MaxWidth"));
+        Assert.Equal("Stretch", (string?)choices.Attribute("HorizontalAlignment"));
+        Assert.Equal("Stretch", (string?)choices.Attribute("HorizontalContentAlignment"));
+        Assert.All(choices.Elements(xaml + "ListViewItem"), item =>
+            Assert.Equal("Stretch", (string?)item.Attribute("HorizontalContentAlignment")));
     }
 
     [Fact]
