@@ -50,6 +50,11 @@ public sealed class MsixDevelopmentSigningTests
         Assert.Contains("\"publish\", $path", buildScript);
         Assert.Contains("\"--self-contained\"", buildScript);
         Assert.Contains("-p:MsixRevision=$msixRevision", buildScript);
+        Assert.Contains("[ValidateRange(1, 65535)]", buildScript);
+        Assert.Contains("$explicitMsixRevision", buildScript);
+        Assert.Contains("-MsixRevision and -MsixOutputDirectory require -Msix Dev.", buildScript);
+        Assert.Contains("The Dev MSIX output directory must be absent or empty:", buildScript);
+        Assert.Contains("([version]$installedDevPackage.Version.ToString()).Revision + 1", buildScript);
         Assert.Contains("setup-dev-msix-cert.ps1", buildScript);
         Assert.DoesNotContain("ReleaseChannel", buildScript);
         Assert.DoesNotContain("AppInstaller", buildScript, StringComparison.OrdinalIgnoreCase);
@@ -89,7 +94,8 @@ public sealed class MsixDevelopmentSigningTests
 
         // Exactly one package per architecture, deterministically named, with provenance.
         Assert.Contains("$builtPackages.Count -ne 1", packagingScript);
-        Assert.Contains("\"OpenClawCompanion-$Architecture.msix\"", packagingScript);
+        Assert.Contains("\"OpenClaw-$Architecture.msix\"", packagingScript);
+        Assert.Contains(@"artifacts\msix\$storeArchitecture\OpenClaw-$storeArchitecture.msix", buildScript);
         Assert.Contains("msix-metadata.json", packagingScript);
         Assert.Contains("signed = $false", packagingScript);
         Assert.Contains("sourceTreeDirty = $sourceTreeDirty", packagingScript);
