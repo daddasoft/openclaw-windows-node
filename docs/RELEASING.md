@@ -14,7 +14,8 @@ smoke only; ARM64 portable publish remains required on `main` and tags.
 When either release-build lane is selected, CI also builds both architectures
 of Dev-signed and unsigned Store MSIX **workflow artifacts**. CI Gate requires
 that MSIX job to succeed. Canonical alpha releases also attach the unsigned
-Store MSIX packages and metadata for manual Partner Center submission.
+Store MSIX bundle, standalone packages, and metadata for manual Partner Center
+submission.
 Stable releases do not include MSIX assets; Dev-signed packages stay in Actions.
 
 ## Release checklist
@@ -175,16 +176,18 @@ Current release artifacts are:
 
 Canonical alpha releases additionally contain:
 
+- `OpenClaw.msixbundle` (recommended Partner Center submission input)
 - `OpenClaw-x64.msix` and `OpenClaw-arm64.msix`
 - `OpenClaw-x64.msix-metadata.json` and
   `OpenClaw-arm64.msix-metadata.json`
 
-These are **unsigned Store submission inputs, not installers**. Download the
-MSIX files and upload them manually to Partner Center. Microsoft signs accepted
-Store submissions. The alpha release step checks both architectures' clean
-source provenance, identity, version, and package hashes before staging the
-unchanged bytes built by `Build-StoreMsix.ps1`. It fails rather than publishing
-a partial or mismatched set.
+These are **unsigned Store submission inputs, not installers**. Upload the
+bundle to Partner Center for one architecture-selecting submission. The
+standalone packages remain available for inspection or fallback. Microsoft
+signs accepted Store submissions. The alpha release step checks both
+architectures' clean source provenance, identity, version, and package hashes,
+then proves that the bundle embeds those exact bytes. It fails rather than
+publishing a partial or mismatched set.
 
 Stable, stable-correction, and non-alpha prereleases retain the existing
 EXE/ZIP asset set and do not receive MSIX download notes. Dev-signed tester
@@ -196,11 +199,89 @@ Store-signed retrieval and publication, and official lifecycle acceptance
 remain follow-up work in #1375. Alpha submission artifacts do not clear those
 rollout gates.
 
-Store versions still end in `.0`; different prerelease/correction tags with
-the same `X.Y.Z` base can produce the same Store version. These build artifacts
-are not an automatic submission/version-allocation policy. See
-[CI MSIX downloads](../DEVELOPMENT.md#ci-msix-downloads) for Dev certificate
-handling, workflow revision limits, and installation instructions.
+Store versions still end in `.0`. Official tagged builds now reserve distinct
+package versions as described below; reruns reuse the same reservation.
+See [CI MSIX downloads](../DEVELOPMENT.md#ci-msix-downloads) for Dev certificate
+handling, preview limitations, and installation instructions.
+
+## MSIX version allocation
+
+Application release tags and assembly versions remain GitVersion-owned.
+MSIX uses `X.Y.(Z * 100 + packaging revision).0` for app base `X.Y.Z`, with
+packaging revisions 0-99 shared across alpha, stable, and correction tags on
+that base. The correction suffix is not a separate encoded digit. A different
+patch or year/month starts its own range. Windows' 65535 component limit still
+applies, including to the last partial range.
+
+`.github/msix-version-baseline.json` imports already-used versions. It marks
+`2026.9.400.0` used and records the workflow run, source commits, artifact IDs,
+and package hashes that substantiate that migration floor. This file is
+migration state, not a value to bump for each release. New `2026.9.5` releases
+start at `2026.9.500.0`.
+
+The canonical ledger now contains the first live reservation for this release
+line at `refs/tags/msix-package/2026.9.4/401`. It targets the commit behind
+`v2026.9.4`; an identical second allocator run reused the same reservation
+instead of consuming another number. Therefore the next unreserved
+`2026.9.4` candidate is `2026.9.402.0`.
+
+PR/main metadata jobs resolve the latest published stable Windows release from
+the canonical upstream repository and call
+`scripts\Resolve-MsixPackageVersion.ps1` in read-only mode against that release
+line and the canonical reservation ledger. While Latest is `v2026.9.4`, their
+Store preview is `2026.9.402.0`, even if GitVersion on main or the PR has moved
+to a `2026.9.5` development line. This selection affects only MSIX manifests;
+assemblies, EXE/ZIP artifacts, GitVersion output, and release tags are unchanged.
+
+Only the upstream `reserve-msix-version` job, guarded to tagged
+`push`/`workflow_dispatch` runs and scoped to `contents: write`, passes
+`-Reserve`. The matrix consumes its one shared JSON result, avoiding independent
+x64/ARM64 allocation. All other jobs retain their existing permissions.
+
+Reservations live in annotated tags
+`refs/tags/msix-package/<app-base>/<package-counter>`, targeting the source
+commit and containing the allocation JSON. The allocator uses atomic ref
+creation, not mutable release assets or the expiring Actions artifact store.
+If another run wins the same number, it verifies the competing record and
+retries. The same source release tag must always resolve to the same commit
+and reservation; moving a source tag is an error.
+
+Do not delete or force-update these records. Failed or cancelled builds keep
+their reservations and must be retried with the same source tag. Alpha release
+retention deletes release objects/assets, not the allocation tags. They do not
+begin with `v` and therefore do not trigger tag-driven release builds. The
+active `Protect MSIX package reservations` tag ruleset blocks deletion and
+non-fast-forward updates under `refs/tags/msix-package/**/*`; preserving that
+ruleset is part of the release contract.
+
+The canonical reservation ledger is an intentional, fail-closed dependency of
+the release workflow. If allocation, authentication, permissions, or ledger
+validation fails, the tagged release stops before publishing EXE/ZIP assets.
+Maintainers must repair and rerun the same source tag rather than bypassing the
+allocator or publishing a partial release.
+
+API, authentication, malformed-state, exhaustion, and retry-limit errors fail
+closed. No workflow should replace such a failure with a guessed version.
+
+Package metadata contains `msixVersionAllocation`, including source version,
+source commit/ref, package base, allocation kind, and reservation ref.
+Preview candidates never reserve a number and can change between reruns;
+they must not be treated as official Store submissions.
+
+The alpha stager requires `-VersionInfoPath` for the exact reserved result. It
+checks the app alpha version, source commit, reserved allocation, package
+version, and both architectures' metadata before copying any assets:
+
+```powershell
+.\scripts\Stage-StoreMsixReleaseAssets.ps1 `
+  -ArtifactDirectory 'artifacts\msix-alpha' `
+  -OutputDirectory 'msix-alpha-release' `
+  -Version $appVersion -ExpectedSourceCommit $sourceCommit `
+  -VersionInfoPath $reservedVersionInfoPath
+```
+
+This does not change stable/alpha asset selection, bypass CI Gate or signing
+approvals, move existing application tags, or automate Store submission.
 
 ## Manual alpha releases
 
@@ -329,10 +410,11 @@ proofs as skipped when the host is not MXC-capable; use
 `.\scripts\validate-mxc-e2e.ps1` for required local/self-hosted MXC merge
 validation. Release tags cannot enter the `release` job until **CI Gate**
 confirms classification, fast validation, tests, E2E, and release builds all
-succeeded. The `build-msix` job must also succeed whenever release metadata is
-required. The release job downloads and attaches its unsigned Store packages
-only for canonical alpha tags. Stable releases and Dev tester distribution
-do not gain MSIX release attachments.
+succeeded. The `build-msix` and `build-msix-bundle` jobs must also succeed
+whenever release metadata is required. The release job downloads and attaches
+its unsigned Store bundle, standalone packages, and metadata only for canonical
+alpha tags. Stable releases and Dev tester distribution do not gain MSIX
+release attachments.
 
 The release job should:
 
@@ -344,7 +426,7 @@ The release job should:
 6. Build Inno installers.
 7. Sign installers.
 8. For canonical alpha tags only, stage the validated unsigned Store MSIX
-   packages and metadata.
+   bundle, standalone packages, and metadata.
 9. Create a GitHub release whose prerelease flag matches the tag, with installer
    and portable ZIP assets plus any gated alpha submission assets.
 

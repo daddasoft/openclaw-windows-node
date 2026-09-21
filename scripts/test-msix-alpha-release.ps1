@@ -33,6 +33,21 @@ function Assert-Fails {
 function New-Fixture {
     $script:scenario++
     $inputPath = Join-Path $temporaryRoot "input-$scenario"
+    $allocation = [ordered]@{
+        schemaVersion = 1
+        sourceVersion = '2026.7.2-alpha.4'
+        sourceCommit = $sourceCommit
+        sourceRef = 'refs/tags/v2026.7.2-alpha.4'
+        repository = 'openclaw/openclaw-windows-node'
+        baseVersion = '2026.7.2'
+        packageBaseVersion = '2026.7.202'
+        storePackageVersion = '2026.7.202.0'
+        packagingRevision = 2
+        allocation = 'reserved'
+        reservationRef = 'refs/tags/msix-package/2026.7.2/202'
+    }
+    $allocationPath = Join-Path $temporaryRoot "allocation-$scenario.json"
+    $allocation | ConvertTo-Json | Set-Content -LiteralPath $allocationPath
     foreach ($architecture in @('x64', 'arm64')) {
         $directory = Join-Path $inputPath "openclaw-msix-store-unsigned-$architecture"
         New-Item -ItemType Directory -Path $directory -Force | Out-Null
@@ -47,16 +62,44 @@ function New-Fixture {
             identityName = [string]$manifest.Package.Identity.Name
             publisher = [string]$manifest.Package.Identity.Publisher
             architecture = $architecture
-            packageVersion = '2026.7.2.0'
+            packageVersion = '2026.7.202.0'
             archive = $packageName
             sha256 = (Get-FileHash -LiteralPath $packagePath -Algorithm SHA256).Hash
-        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $directory 'msix-metadata.json')
+            msixVersionAllocation = $allocation
+        } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $directory 'msix-metadata.json')
     }
+    $bundleDirectory = Join-Path $inputPath 'openclaw-msix-store-unsigned-bundle'
+    New-Item -ItemType Directory -Path $bundleDirectory -Force | Out-Null
+    $bundlePath = Join-Path $bundleDirectory 'OpenClaw.msixbundle'
+    $bundle = [IO.Compression.ZipFile]::Open($bundlePath, [IO.Compression.ZipArchiveMode]::Create)
+    try {
+        $manifestEntry = $bundle.CreateEntry('AppxMetadata/AppxBundleManifest.xml')
+        $writer = [IO.StreamWriter]::new($manifestEntry.Open())
+        try {
+            $writer.Write(
+                '<Bundle><Identity Name="{0}" Publisher="{1}" Version="2026.7.202.0" />' +
+                '<Packages><Package FileName="OpenClaw-x64.msix" Architecture="x64" />' +
+                '<Package FileName="OpenClaw-arm64.msix" Architecture="arm64" /></Packages></Bundle>',
+                [string]$manifest.Package.Identity.Name,
+                [Security.SecurityElement]::Escape([string]$manifest.Package.Identity.Publisher))
+        }
+        finally { $writer.Dispose() }
+        foreach ($architecture in @('x64', 'arm64')) {
+            $packagePath = Join-Path $inputPath "openclaw-msix-store-unsigned-$architecture\OpenClaw-$architecture.msix"
+            $entry = $bundle.CreateEntry("OpenClaw-$architecture.msix")
+            $source = [IO.File]::OpenRead($packagePath)
+            $destination = $entry.Open()
+            try { $source.CopyTo($destination) }
+            finally { $destination.Dispose(); $source.Dispose() }
+        }
+    }
+    finally { $bundle.Dispose() }
     @{
         ArtifactDirectory = $inputPath
         OutputDirectory = Join-Path $temporaryRoot "output-$scenario"
         Version = '2026.7.2-alpha.4'
         ExpectedSourceCommit = $sourceCommit
+        VersionInfoPath = $allocationPath
     }
 }
 
@@ -65,17 +108,19 @@ $oldEvent = $env:EVENT_NAME
 $oldSchedule = $env:SCHEDULE
 $oldOutput = $env:GITHUB_OUTPUT
 try {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
     $arguments = New-Fixture
     $assets = & $stager @arguments
     $names = @($assets.Files | ForEach-Object { [IO.Path]::GetFileName($_) } | Sort-Object)
     $expected = @(
+        'OpenClaw.msixbundle',
         'OpenClaw-arm64.msix',
         'OpenClaw-arm64.msix-metadata.json',
         'OpenClaw-x64.msix',
         'OpenClaw-x64.msix-metadata.json'
     )
     if (@(Compare-Object $expected $names).Count -gt 0 -or
-        @(Get-ChildItem -LiteralPath $arguments.OutputDirectory).Count -ne 4) {
+        @(Get-ChildItem -LiteralPath $arguments.OutputDirectory).Count -ne 5) {
         throw 'Release assets did not match the exact public Store allowlist.'
     }
     foreach ($architecture in @('x64', 'arm64')) {
@@ -90,7 +135,7 @@ try {
             throw 'Published metadata did not describe the released file.'
         }
     }
-    foreach ($warning in @('OpenClaw-x64.msix', 'OpenClaw-arm64.msix', 'unsigned', 'not installers', '2026.7.2.0', 'same Store version', 'Dev-signed tester downloads remain in Actions')) {
+    foreach ($warning in @('OpenClaw.msixbundle', 'recommended', 'OpenClaw-x64.msix', 'OpenClaw-arm64.msix', 'unsigned', 'not installers', '2026.7.202.0', 'reuse its reservation', 'Dev-signed tester downloads remain in Actions')) {
         if (-not $assets.Notes.Contains($warning)) { throw "Release notes are missing '$warning'." }
     }
     Assert-Fails { & $stager @arguments } 'absent or empty'
@@ -118,7 +163,7 @@ try {
         $path = Join-Path $arguments.ArtifactDirectory 'openclaw-msix-store-unsigned-arm64\msix-metadata.json'
         $metadata = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
         $metadata.($mutation.Field) = $mutation.Value
-        $metadata | ConvertTo-Json | Set-Content -LiteralPath $path
+        $metadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $path
         Assert-Fails { & $stager @arguments } $mutation.Error
         if (Test-Path -LiteralPath $arguments.OutputDirectory) { throw 'Rejected ARM64 input left partial release assets.' }
     }
@@ -129,8 +174,52 @@ try {
     Remove-Item -LiteralPath (Join-Path $arguments.ArtifactDirectory 'openclaw-msix-store-unsigned-arm64\OpenClaw-arm64.msix')
     Assert-Fails { & $stager @arguments } 'exactly'
     $arguments = New-Fixture
+    Remove-Item -LiteralPath (Join-Path $arguments.ArtifactDirectory 'openclaw-msix-store-unsigned-bundle\OpenClaw.msixbundle')
+    Assert-Fails { & $stager @arguments } 'exactly the unsigned multi-architecture'
+    $arguments = New-Fixture
+    $bundlePath = Join-Path $arguments.ArtifactDirectory 'openclaw-msix-store-unsigned-bundle\OpenClaw.msixbundle'
+    $bundle = [IO.Compression.ZipFile]::Open($bundlePath, [IO.Compression.ZipArchiveMode]::Update)
+    try {
+        $entry = $bundle.GetEntry('OpenClaw-arm64.msix')
+        $entry.Delete()
+        $entry = $bundle.CreateEntry('OpenClaw-arm64.msix')
+        $writer = [IO.StreamWriter]::new($entry.Open())
+        try { $writer.Write('changed package bytes') }
+        finally { $writer.Dispose() }
+    }
+    finally { $bundle.Dispose() }
+    Assert-Fails { & $stager @arguments } 'changed the arm64 package bytes'
+    if (Test-Path -LiteralPath $arguments.OutputDirectory) { throw 'Rejected bundle left partial release assets.' }
+    $arguments = New-Fixture
     $arguments.Version = '2026.7.3-alpha.4'
-    Assert-Fails { & $stager @arguments } 'unsigned metadata'
+    Assert-Fails { & $stager @arguments } 'source version'
+
+    foreach ($mutation in @(
+        @{ Field = 'allocation'; Value = 'preview' },
+        @{ Field = 'sourceCommit'; Value = ('b' * 40) },
+        @{ Field = 'sourceVersion'; Value = '2026.7.2-alpha.3' },
+        @{ Field = 'reservationRef'; Value = 'refs/tags/msix-package/2026.7.2/203' }
+    )) {
+        $arguments = New-Fixture
+        $path = Join-Path $arguments.ArtifactDirectory 'openclaw-msix-store-unsigned-arm64\msix-metadata.json'
+        $metadata = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+        $metadata.msixVersionAllocation.($mutation.Field) = $mutation.Value
+        $metadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $path
+        Assert-Fails { & $stager @arguments } 'MSIX'
+        if (Test-Path -LiteralPath $arguments.OutputDirectory) { throw 'Rejected allocation left partial release assets.' }
+    }
+    $arguments = New-Fixture
+    $path = Join-Path $arguments.ArtifactDirectory 'openclaw-msix-store-unsigned-arm64\msix-metadata.json'
+    $metadata = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+    $metadata.PSObject.Properties.Remove('msixVersionAllocation')
+    $metadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $path
+    Assert-Fails { & $stager @arguments } 'missing its release allocation'
+    $arguments = New-Fixture
+    $allocation = Get-Content -LiteralPath $arguments.VersionInfoPath -Raw | ConvertFrom-Json
+    $allocation.allocation = 'preview'
+    $allocation.reservationRef = $null
+    $allocation | ConvertTo-Json | Set-Content -LiteralPath $arguments.VersionInfoPath
+    Assert-Fails { & $stager @arguments } 'MSIX'
 
     # Execute the actual metadata selector rather than a test-only copy of its regex.
     $workflow = Get-Content -LiteralPath (Join-Path $RepoRoot '.github\workflows\ci.yml') -Raw
