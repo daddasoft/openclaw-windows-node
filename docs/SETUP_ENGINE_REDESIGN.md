@@ -18,16 +18,153 @@ timing explanation, not an established cause of every refusal. Observed service
 states differ: local diagnostics captured `activating/auto-restart` with no
 MainPID, while hosted generic refusals captured an `active/running` unit and a
 live PID. Neither snapshot establishes the admission-time owner-lease predicate.
-`SetupWizardRunner` recognizes only the exact
-serving-owner refusal, waits for verified managed endpoint ownership using the
-existing bounded provenance probe, and retries the normal CLI restart once.
+`SetupWizardRunner` recognizes only the exact serving-owner refusal or the
+combination of typed state-database coordinator contention and the exact
+restart-intent-recording refusal. It waits for verified managed endpoint
+ownership using the existing bounded provenance probe, then retries the normal
+guarded CLI restart once.
 The probe allows up to 30 one-second retry delays, plus probe duration, for
 `NoListener` and `UnknownListener` tagged `ListenerSnapshotChanged`. Other
 unknown/conflicting listeners, other restart errors, and a repeated refusal still
 fail setup. Listener provenance does not prove owner-lease or coordinator
-readiness; the retried CLI command retains those guards. Restart-intent recording
-contention is a separate failure and is not retried here. There is no direct
+readiness; the retried CLI command retains those guards. There is no direct
 systemd restart fallback or ownership bypass.
+
+### WSL start/restart deadlines and evidence
+
+`StartGatewayStep` gives `gateway start` 90 seconds and `gateway restart`
+420 seconds. The latter covers the pinned Gateway 2026.9.6 service-stop
+allowance (330 seconds), replacement-health window (60 seconds), and 30 seconds
+of CLI preparation margin. This is a bounded Companion allowance, not a
+guarantee that an overloaded Gateway will finish. Increasing only the later
+HTTP timeout cannot extend the CLI deadline.
+
+After reload restoration, `SetupWizardRunner` applies one shared deadline of
+`420 + Gateway.HealthTimeoutSeconds + 60` seconds (570 seconds by default).
+It includes the initial CLI attempt, any start-limit recovery, the single
+exact-marker guarded retry, contention delay, provenance probes, HTTP
+reachability and final provenance check. The second CLI attempt gets at most
+the remaining budget, never a fresh lifecycle allowance. The preceding reload
+write retains its separate 15-second bound. Cleanup still runs independently
+of wizard cancellation; the deadline cancels its owned commands/probes, not
+the user's Gateway service directly.
+This is a cooperative execution deadline; OS process teardown and scheduling
+can add wall-clock overhead. Standalone start/restart steps retain their
+existing finite pipeline retry policy for non-timeout failures; the shared
+lifecycle deadline described here is specific to post-wizard restoration.
+Retaining that standalone policy is an intentional operator wait-time tradeoff:
+three completed non-timeout restart failures can consume nearly 1,260 seconds
+of CLI time, or 2,520 seconds if each attempt also takes the existing start-limit
+reset/retry path, plus reset, health and backoff time. A timed-out CLI remains
+terminal on the first timeout. This change does not add a standalone shared budget.
+
+A CLI timeout is a terminal unknown outcome, even if captured output also
+contains a retry marker. It does not trigger reset-failed, a guarded restart
+retry, or an enclosing pipeline retry. Failures retain CLI phase, exit code,
+timeout flag, elapsed time, limit, and both output streams, each sanitized
+before truncation to 2,048 characters. A provenance refusal during recovery
+also retains the original restart failure. Internal `StepResult` recovery facts
+are classified from complete command streams using the exact markers before
+display truncation, so long diagnostic prefixes cannot suppress guarded recovery.
+These facts carry no raw output and never authorize recovery after a timeout.
+
+If the guarded retry fails, its outcome and diagnostics retain the initial
+restart refusal as context. If the deadline expires during final ownership
+verification, diagnostics distinguish completed CLI restart and HTTP
+reachability from the final ownership stage exceeding its deadline, even if
+the ownership probe returned success before the final deadline check.
+The result remains terminal and does not authorize another restart.
+
+HTTP 200/401/403 still means only endpoint reachability. Neither this HTTP
+probe nor listener provenance establishes an authenticated ready Gateway.
+Authentication and pairing retain their existing owners and gates.
+
+**Why the order is unchanged:** at upstream commit
+[`eb377ac59e6c9fd6c7705028034812becf00271b`](https://github.com/openclaw/openclaw/tree/eb377ac59e6c9fd6c7705028034812becf00271b),
+[`config-reload.ts`](https://github.com/openclaw/openclaw/blob/eb377ac59e6c9fd6c7705028034812becf00271b/src/gateway/config-reload.ts)
+commits the comparison baseline with `runtimeApplied: false` when the next
+mode is `off`.
+[`config-reload-plan.ts`](https://github.com/openclaw/openclaw/blob/eb377ac59e6c9fd6c7705028034812becf00271b/src/gateway/config-reload-plan.ts)
+classifies `gateway.reload` as `none`. Restoring `hybrid` alone is therefore
+not proof that earlier wizard settings were applied. A coalesced observation
+can include other changes, so it is also not a synchronization barrier against
+automatic restart. Restarting before restoration would leave a subsequent
+write to reconcile with the replacement runtime and does not provide a
+documented ownership/coordinator-readiness handshake. No new public Gateway
+API, sleep, direct systemd restart, or sequencing assumption is introduced.
+The timing constants come from
+[`gateway-shutdown-budget.mjs`](https://github.com/openclaw/openclaw/blob/eb377ac59e6c9fd6c7705028034812becf00271b/gateway-shutdown-budget.mjs).
+
+`GatewayRestartLifecycleTests` reproduces the Companion command-boundary
+transition with injected serving-owner and typed-contention refusals, slow CLI
+completion, timeout output, and virtual deadline exhaustion/cancellation.
+These are deterministic orchestration tests, not execution of the upstream
+watcher or proof of the cause of a live owner-lease refusal. Companion-only
+reordering is not established safe by this evidence; real WSL Gateway/MXC
+validation remains required.
+
+The separate **native Gateway MSIX** Welcome path does not use
+`SetupStepFactory.BuildDefaultSteps()`. `NativeGatewaySetupService` owns its
+dedicated-profile and package preparation. `NativeGatewaySetupSession` owns
+staged-record runtime authorization, reload suspension/restoration, retry/cancel,
+authenticated health/config gates, and final registry publication.
+`WizardPage` is the single hosted WinUI wizard for both WSL and native:
+`wizard.start/next/cancel` transport, upstream prompts, and provider/model cards
+are not duplicated. Native uses the upstream `installDaemon: false` contract.
+`NativeGatewayPackageResolver`
+checks Windows package registration and package-qualified aliases.
+`NativeGatewayMsixInstaller` installs the fixed Store product using the current-user
+App Installer alias and `CommandRunner`:
+`winget install --id 9NV70LV3D6XC --source msstore --silent --accept-package-agreements --accept-source-agreements --disable-interactivity --no-upgrade`.
+Native review explicitly explains installation and agreement acceptance before
+the user selects **Set up gateway**. Microsoft Store owns architecture selection,
+signature validation and deployment; no local MSIX path is required. Missing
+WinGet, Store access failures and nonzero exit codes surface bounded, sanitized
+diagnostics and retry guidance instead of opening a manual Store page.
+`NativeGatewayPackageIdentity` pins the exact Store name/publisher pair and retains
+the original development identity for existing installations. Multiple matching
+registrations fail explicitly for new setup. Existing runtime profiles resolve only
+their saved family, allowing both packages to coexist without an implicit migration.
+`NativeGatewayPackageAcquisition` invokes installation once only for missing
+registration. Installation and verified package readiness share a five-minute
+deadline. Cancellation stops the WinGet request, but Windows deployment may
+continue. Repair errors and timeouts stay visible, with explicit retry rather
+than repeated installer launches; retries recheck registration before installing.
+Native setup shares the capability profiles and Windows permissions page with
+WSL but skips WSL/Local AI/Tailscale installation review and probes. The native
+progress page uses shared spinner/checkmark rows and automatically enters the
+Gateway wizard after preparing its runtime. Finalization applies the selected
+Gateway command allowlist before config/health gates, then persists only the
+Companion node/capability settings. Completion does not claim node pairing.
+`NativeGatewaySetupHost` runs captured `clawctl setup`, config validation, and
+health commands, plus an explicitly requested profile-scoped recovery terminal.
+It never launches `openclaw onboard` or WSL.
+`NativeGatewayRuntime` in the Connection project owns the gateway process.
+This path is non-isolated and UI-only. Companion never downloads an MSIX itself
+or bypasses Microsoft Store installation.
+Existing headless setup arguments continue to select the WSL pipeline.
+See [Native Gateway MSIX](ONBOARDING_WIZARD.md#native-gateway-msix-isolated-or-legacy)
+for consent, lifecycle, retry, and acquisition boundaries.
+
+See [Gateway setup responsibilities](GATEWAY_SETUP_RESPONSIBILITIES.md) for the
+Gateway packaging responsibility matrix, its comparison with WSL provisioning,
+and the decided Companion-owned MXC lifecycle. The required isolated path
+preserves identity/configuration across restarts, stops on exit, and deprovisions
+only on explicit removal. Its package activation and listener-provenance contracts
+remain blocked pending integration proof; the non-isolated runtime is not a
+substitute.
+
+The [Welcome recommendation policy](ONBOARDING_WIZARD.md#welcome) now checks
+`wxc-exec --probe` session capability before recommending the existing native
+Gateway. `NativeGatewaySetupEligibility` owns admission and selection policy.
+Unavailable capability offers Windows Update with the pinned SDK's Insider
+baseline (26340.9212); failed probes offer retry/repair instead. WSL is always
+visible as the second option after native, with existing-gateway connection third.
+Explicit WSL and existing-gateway choices survive late native probe results. Welcome has no
+manual recheck button; reopening the page checks again. The separate isolation warning/checkbox is removed by the
+2026-09-18 product decision; general security consent remains. This is not
+session provisioning. Gateway distribution includes x64, ARM64 and MSIX bundle
+artifacts, but the temporary development installer remains ARM64-only.
 
 > **Status note (2026-07-06):** Current default setup includes `WindowsNodeBootstrapContextStep`, which injects Windows-node context into the WSL workspace `AGENTS.md` after onboarding.
 
@@ -112,14 +249,12 @@ rerun setup with a supported new name.
     "openclaw-setup": "true",
     "security-disclaimer": "true",
     "i-understand-this-is-personal-by-default-and-shared-multi-user-use-requires-lock-down-continue": "true",
-    "setup-mode": "quickstart",
     "existing-config-detected": "true",
     "config-handling": "keep",
     "quickstart": "true",
     "model-auth-provider": "skip",
     "default-model": "__keep__",
     "select-channel-quickstart": "__skip__",
-    "search-provider": "__skip__",
     "configure-skills-now-recommended": "false"
   },
   "LogLevel": "trace",
@@ -272,6 +407,17 @@ hub-cache snapshot as the active model path, while preserving the legacy
 compatibility path and the prior gateway fallback, install time, and rollback
 metadata.
 
+Runtime upgrades validate the installed executable against its recorded runtime
+release, not the current catalog release. A verified schema-3 model is migrated
+to the hub cache before reuse by the new runtime, without downloading it again.
+Normal setup keeps the pre-upgrade receipt separate from gateway recovery state.
+If a later step fails, receipt persistence restores that baseline before runtime
+acquisition removes the newly installed runtime. Reconciliation also restores
+the baseline when setup fails after migration but before receipt persistence.
+The old runtime, compatibility model, and verified shared-cache copy are retained.
+Superseded runtime directories remain until explicit uninstall; upgrades do not
+prune the rollback baseline.
+
 Completed cache files and pre-existing resumable partials are shared state.
 Setup rollback and uninstall do not delete them. Unsafe links, reparse points,
 hard-linked partials, destination conflicts, receipt mismatches, and concurrent
@@ -297,6 +443,25 @@ public abstract class SetupStep
 ```csharp
 public sealed record StepResult(StepOutcome Outcome, string? Message = null, Exception? Exception = null);
 ```
+
+### Headless E2E guarded-restart diagnostics
+
+The disposable `E2ESetupFixture` runs the same CLI entry point with an internal
+failure observer. If the wizard step fails specifically at the guarded
+post-wizard Gateway restart, the observer awaits a fixed, read-only
+`systemctl --user show` probe **before** the normal owned-fixture rollback.
+The resulting `gateway-restart-diagnostic.json` contains only an allowlisted
+refusal category and coarse unit/state/PID-presence/start-identity-availability
+facts, plus allowlisted service result and bounded exit code/status. Failed or
+timed-out probes produce an explicit probe status, not raw
+command output. The original setup failure and rollback are unchanged.
+
+The public Gateway CLI does not expose the rejected owner-lease predicate,
+so `ownerPredicate=not_exposed_by_gateway_cli` is intentional. An
+`unverified` serving owner must not be interpreted as coordinator contention
+without the separately observed typed contention error. This fixture-only
+diagnostic neither retries the guarded restart nor preserves the distro after
+rollback.
 
 ---
 
@@ -356,7 +521,8 @@ The WinUI app is a **thin shell** - no business logic, just rendering pipeline s
 
 **WelcomePage**
 - OpenClaw icon + "OpenClaw Setup" title bar
-- Install app-owned WSL gateway (recommended) or connect to existing gateway
+- Capability-checked native Gateway first and recommended; Windows Update/retry guidance when unavailable
+- Collapsed WSL alternative or visible connection to an existing gateway
 - Replacement prompt when an app-owned WSL gateway already exists
 
 **CapabilitiesPage**

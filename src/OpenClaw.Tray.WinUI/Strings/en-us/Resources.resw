@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:element name="root" msdata:IsDataSet="true">
@@ -2401,6 +2401,12 @@ Use one of these options:
   </data>
   <data name="Onboarding_Wizard_ErrorGatewayDisconnected" xml:space="preserve">
     <value>Gateway disconnected</value>
+  </data>
+  <data name="Onboarding_Wizard_GatewayConsoleGap" xml:space="preserve">
+    <value>Some Gateway console messages were skipped. Open the Gateway terminal for missing sign-in guidance.</value>
+  </data>
+  <data name="Onboarding_Wizard_GatewayConsoleUnavailable" xml:space="preserve">
+    <value>Gateway console updates are unavailable. Open the Gateway terminal for provider sign-in guidance.</value>
   </data>
   <data name="Onboarding_Wizard_ErrorGatewayDisconnectedDetail" xml:space="preserve">
     <value>Lost connection to gateway. Click Next to skip the wizard, or wait for reconnection.</value>
@@ -4997,7 +5003,7 @@ Commands are blocked while sandboxing is unavailable because strict fallback blo
     <value>MSIX installation detected</value>
   </data>
   <data name="SettingsPage_MSIXInstallationDetected.Message" xml:space="preserve">
-    <value>Removing OpenClaw from Windows Settings &amp;#x2192; Apps will NOT clean up the Local Gateway (WSL distro, disk image). Use Remove Local Gateway below FIRST, then uninstall OpenClaw.</value>
+    <value>Removing OpenClaw from Windows Settings → Apps will NOT clean up the Local Gateway (WSL distro, disk image). Use Remove Local Gateway below FIRST, then uninstall OpenClaw.</value>
   </data>
   <data name="SettingsPage_RemovesTheWSLDistro.Text" xml:space="preserve">
     <value>Removes the WSL distro (OpenClawGateway), its disk image, autostart entry, and clears gateway credentials. Your MCP token is preserved. Onboarding will reset.</value>
@@ -7232,9 +7238,6 @@ Choose {1} to exit this preview without starting migration and continue using th
   <data name="Migration_StoreValidationFailed" xml:space="preserve">
     <value>OpenClaw could not safely validate the previous setup for migration. No completion was recorded and the previous app was not changed. Close this preview and try again later. Do not uninstall the previous app, delete migration data, or run gateway cleanup.</value>
   </data>
-  <data name="Migration_StoreCredentialUnavailable" xml:space="preserve">
-    <value>OpenClaw could not resolve a credential for the active gateway. No completion was recorded and the previous app was not changed. Close this preview and restore the active gateway configuration before retrying. Do not uninstall the previous app, delete migration data, or run gateway cleanup.</value>
-  </data>
   <data name="Migration_StoreAwaitingInnoRemoval" xml:space="preserve">
     <value>OpenClaw recorded migration completion and preserved your setup. Close this preview, uninstall the previous OpenClaw Companion app through Windows Settings, then open the Store version. Do not delete migration data or run gateway cleanup.</value>
   </data>
@@ -7262,6 +7265,143 @@ Choose {1} to exit this preview without starting migration and continue using th
   <data name="Migration_StorePending" xml:space="preserve">
     <value>A previous migration needs recovery or finalization. This test build cannot continue it or start normally. Close this preview. Do not uninstall the previous app, delete migration data, or run gateway cleanup.</value>
   </data>
+  <data name="Migration2_Title" xml:space="preserve">
+    <value>Move to the Store version</value>
+  </data>
+  <data name="Migration2_Consent" xml:space="preserve">
+    <value>Keep your settings, gateway, files, and models where they are.</value>
+  </data>
+  <data name="Migration2_PrepareStepTitle" xml:space="preserve">
+    <value>We'll prepare your setup</value>
+  </data>
+  <data name="Migration2_PrepareStepBody" xml:space="preserve">
+    <value>We'll safely close the previous app, check your installation and settings, and save protected migration records.</value>
+  </data>
+  <data name="Migration2_RemoveStepTitle" xml:space="preserve">
+    <value>You'll remove the previous app</value>
+  </data>
+  <data name="Migration2_RemoveStepBody" xml:space="preserve">
+    <value>When prompted, uninstall it manually. Nothing is uninstalled automatically.</value>
+  </data>
+  <data name="Migration2_FinishStepTitle" xml:space="preserve">
+    <value>Then use the Store version</value>
+  </data>
+  <data name="Migration2_FinishStepBody" xml:space="preserve">
+    <value>We verify removal before starting the Store version.</value>
+  </data>
+  <data name="Migration2_ConsentHint" xml:space="preserve">
+    <value>Choose Not now to leave without starting migration. The Store version stays closed while the previous app is installed.</value>
+  </data>
+  <data name="Migration2_ConsentWarningTitle" xml:space="preserve">
+    <value>Before you continue</value>
+  </data>
+  <data name="Migration2_ConsentWarning" xml:space="preserve">
+    <value>If validation succeeds, the previous app can no longer start normally.</value>
+  </data>
+  <data name="Migration2_Closing" xml:space="preserve">
+    <value>Asking the previous app to close safely...</value>
+  </data>
+  <data name="Migration2_Preparing" xml:space="preserve">
+    <value>Validating your existing setup...</value>
+  </data>
+  <data name="Migration2_Completing" xml:space="preserve">
+    <value>Recording migration completion...</value>
+  </data>
+  <data name="Migration2_Finalizing" xml:space="preserve">
+    <value>Checking removal and finishing migration...</value>
+  </data>
+  <data name="Migration2_CloseInno" xml:space="preserve">
+    <value>Close OpenClaw Companion from its tray menu, then choose Retry.</value>
+  </data>
+  <data name="Migration2_CloseInnoTitle" xml:space="preserve">
+    <value>Close the previous app</value>
+  </data>
+  <data name="Migration2_CloseInnoWarningTitle" xml:space="preserve">
+    <value>Don't uninstall yet</value>
+  </data>
+  <data name="Migration2_CloseInnoWarning" xml:space="preserve">
+    <value>Don't force-close or uninstall it yet. We'll tell you when it's safe to uninstall.</value>
+  </data>
+  <data name="Migration2_AwaitingRemoval" xml:space="preserve">
+    <value>Your setup has been validated and migration completion recorded.
+
+1. Open Installed apps and uninstall only the previous OpenClaw Companion app. Keep the Store version.
+
+2. Return here and choose Retry to verify removal and finish.
+
+Your settings, gateway, files, and models stay in place.</value>
+  </data>
+  <data name="Migration2_RemovalTitle" xml:space="preserve">
+    <value>Remove the previous app</value>
+  </data>
+  <data name="Migration2_RemovalWarningTitle" xml:space="preserve">
+    <value>Keep your setup</value>
+  </data>
+  <data name="Migration2_RemovalWarning" xml:space="preserve">
+    <value>Don't delete migration data or run gateway cleanup.</value>
+  </data>
+  <data name="Migration2_ValidationFailed" xml:space="preserve">
+    <value>OpenClaw could not safely complete migration. Do not uninstall the previous app or run gateway cleanup. Check the app log, resolve the problem, and retry.</value>
+  </data>
+  <data name="Migration2_UpdateRequired" xml:space="preserve">
+    <value>Update the previous app to a supported migration-capable version first. Your setup has not been changed. This app stays inactive while the previous app is installed.</value>
+  </data>
+  <data name="Migration2_Unsupported" xml:space="preserve">
+    <value>This installation cannot be migrated safely. Only the default installation for the same Windows user and matching architecture is supported. Your setup has not been changed. This app stays inactive while the previous app is installed.</value>
+  </data>
+  <data name="Migration2_InspectionFailed" xml:space="preserve">
+    <value>OpenClaw could not safely inspect the installation or migration records. Check the app log before retrying. Do not delete migration data or run gateway cleanup.</value>
+  </data>
+  <data name="Migration2_Recovery" xml:space="preserve">
+    <value>This migration needs recovery. Check the app log. If the previous app is still installed, remove it from Installed apps and select Retry. Do not delete migration data by hand or run gateway cleanup.</value>
+  </data>
+  <data name="Migration2_FinalizationFailed" xml:space="preserve">
+    <value>OpenClaw could not finish migration. The completion receipt was kept for recovery. Check the app log and retry. Do not delete migration data or run gateway cleanup.</value>
+  </data>
+  <data name="Migration2_InstalledApps" xml:space="preserve">
+    <value>Open Installed apps</value>
+  </data>
+  <data name="Migration2_DiscardRecords" xml:space="preserve">
+    <value>Discard unreadable migration data</value>
+  </data>
+  <data name="Migration2_DiscardFailed" xml:space="preserve">
+    <value>OpenClaw could not discard the migration data. If the previous OpenClaw app is running, close it and try again. Check the app log for details.</value>
+  </data>
+  <data name="Migration2_LaunchFailed" xml:space="preserve">
+    <value>Windows could not open the requested page. Try again, or open Windows Settings &gt; Apps &gt; Installed apps manually if migration is complete.</value>
+  </data>
+  <data name="Migration2_InnoRecommendation.Text" xml:space="preserve">
+    <value>Recommended</value>
+  </data>
+  <data name="Migration2_InnoCardTitle.Text" xml:space="preserve">
+    <value>Move to the Microsoft Store version</value>
+  </data>
+  <data name="Migration2_InnoCardDescription.Text" xml:space="preserve">
+    <value>Get future OpenClaw updates through Microsoft Store. Your existing OpenClaw setup will be preserved.</value>
+  </data>
+  <data name="Migration2_InnoAction" xml:space="preserve">
+    <value>Install Store version and migrate</value>
+  </data>
+  <data name="Migration2_InnoConsentTitle" xml:space="preserve">
+    <value>Move to the Store version?</value>
+  </data>
+  <data name="Migration2_InnoConsent" xml:space="preserve">
+    <value>Microsoft Store opens so you can install the Store version. When you open it, it can close this app and finish the move without asking again.
+
+Your settings, gateway, files, and models stay where they are.</value>
+  </data>
+  <data name="Migration2_InnoGranted" xml:space="preserve">
+    <value>Migration consent was saved. Install and open the Store version to continue. Keep this app installed until migration completion is confirmed.</value>
+  </data>
+  <data name="Migration2_InnoFailed" xml:space="preserve">
+    <value>OpenClaw could not save migration consent or open the Store listing. Check the app log and retry. Do not uninstall this app.</value>
+  </data>
+  <data name="Migration2_Close" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="Migration2_Busy" xml:space="preserve">
+    <value>Please wait for this step to finish.</value>
+  </data>
   <data name="Chat_Code_Copy" xml:space="preserve"><value>Copy code</value></data>
   <data name="Chat_Code_Label" xml:space="preserve"><value>Code block</value></data>
   <data name="Chat_Model_Current" xml:space="preserve"><value>Current model</value></data>
@@ -7276,4 +7416,45 @@ Choose {1} to exit this preview without starting migration and continue using th
   <data name="Chat_Composer_Effort_Title" xml:space="preserve"><value>Effort</value></data>
   <data name="Chat_Composer_Effort_Faster" xml:space="preserve"><value>Faster</value></data>
   <data name="Chat_Composer_Effort_Smarter" xml:space="preserve"><value>Smarter</value></data>
+  <data name="Onboarding_Native_Title.Text" xml:space="preserve"><value>Install a local native gateway</value></data>
+  <data name="Onboarding_Native_Description.Text" xml:space="preserve"><value>Install and set up an OpenClaw gateway on this device</value></data>
+  <data name="Onboarding_Wsl_Title.Text" xml:space="preserve"><value>Install a local WSL gateway</value></data>
+  <data name="Onboarding_Native_CheckingSupport" xml:space="preserve"><value>Checking native gateway support...</value></data>
+  <data name="Onboarding_Native_SupportAvailable" xml:space="preserve"><value>Native gateway support is available on this device.</value></data>
+  <data name="Onboarding_Native_SupportUnavailable" xml:space="preserve"><value>Native gateway support is unavailable. Install Windows Insider build {0} or a newer supported build in Windows Update, then reopen this page. Feature availability can vary by device.</value></data>
+  <data name="Onboarding_Native_SupportCheckFailed" xml:space="preserve"><value>Could not verify native gateway support. Reopen this page to retry. If the check keeps failing, update or repair Companion.</value></data>
+  <data name="Onboarding_Native_UnsupportedPlatform" xml:space="preserve"><value>Native gateway setup requires a supported Windows client. Windows Server is not supported.</value></data>
+  <data name="Onboarding_Native_WindowsUpdate.Content" xml:space="preserve"><value>Open Windows Update</value></data>
+  <data name="Onboarding_Native_Recommended.Text" xml:space="preserve"><value>Recommended</value></data>
+  <data name="Onboarding_Native_Alternatives.Header" xml:space="preserve"><value>Other gateway options</value></data>
+  <data name="Onboarding_Native_UpdateLaunchFailed" xml:space="preserve"><value>Could not open Windows Update. Open Windows Settings, then Windows Update.</value></data>
+  <data name="Onboarding_Native_Lifecycle.Text" xml:space="preserve"><value>Continue with the same Gateway setup wizard used for WSL, here in Companion. Companion validates configuration and health before connecting. Existing WSL gateways and your default OpenClaw profile are not replaced.</value></data>
+  <data name="Onboarding_Native_Acquisition.Text" xml:space="preserve"><value>If the Gateway is not installed, setup installs it from Microsoft Store using WinGet, then verifies the package before continuing automatically.</value></data>
+  <data name="Onboarding_Native_InstallingPackage" xml:space="preserve"><value>Installing the Gateway from Microsoft Store using WinGet...</value></data>
+  <data name="Onboarding_Native_VerifyingPackage" xml:space="preserve"><value>WinGet completed. Verifying Gateway registration and execution aliases before continuing...</value></data>
+  <data name="Onboarding_Native_ProgressSubtitle.Text" xml:space="preserve"><value>Companion will prepare your Gateway and open its setup wizard automatically.</value></data>
+  <data name="Onboarding_Native_StepSupport" xml:space="preserve"><value>Check device support</value></data>
+  <data name="Onboarding_Native_StepPackage" xml:space="preserve"><value>Install or verify Gateway package</value></data>
+  <data name="Onboarding_Native_StepPrepare" xml:space="preserve"><value>Prepare your Gateway profile</value></data>
+  <data name="Onboarding_Native_StepVerify" xml:space="preserve"><value>Start and verify the Gateway</value></data>
+  <data name="Onboarding_Native_Retry.Content" xml:space="preserve"><value>Retry setup</value></data>
+  <data name="Onboarding_Native_Preview" xml:space="preserve"><value>Preview only. No package will be installed or Gateway started.</value></data>
+  <data name="Onboarding_Native_Review.Text" xml:space="preserve"><value>By selecting Set up gateway, you authorize WinGet to install the missing Gateway package from Microsoft Store and accept the package and Store source agreements. Companion then verifies the package, prepares a dedicated profile, and opens Gateway setup. Provider sign-in stays interactive. This path does not install WSL, Local AI, or Tailscale.</value></data>
+  <data name="Onboarding_Native_FeaturesNote.Text" xml:space="preserve"><value>These Windows capabilities become usable after Node Mode connects and pairs with the Gateway. Windows permissions and command approvals still apply.</value></data>
+  <data name="Onboarding_Native_ConfiguredTitle" xml:space="preserve"><value>Native Gateway configured</value></data>
+  <data name="Onboarding_Native_CapabilitySummary" xml:space="preserve"><value>{0}. You can change these choices in Companion Settings.</value></data>
+  <data name="Onboarding_Native_ReviewTitle" xml:space="preserve"><value>Ready to set up your native gateway</value></data>
+  <data name="Onboarding_Native_Start.Content" xml:space="preserve"><value>Set up gateway</value></data>
+  <data name="Onboarding_Native_Cancel.Content" xml:space="preserve"><value>Cancel setup</value></data>
+  <data name="Onboarding_Native_Back.Content" xml:space="preserve"><value>Back</value></data>
+  <data name="Onboarding_Native_Open.Content" xml:space="preserve"><value>Open Companion to connect</value></data>
+  <data name="Onboarding_Native_Checking" xml:space="preserve"><value>Checking the installed Gateway package and its execution aliases...</value></data>
+  <data name="Onboarding_Native_Available" xml:space="preserve"><value>Gateway package {0} is installed.</value></data>
+  <data name="Onboarding_Native_InProgress" xml:space="preserve"><value>Preparing the native Gateway for the shared setup wizard. Provider and model questions will appear here in Companion.</value></data>
+  <data name="Onboarding_Native_Cancelled" xml:space="preserve"><value>Setup cancelled. The WinGet request was cancelled, but Windows may still finish deployment. Any configuration already entered is retained in the dedicated native profile. No Gateway package was removed.</value></data>
+  <data name="Onboarding_Native_Configured" xml:space="preserve"><value>Gateway configuration and authenticated health verified at {0}. Open Companion to start the gateway and finish device pairing in Connection settings. Your selected Windows capabilities have been saved.</value></data>
+  <data name="Onboarding_Native_ReplaceDraftTitle" xml:space="preserve"><value>Replace unfinished Gateway setup?</value></data>
+  <data name="Onboarding_Native_ReplaceDraftContent" xml:space="preserve"><value>This clears only the Companion setup draft. Existing workspace files, configuration and credentials are kept. New setup uses a new profile and does not import or change the old Gateway data, WSL setup, or package-managed profile.</value></data>
+  <data name="Onboarding_Native_ReplaceDraftPrimary" xml:space="preserve"><value>Discard and set up again</value></data>
+  <data name="Onboarding_Native_ReplaceDraftClose" xml:space="preserve"><value>Keep draft</value></data>
 </root>

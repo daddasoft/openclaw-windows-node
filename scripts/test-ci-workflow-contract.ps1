@@ -347,6 +347,8 @@ foreach ($token in @(
         "./scripts/test-ci-change-classifier.ps1",
         "./scripts/test-ci-gate-results.ps1",
         "./scripts/test-ci-workflow-contract.ps1",
+        "./scripts/Test-InstallerScriptCompiles.ps1 -RequireCompiler",
+        "choco install innosetup -y --no-progress",
         "./scripts/test-stable-correction-release-validator.ps1"
     )) {
     Assert-Contains `
@@ -514,6 +516,16 @@ foreach ($token in @(
     Assert-Contains -Text $uiJob -Expected $token -Message "UI lane is missing '$token'."
 }
 
+$trayUiStep = Get-StepBlock -Text $uiJob -Name "Run Tray UI Tests"
+Assert-Contains -Text $trayUiStep -Expected "timeout-minutes: 15" `
+    -Message "Tray UI tests must have an outer timeout rather than consuming the six-hour job limit."
+Assert-Contains -Text $trayUiStep -Expected "-HangTimeoutSeconds 300" `
+    -Message "Tray UI tests must collect the interrupted test sequence on a five-minute hang."
+foreach ($token in @('"--blame-hang"', '"--blame-hang-timeout"', '"--blame-hang-dump-type"', '"none"')) {
+    Assert-Contains -Text $runner -Expected $token `
+        -Message "CI test runner is missing hang diagnostic argument '$token'."
+}
+
 $runnerUses = [regex]::Matches(
     $workflow,
     "(?m)^\s+\./scripts/Invoke-CiTest\.ps1\s*$").Count
@@ -667,6 +679,12 @@ foreach ($token in @(
         '-MsixRevision $env:DEV_MSIX_REVISION',
         '-MsixOutputDirectory "$env:RUNNER_TEMP\openclaw-dev-appx"',
         '.\scripts\Export-DevMsixArtifact.ps1',
+        '.\scripts\Export-MigrationTestMsix.ps1 -Architecture',
+        'id: migration-switch',
+        "if: steps.migration-switch.outputs.enabled == 'true'",
+        'name: openclaw-msix-dev-migration-test-${{ matrix.architecture }}',
+        'artifacts/msix-migration-test/${{ matrix.architecture }}/OpenClaw-MigrationTest-${{ matrix.architecture }}.msix',
+        'OpenClaw-MigrationTest.cer',
         'MSIX_VERSION_INFO: ${{ needs.reserve-msix-version.outputs.versionInfo || needs.metadata.outputs.msixVersionInfo }}',
         'MSIX_SOURCE_VERSION: ${{ needs.reserve-msix-version.outputs.sourceVersion || needs.metadata.outputs.msixSourceVersion }}',
         '-ExpectedVersion $info.packageBaseVersion',

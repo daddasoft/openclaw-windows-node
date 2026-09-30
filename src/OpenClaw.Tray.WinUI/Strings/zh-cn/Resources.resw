@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root xmlns:ns1="urn:schemas-microsoft-com:xml-msdata" xmlns:xs="http://www.w3.org/2001/XMLSchema">
   <xs:schema id="root">
     <xs:element name="root" ns1:IsDataSet="true">
@@ -2354,6 +2354,12 @@
   </data>
   <data name="Onboarding_Wizard_ErrorGatewayDisconnected" xml:space="preserve">
     <value>网关已断开连接</value>
+  </data>
+  <data name="Onboarding_Wizard_GatewayConsoleGap" xml:space="preserve">
+    <value>部分 Gateway 控制台消息已跳过。请打开 Gateway 终端查看缺失的登录说明。</value>
+  </data>
+  <data name="Onboarding_Wizard_GatewayConsoleUnavailable" xml:space="preserve">
+    <value>无法获取 Gateway 控制台更新。请打开 Gateway 终端查看提供商登录说明。</value>
   </data>
   <data name="Onboarding_Wizard_ErrorGatewayDisconnectedDetail" xml:space="preserve">
     <value>与网关的连接已丢失。单击“下一步”跳过向导，或等待重新连接。</value>
@@ -4992,7 +4998,7 @@
     <value>检测到 MSIX 安装</value>
   </data>
   <data name="SettingsPage_MSIXInstallationDetected.Message" xml:space="preserve">
-    <value>通过 Windows 设置 &amp;amp;#x2192; 应用删除 OpenClaw 不会清理本地网关(WSL 发行版、磁盘映像)。请先使用下面的“删除本地网关”,然后再卸载 OpenClaw。</value>
+    <value>通过 Windows 设置 → 应用删除 OpenClaw 不会清理本地网关(WSL 发行版、磁盘映像)。请先使用下面的“删除本地网关”,然后再卸载 OpenClaw。</value>
   </data>
   <data name="SettingsPage_RemovesTheWSLDistro.Text" xml:space="preserve">
     <value>删除 WSL 发行版 (OpenClawGateway)、其磁盘映像、自动启动项,并清除网关凭据。您的 MCP 令牌将被保留。引导将重置。</value>
@@ -7168,9 +7174,6 @@
   <data name="Migration_StoreValidationFailed" xml:space="preserve">
     <value>OpenClaw 无法安全验证旧版配置是否可迁移。未记录完成状态，旧版应用也未被更改。请关闭此预览，稍后重试。请勿卸载旧版应用、删除迁移数据或运行网关清理。</value>
   </data>
-  <data name="Migration_StoreCredentialUnavailable" xml:space="preserve">
-    <value>OpenClaw 无法解析活动网关的凭据。未记录完成状态，旧版应用也未被更改。请关闭此预览，恢复活动网关配置后再重试。请勿卸载旧版应用、删除迁移数据或运行网关清理。</value>
-  </data>
   <data name="Migration_StoreAwaitingInnoRemoval" xml:space="preserve">
     <value>OpenClaw 已记录迁移完成并保留了您的配置。请关闭此预览，通过 Windows 设置卸载旧版 OpenClaw Companion 应用，然后打开 Store 版本。请勿删除迁移数据或运行网关清理。</value>
   </data>
@@ -7198,6 +7201,143 @@
   <data name="Migration_StorePending" xml:space="preserve">
     <value>之前的迁移需要恢复或完成。此测试版本无法继续该迁移或正常启动。请关闭此预览。请勿卸载旧版应用、删除迁移数据或运行网关清理。</value>
   </data>
+  <data name="Migration2_Title" xml:space="preserve">
+    <value>迁移到 Store 版本</value>
+  </data>
+  <data name="Migration2_Consent" xml:space="preserve">
+    <value>将您的设置、网关、文件和模型保留在原处。</value>
+  </data>
+  <data name="Migration2_PrepareStepTitle" xml:space="preserve">
+    <value>我们将准备您的配置</value>
+  </data>
+  <data name="Migration2_PrepareStepBody" xml:space="preserve">
+    <value>我们将安全关闭旧版应用，检查您的安装和设置，并保存受保护的迁移记录。</value>
+  </data>
+  <data name="Migration2_RemoveStepTitle" xml:space="preserve">
+    <value>您将卸载旧版应用</value>
+  </data>
+  <data name="Migration2_RemoveStepBody" xml:space="preserve">
+    <value>收到提示后，请手动卸载。不会自动卸载任何应用。</value>
+  </data>
+  <data name="Migration2_FinishStepTitle" xml:space="preserve">
+    <value>然后使用 Store 版本</value>
+  </data>
+  <data name="Migration2_FinishStepBody" xml:space="preserve">
+    <value>我们会验证移除状态后再启动 Store 版本。</value>
+  </data>
+  <data name="Migration2_ConsentHint" xml:space="preserve">
+    <value>选择“暂不”即可退出，不会开始迁移。旧版应用仍安装时，商店版本不会启动。</value>
+  </data>
+  <data name="Migration2_ConsentWarningTitle" xml:space="preserve">
+    <value>继续之前</value>
+  </data>
+  <data name="Migration2_ConsentWarning" xml:space="preserve">
+    <value>如果验证成功，旧版应用将无法正常启动。</value>
+  </data>
+  <data name="Migration2_Closing" xml:space="preserve">
+    <value>正在请求旧版应用安全关闭...</value>
+  </data>
+  <data name="Migration2_Preparing" xml:space="preserve">
+    <value>正在验证您的现有配置...</value>
+  </data>
+  <data name="Migration2_Completing" xml:space="preserve">
+    <value>正在记录迁移完成状态...</value>
+  </data>
+  <data name="Migration2_Finalizing" xml:space="preserve">
+    <value>正在检查卸载状态并完成迁移...</value>
+  </data>
+  <data name="Migration2_CloseInno" xml:space="preserve">
+    <value>请通过托盘菜单关闭 OpenClaw Companion，然后选择“重试”。</value>
+  </data>
+  <data name="Migration2_CloseInnoTitle" xml:space="preserve">
+    <value>关闭旧版应用</value>
+  </data>
+  <data name="Migration2_CloseInnoWarningTitle" xml:space="preserve">
+    <value>暂时不要卸载</value>
+  </data>
+  <data name="Migration2_CloseInnoWarning" xml:space="preserve">
+    <value>暂时不要强制关闭或卸载该应用。我们会在可以安全卸载时通知您。</value>
+  </data>
+  <data name="Migration2_AwaitingRemoval" xml:space="preserve">
+    <value>您的配置已通过验证，迁移完成状态已记录。
+
+1. 打开“已安装的应用”，仅卸载旧版 OpenClaw Companion 应用。请保留 Store 版本。
+
+2. 返回此处并选择“重试”以验证移除状态并完成迁移。
+
+您的设置、网关、文件和模型将保留在原处。</value>
+  </data>
+  <data name="Migration2_RemovalTitle" xml:space="preserve">
+    <value>卸载旧版应用</value>
+  </data>
+  <data name="Migration2_RemovalWarningTitle" xml:space="preserve">
+    <value>保留您的配置</value>
+  </data>
+  <data name="Migration2_RemovalWarning" xml:space="preserve">
+    <value>请勿删除迁移数据或运行网关清理。</value>
+  </data>
+  <data name="Migration2_ValidationFailed" xml:space="preserve">
+    <value>OpenClaw 无法安全完成迁移。请勿卸载旧版应用或运行网关清理。请查看应用日志，解决问题后重试。</value>
+  </data>
+  <data name="Migration2_UpdateRequired" xml:space="preserve">
+    <value>请先将旧版应用更新到受支持且具备迁移功能的版本。您的配置未被更改。在旧版应用仍安装的情况下，此应用将保持未激活状态。</value>
+  </data>
+  <data name="Migration2_Unsupported" xml:space="preserve">
+    <value>无法安全迁移此安装。仅支持同一 Windows 用户且体系结构匹配的默认安装。您的配置未被更改。在旧版应用仍安装的情况下，此应用将保持未激活状态。</value>
+  </data>
+  <data name="Migration2_InspectionFailed" xml:space="preserve">
+    <value>OpenClaw 无法安全检查安装或迁移记录。请先查看应用日志再重试。请勿删除迁移数据或运行网关清理。</value>
+  </data>
+  <data name="Migration2_Recovery" xml:space="preserve">
+    <value>此迁移需要恢复。请查看应用日志。如果旧版应用仍已安装，请在“已安装的应用”中将其卸载，然后选择“重试”。请勿手动删除迁移数据或运行网关清理。</value>
+  </data>
+  <data name="Migration2_FinalizationFailed" xml:space="preserve">
+    <value>OpenClaw 无法完成迁移。完成收据已保留以供恢复。请查看应用日志并重试。请勿删除迁移数据或运行网关清理。</value>
+  </data>
+  <data name="Migration2_InstalledApps" xml:space="preserve">
+    <value>打开“已安装的应用”</value>
+  </data>
+  <data name="Migration2_DiscardRecords" xml:space="preserve">
+    <value>放弃无法读取的迁移数据</value>
+  </data>
+  <data name="Migration2_DiscardFailed" xml:space="preserve">
+    <value>OpenClaw 无法放弃迁移数据。如果旧版 OpenClaw 应用正在运行，请关闭它并重试。详情请查看应用日志。</value>
+  </data>
+  <data name="Migration2_LaunchFailed" xml:space="preserve">
+    <value>Windows 无法打开请求的页面。请重试，或在迁移完成后手动打开 Windows 设置 &gt; 应用 &gt; 已安装的应用。</value>
+  </data>
+  <data name="Migration2_InnoRecommendation.Text" xml:space="preserve">
+    <value>推荐</value>
+  </data>
+  <data name="Migration2_InnoCardTitle.Text" xml:space="preserve">
+    <value>迁移到 Microsoft Store 版本</value>
+  </data>
+  <data name="Migration2_InnoCardDescription.Text" xml:space="preserve">
+    <value>通过 Microsoft Store 获取 OpenClaw 的后续更新。您现有的 OpenClaw 配置将会保留。</value>
+  </data>
+  <data name="Migration2_InnoAction" xml:space="preserve">
+    <value>安装 Store 版本并迁移</value>
+  </data>
+  <data name="Migration2_InnoConsentTitle" xml:space="preserve">
+    <value>迁移到 Store 版本？</value>
+  </data>
+  <data name="Migration2_InnoConsent" xml:space="preserve">
+    <value>将打开 Microsoft Store，供您安装 Store 版本。您打开该版本后，它可以关闭此应用并完成迁移，无需再次征求您的同意。
+
+您的设置、网关、文件和模型将保留在原处。</value>
+  </data>
+  <data name="Migration2_InnoGranted" xml:space="preserve">
+    <value>已保存迁移授权。请安装并打开 Store 版本以继续。在确认迁移完成之前，请保留此应用。</value>
+  </data>
+  <data name="Migration2_InnoFailed" xml:space="preserve">
+    <value>OpenClaw 无法保存迁移授权或打开 Store 中的应用页面。请查看应用日志并重试。请勿卸载此应用。</value>
+  </data>
+  <data name="Migration2_Close" xml:space="preserve">
+    <value>关闭</value>
+  </data>
+  <data name="Migration2_Busy" xml:space="preserve">
+    <value>请等待此步骤完成。</value>
+  </data>
   <data name="Chat_Code_Copy" xml:space="preserve"><value>复制代码</value></data>
   <data name="Chat_Code_Label" xml:space="preserve"><value>代码块</value></data>
   <data name="Chat_Model_Current" xml:space="preserve"><value>当前模型</value></data>
@@ -7212,4 +7352,45 @@
   <data name="Chat_Composer_Effort_Title" xml:space="preserve"><value>推理强度</value></data>
   <data name="Chat_Composer_Effort_Faster" xml:space="preserve"><value>更快</value></data>
   <data name="Chat_Composer_Effort_Smarter" xml:space="preserve"><value>更深入</value></data>
+  <data name="Onboarding_Native_Title.Text" xml:space="preserve"><value>安装本地原生 Gateway</value></data>
+  <data name="Onboarding_Native_Description.Text" xml:space="preserve"><value>在此设备上安装并配置 OpenClaw Gateway</value></data>
+  <data name="Onboarding_Wsl_Title.Text" xml:space="preserve"><value>安装本地 WSL Gateway</value></data>
+  <data name="Onboarding_Native_CheckingSupport" xml:space="preserve"><value>正在检查原生 Gateway 支持情况...</value></data>
+  <data name="Onboarding_Native_SupportAvailable" xml:space="preserve"><value>此设备支持原生 Gateway。</value></data>
+  <data name="Onboarding_Native_SupportUnavailable" xml:space="preserve"><value>目前不支持原生 Gateway。请通过 Windows 更新安装 Windows Insider 内部版本 {0} 或更新的受支持版本，然后重新打开此页面。功能可用性可能因设备而异。</value></data>
+  <data name="Onboarding_Native_SupportCheckFailed" xml:space="preserve"><value>无法验证原生 Gateway 支持情况。请重新打开此页面以重试。如果检查持续失败，请更新或修复 Companion。</value></data>
+  <data name="Onboarding_Native_UnsupportedPlatform" xml:space="preserve"><value>原生 Gateway 设置需要受支持的 Windows 客户端系统。不支持 Windows Server。</value></data>
+  <data name="Onboarding_Native_WindowsUpdate.Content" xml:space="preserve"><value>打开 Windows 更新</value></data>
+  <data name="Onboarding_Native_Recommended.Text" xml:space="preserve"><value>推荐</value></data>
+  <data name="Onboarding_Native_Alternatives.Header" xml:space="preserve"><value>其他 Gateway 选项</value></data>
+  <data name="Onboarding_Native_UpdateLaunchFailed" xml:space="preserve"><value>无法打开 Windows 更新。请打开 Windows 设置，然后选择 Windows 更新。</value></data>
+  <data name="Onboarding_Native_Lifecycle.Text" xml:space="preserve"><value>在 Companion 中继续使用与 WSL 相同的 Gateway 设置向导。连接前将验证配置和健康状态。现有 WSL Gateway 和默认 OpenClaw 配置不会被替换。</value></data>
+  <data name="Onboarding_Native_Acquisition.Text" xml:space="preserve"><value>如果尚未安装 Gateway，设置程序将使用 WinGet 从 Microsoft Store 安装，并在验证包后自动继续。</value></data>
+  <data name="Onboarding_Native_InstallingPackage" xml:space="preserve"><value>正在使用 WinGet 从 Microsoft Store 安装 Gateway...</value></data>
+  <data name="Onboarding_Native_VerifyingPackage" xml:space="preserve"><value>WinGet 已完成。正在验证 Gateway 注册和执行别名，然后继续...</value></data>
+  <data name="Onboarding_Native_ProgressSubtitle.Text" xml:space="preserve"><value>Companion 将准备您的 Gateway 并自动打开其设置向导。</value></data>
+  <data name="Onboarding_Native_StepSupport" xml:space="preserve"><value>检查设备支持情况</value></data>
+  <data name="Onboarding_Native_StepPackage" xml:space="preserve"><value>安装或验证 Gateway 包</value></data>
+  <data name="Onboarding_Native_StepPrepare" xml:space="preserve"><value>准备您的 Gateway 配置文件</value></data>
+  <data name="Onboarding_Native_StepVerify" xml:space="preserve"><value>启动并验证 Gateway</value></data>
+  <data name="Onboarding_Native_Retry.Content" xml:space="preserve"><value>重试设置</value></data>
+  <data name="Onboarding_Native_Preview" xml:space="preserve"><value>仅供预览。不会安装任何包或启动 Gateway。</value></data>
+  <data name="Onboarding_Native_Review.Text" xml:space="preserve"><value>选择“设置 Gateway”即表示您授权 WinGet 从 Microsoft Store 安装缺失的 Gateway 包，并接受包协议和商店源协议。Companion 随后将验证包、准备专用配置文件并打开 Gateway 设置。提供商登录仍需您交互操作。此方式不会安装 WSL、本地 AI 或 Tailscale。</value></data>
+  <data name="Onboarding_Native_FeaturesNote.Text" xml:space="preserve"><value>节点模式连接 Gateway 并完成配对后，即可使用这些 Windows 功能。Windows 权限和命令审批仍然适用。</value></data>
+  <data name="Onboarding_Native_ConfiguredTitle" xml:space="preserve"><value>原生 Gateway 已配置</value></data>
+  <data name="Onboarding_Native_CapabilitySummary" xml:space="preserve"><value>{0}。您可以在 Companion 设置中更改这些选项。</value></data>
+  <data name="Onboarding_Native_ReviewTitle" xml:space="preserve"><value>已准备好设置您的原生 Gateway</value></data>
+  <data name="Onboarding_Native_Start.Content" xml:space="preserve"><value>设置 Gateway</value></data>
+  <data name="Onboarding_Native_Cancel.Content" xml:space="preserve"><value>取消设置</value></data>
+  <data name="Onboarding_Native_Back.Content" xml:space="preserve"><value>返回</value></data>
+  <data name="Onboarding_Native_Open.Content" xml:space="preserve"><value>打开 Companion 进行连接</value></data>
+  <data name="Onboarding_Native_Checking" xml:space="preserve"><value>正在检查已安装的 Gateway 包及其执行别名...</value></data>
+  <data name="Onboarding_Native_Available" xml:space="preserve"><value>已安装 Gateway 包 {0}。</value></data>
+  <data name="Onboarding_Native_InProgress" xml:space="preserve"><value>正在为共享设置向导准备原生 Gateway。提供商和模型问题将在 Companion 中显示。</value></data>
+  <data name="Onboarding_Native_Cancelled" xml:space="preserve"><value>设置已取消。WinGet 请求已取消，但 Windows 仍可能完成部署。已输入的配置保留在专用原生配置目录中。未删除任何 Gateway 包。</value></data>
+  <data name="Onboarding_Native_Configured" xml:space="preserve"><value>已在 {0} 验证 Gateway 配置和经过身份验证的健康状态。打开 Companion 启动 Gateway，并在连接设置中完成设备配对。您选择的 Windows 功能已保存。</value></data>
+  <data name="Onboarding_Native_ReplaceDraftTitle" xml:space="preserve"><value>替换未完成的 Gateway 设置？</value></data>
+  <data name="Onboarding_Native_ReplaceDraftContent" xml:space="preserve"><value>这只会清除 Companion 设置草稿。现有工作区文件、配置和凭据将被保留。新设置使用新的配置文件，不会导入或更改旧 Gateway 数据、WSL 设置或包管理的配置文件。</value></data>
+  <data name="Onboarding_Native_ReplaceDraftPrimary" xml:space="preserve"><value>丢弃并重新设置</value></data>
+  <data name="Onboarding_Native_ReplaceDraftClose" xml:space="preserve"><value>保留草稿</value></data>
 </root>

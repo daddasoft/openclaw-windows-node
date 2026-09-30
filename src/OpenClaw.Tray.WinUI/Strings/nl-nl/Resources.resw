@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root xmlns:ns1="urn:schemas-microsoft-com:xml-msdata" xmlns:xs="http://www.w3.org/2001/XMLSchema">
   <xs:schema id="root">
     <xs:element name="root" ns1:IsDataSet="true">
@@ -2356,6 +2356,12 @@ Gebruik een van deze opties:
   <data name="Onboarding_Wizard_ErrorGatewayDisconnected" xml:space="preserve">
     <value>Gatewayverbinding verbroken</value>
   </data>
+  <data name="Onboarding_Wizard_GatewayConsoleGap" xml:space="preserve">
+    <value>Sommige Gateway-consoleberichten zijn overgeslagen. Open de Gateway-terminal voor ontbrekende aanmeldinstructies.</value>
+  </data>
+  <data name="Onboarding_Wizard_GatewayConsoleUnavailable" xml:space="preserve">
+    <value>Updates van de Gateway-console zijn niet beschikbaar. Open de Gateway-terminal voor aanmeldinstructies voor de provider.</value>
+  </data>
   <data name="Onboarding_Wizard_ErrorGatewayDisconnectedDetail" xml:space="preserve">
     <value>Verbinding met gateway verloren. Klik op Volgende om de wizard over te slaan of wacht op opnieuw verbinden.</value>
   </data>
@@ -4290,7 +4296,7 @@ Opdrachten worden geblokkeerd zolang sandboxing niet beschikbaar is, omdat strik
     <value>Lokale poort</value>
   </data>
   <data name="ConnectionPage_SaveAmpConnect.Content" xml:space="preserve">
-    <value>Opslaan &amp;amp; verbinden</value>
+    <value>Opslaan &amp; verbinden</value>
   </data>
   <data name="ConnectionPage_Cancel.Content" xml:space="preserve">
     <value>Annuleren</value>
@@ -4551,7 +4557,7 @@ Opdrachten worden geblokkeerd zolang sandboxing niet beschikbaar is, omdat strik
     <value>Windows-privacy</value>
   </data>
   <data name="PermissionsPage_CameraMicrophoneAmpScreen.Text" xml:space="preserve">
-    <value>Toegang tot camera, microfoon &amp;amp; scherm</value>
+    <value>Toegang tot camera, microfoon &amp; scherm</value>
   </data>
   <data name="PermissionsPage_SystemLevelPrivacyPermissions.Text" xml:space="preserve">
     <value>Privacymachtigingen op systeemniveau worden beheerd door Windows. Open Windows-privacyinstellingen om OpenClaw toegang te verlenen of in te trekken.</value>
@@ -4629,7 +4635,7 @@ Opdrachten worden geblokkeerd zolang sandboxing niet beschikbaar is, omdat strik
     <value>Alleen-lezen</value>
   </data>
   <data name="SandboxPage_ReadAmpWrite.Content" xml:space="preserve">
-    <value>Lezen &amp;amp; schrijven</value>
+    <value>Lezen &amp; schrijven</value>
   </data>
   <data name="SandboxPage_Downloads.Text" xml:space="preserve">
     <value>Downloadmap</value>
@@ -4641,7 +4647,7 @@ Opdrachten worden geblokkeerd zolang sandboxing niet beschikbaar is, omdat strik
     <value>Alleen-lezen</value>
   </data>
   <data name="SandboxPage_ReadAmpWrite2.Content" xml:space="preserve">
-    <value>Lezen &amp;amp; schrijven</value>
+    <value>Lezen &amp; schrijven</value>
   </data>
   <data name="SandboxPage_Desktop.Text" xml:space="preserve">
     <value>Bureaublad</value>
@@ -4653,7 +4659,7 @@ Opdrachten worden geblokkeerd zolang sandboxing niet beschikbaar is, omdat strik
     <value>Alleen-lezen</value>
   </data>
   <data name="SandboxPage_ReadAmpWrite3.Content" xml:space="preserve">
-    <value>Lezen &amp;amp; schrijven</value>
+    <value>Lezen &amp; schrijven</value>
   </data>
   <data name="SandboxPage_ToolDirectoriesOnYour.Text" xml:space="preserve">
     <value>Mapdirectory's op uw PATH krijgen ook alleen-lezen toegang binnen de sandbox, zodat opdrachtregelhulpprogramma's zoals git, node, python en dotnet bruikbaar zijn. Stationswortels worden nooit toegekend.</value>
@@ -4671,7 +4677,7 @@ Opdrachten worden geblokkeerd zolang sandboxing niet beschikbaar is, omdat strik
     <value>Alleen-lezen</value>
   </data>
   <data name="SandboxPage_ReadAmpWrite4.Content" xml:space="preserve">
-    <value>Lezen &amp;amp; schrijven</value>
+    <value>Lezen &amp; schrijven</value>
   </data>
   <data name="SandboxPage_NoCustomFoldersAdded.Text" xml:space="preserve">
     <value>Geen aangepaste mappen toegevoegd.</value>
@@ -4695,7 +4701,7 @@ Opdrachten worden geblokkeerd zolang sandboxing niet beschikbaar is, omdat strik
     <value>Schrijven: agent kan uw klembord vervangen (kan het niet lezen)</value>
   </data>
   <data name="SandboxPage_ReadAmpWrite5.Content" xml:space="preserve">
-    <value>Lezen &amp;amp; schrijven</value>
+    <value>Lezen &amp; schrijven</value>
   </data>
   <data name="SandboxPage_Network.Text" xml:space="preserve">
     <value>📡 Netwerk</value>
@@ -4993,7 +4999,7 @@ Opdrachten worden geblokkeerd zolang sandboxing niet beschikbaar is, omdat strik
     <value>MSIX-installatie gedetecteerd</value>
   </data>
   <data name="SettingsPage_MSIXInstallationDetected.Message" xml:space="preserve">
-    <value>OpenClaw verwijderen via Windows Instellingen &amp;amp;#x2192; Apps zal de lokale gateway NIET opruimen (WSL-distributie, schijfafbeelding). Gebruik EERST Lokale gateway verwijderen hieronder, en verwijder daarna OpenClaw.</value>
+    <value>OpenClaw verwijderen via Windows Instellingen → Apps zal de lokale gateway NIET opruimen (WSL-distributie, schijfafbeelding). Gebruik EERST Lokale gateway verwijderen hieronder, en verwijder daarna OpenClaw.</value>
   </data>
   <data name="SettingsPage_RemovesTheWSLDistro.Text" xml:space="preserve">
     <value>Verwijdert de WSL-distributie (OpenClawGateway), de schijfafbeelding, het item voor automatisch starten en wist de gateway-referenties. Uw MCP-token blijft behouden. Onboarding wordt gereset.</value>
@@ -7169,9 +7175,6 @@ Kies {1} om dit voorbeeld te sluiten zonder de migratie te starten en de vorige 
   <data name="Migration_StoreValidationFailed" xml:space="preserve">
     <value>OpenClaw kon de vorige configuratie niet veilig valideren voor migratie. Er is geen voltooiing vastgelegd en de vorige app is niet gewijzigd. Sluit dit voorbeeld en probeer het later opnieuw. Verwijder de vorige app of migratiegegevens niet en voer geen gatewayopruiming uit.</value>
   </data>
-  <data name="Migration_StoreCredentialUnavailable" xml:space="preserve">
-    <value>OpenClaw kon geen referentie voor de actieve gateway oplossen. Er is geen voltooiing vastgelegd en de vorige app is niet gewijzigd. Sluit dit voorbeeld en herstel de configuratie van de actieve gateway voordat u het opnieuw probeert. Verwijder de vorige app of migratiegegevens niet en voer geen gatewayopruiming uit.</value>
-  </data>
   <data name="Migration_StoreAwaitingInnoRemoval" xml:space="preserve">
     <value>OpenClaw heeft de voltooiing van de migratie vastgelegd en uw configuratie behouden. Sluit dit voorbeeld, verwijder de vorige OpenClaw Companion-app via Windows-instellingen en open daarna de Store-versie. Verwijder geen migratiegegevens en voer geen gatewayopruiming uit.</value>
   </data>
@@ -7199,6 +7202,143 @@ Kies {1} om dit voorbeeld te sluiten zonder de migratie te starten en de vorige 
   <data name="Migration_StorePending" xml:space="preserve">
     <value>Een vorige migratie moet worden hersteld of afgerond. Deze testversie kan die migratie niet voortzetten of normaal starten. Sluit dit voorbeeld. Verwijder de vorige app of migratiegegevens niet en voer geen gatewayopruiming uit.</value>
   </data>
+  <data name="Migration2_Title" xml:space="preserve">
+    <value>Overstappen naar de Store-versie</value>
+  </data>
+  <data name="Migration2_Consent" xml:space="preserve">
+    <value>Behoud uw instellingen, gateway, bestanden en modellen op hun huidige plek.</value>
+  </data>
+  <data name="Migration2_PrepareStepTitle" xml:space="preserve">
+    <value>We bereiden uw configuratie voor</value>
+  </data>
+  <data name="Migration2_PrepareStepBody" xml:space="preserve">
+    <value>We sluiten de vorige app veilig af, controleren uw installatie en instellingen en slaan beveiligde migratiegegevens op.</value>
+  </data>
+  <data name="Migration2_RemoveStepTitle" xml:space="preserve">
+    <value>U verwijdert de vorige app</value>
+  </data>
+  <data name="Migration2_RemoveStepBody" xml:space="preserve">
+    <value>Verwijder de app handmatig wanneer daarom wordt gevraagd. Er wordt niets automatisch verwijderd.</value>
+  </data>
+  <data name="Migration2_FinishStepTitle" xml:space="preserve">
+    <value>Gebruik daarna de Store-versie</value>
+  </data>
+  <data name="Migration2_FinishStepBody" xml:space="preserve">
+    <value>We verifiëren de verwijdering voordat we de Store-versie starten.</value>
+  </data>
+  <data name="Migration2_ConsentHint" xml:space="preserve">
+    <value>Kies Nu niet om af te sluiten zonder de migratie te starten. De Store-versie blijft gesloten zolang de vorige app is geïnstalleerd.</value>
+  </data>
+  <data name="Migration2_ConsentWarningTitle" xml:space="preserve">
+    <value>Voordat u doorgaat</value>
+  </data>
+  <data name="Migration2_ConsentWarning" xml:space="preserve">
+    <value>Als de validatie slaagt, kan de vorige app niet meer normaal starten.</value>
+  </data>
+  <data name="Migration2_Closing" xml:space="preserve">
+    <value>De vorige app wordt gevraagd veilig af te sluiten...</value>
+  </data>
+  <data name="Migration2_Preparing" xml:space="preserve">
+    <value>Uw bestaande configuratie wordt gevalideerd...</value>
+  </data>
+  <data name="Migration2_Completing" xml:space="preserve">
+    <value>De voltooiing van de migratie wordt vastgelegd...</value>
+  </data>
+  <data name="Migration2_Finalizing" xml:space="preserve">
+    <value>De verwijdering wordt gecontroleerd en de migratie wordt afgerond...</value>
+  </data>
+  <data name="Migration2_CloseInno" xml:space="preserve">
+    <value>Sluit OpenClaw Companion via het menu in het systeemvak en kies daarna Opnieuw proberen.</value>
+  </data>
+  <data name="Migration2_CloseInnoTitle" xml:space="preserve">
+    <value>Sluit de vorige app</value>
+  </data>
+  <data name="Migration2_CloseInnoWarningTitle" xml:space="preserve">
+    <value>Verwijder de app nog niet</value>
+  </data>
+  <data name="Migration2_CloseInnoWarning" xml:space="preserve">
+    <value>Forceer het afsluiten niet en verwijder de app nog niet. We laten u weten wanneer u de app veilig kunt verwijderen.</value>
+  </data>
+  <data name="Migration2_AwaitingRemoval" xml:space="preserve">
+    <value>Uw configuratie is gevalideerd en de voltooiing van de migratie is vastgelegd.
+
+1. Open Geïnstalleerde apps en verwijder alleen de vorige OpenClaw Companion-app. Behoud de Store-versie.
+
+2. Keer hier terug en kies Opnieuw proberen om de verwijdering te verifiëren en af te ronden.
+
+Uw instellingen, gateway, bestanden en modellen blijven op hun plaats.</value>
+  </data>
+  <data name="Migration2_RemovalTitle" xml:space="preserve">
+    <value>Verwijder de vorige app</value>
+  </data>
+  <data name="Migration2_RemovalWarningTitle" xml:space="preserve">
+    <value>Behoud uw configuratie</value>
+  </data>
+  <data name="Migration2_RemovalWarning" xml:space="preserve">
+    <value>Verwijder geen migratiegegevens en voer geen gatewayopruiming uit.</value>
+  </data>
+  <data name="Migration2_ValidationFailed" xml:space="preserve">
+    <value>OpenClaw kon de migratie niet veilig voltooien. Verwijder de vorige app niet en voer geen gatewayopruiming uit. Bekijk het applogboek, los het probleem op en probeer het opnieuw.</value>
+  </data>
+  <data name="Migration2_UpdateRequired" xml:space="preserve">
+    <value>Werk de vorige app eerst bij naar een ondersteunde versie met migratieondersteuning. Uw configuratie is niet gewijzigd. Deze app blijft inactief zolang de vorige app is geïnstalleerd.</value>
+  </data>
+  <data name="Migration2_Unsupported" xml:space="preserve">
+    <value>Deze installatie kan niet veilig worden gemigreerd. Alleen de standaardinstallatie voor dezelfde Windows-gebruiker met een overeenkomende architectuur wordt ondersteund. Uw configuratie is niet gewijzigd. Deze app blijft inactief zolang de vorige app is geïnstalleerd.</value>
+  </data>
+  <data name="Migration2_InspectionFailed" xml:space="preserve">
+    <value>OpenClaw kon de installatie of migratierecords niet veilig controleren. Bekijk het applogboek voordat u het opnieuw probeert. Verwijder geen migratiegegevens en voer geen gatewayopruiming uit.</value>
+  </data>
+  <data name="Migration2_Recovery" xml:space="preserve">
+    <value>Deze migratie moet worden hersteld. Bekijk het applogboek. Als de vorige app nog is geïnstalleerd, verwijder deze via Geïnstalleerde apps en kies Opnieuw proberen. Verwijder migratiegegevens niet handmatig en voer geen gatewayopruiming uit.</value>
+  </data>
+  <data name="Migration2_FinalizationFailed" xml:space="preserve">
+    <value>OpenClaw kon de migratie niet afronden. Het voltooiingsbewijs is bewaard voor herstel. Bekijk het applogboek en probeer het opnieuw. Verwijder geen migratiegegevens en voer geen gatewayopruiming uit.</value>
+  </data>
+  <data name="Migration2_InstalledApps" xml:space="preserve">
+    <value>Geïnstalleerde apps openen</value>
+  </data>
+  <data name="Migration2_DiscardRecords" xml:space="preserve">
+    <value>Onleesbare migratiegegevens verwijderen</value>
+  </data>
+  <data name="Migration2_DiscardFailed" xml:space="preserve">
+    <value>OpenClaw kon de migratiegegevens niet verwijderen. Als de vorige OpenClaw-app actief is, sluit deze dan en probeer het opnieuw. Bekijk het applogboek voor meer informatie.</value>
+  </data>
+  <data name="Migration2_LaunchFailed" xml:space="preserve">
+    <value>Windows kon de gevraagde pagina niet openen. Probeer het opnieuw of open Windows-instellingen &gt; Apps &gt; Geïnstalleerde apps handmatig als de migratie is voltooid.</value>
+  </data>
+  <data name="Migration2_InnoRecommendation.Text" xml:space="preserve">
+    <value>Aanbevolen</value>
+  </data>
+  <data name="Migration2_InnoCardTitle.Text" xml:space="preserve">
+    <value>Overstappen naar de Microsoft Store-versie</value>
+  </data>
+  <data name="Migration2_InnoCardDescription.Text" xml:space="preserve">
+    <value>Ontvang toekomstige OpenClaw-updates via de Microsoft Store. Uw bestaande OpenClaw-configuratie blijft behouden.</value>
+  </data>
+  <data name="Migration2_InnoAction" xml:space="preserve">
+    <value>Store-versie installeren en migreren</value>
+  </data>
+  <data name="Migration2_InnoConsentTitle" xml:space="preserve">
+    <value>Overstappen naar de Store-versie?</value>
+  </data>
+  <data name="Migration2_InnoConsent" xml:space="preserve">
+    <value>De Microsoft Store wordt geopend zodat u de Store-versie kunt installeren. Wanneer u die opent, kan deze app worden gesloten en de overstap worden voltooid zonder opnieuw om toestemming te vragen.
+
+Uw instellingen, gateway, bestanden en modellen blijven op hun plaats.</value>
+  </data>
+  <data name="Migration2_InnoGranted" xml:space="preserve">
+    <value>De toestemming voor migratie is opgeslagen. Installeer en open de Store-versie om door te gaan. Laat deze app geïnstalleerd totdat de voltooiing van de migratie is bevestigd.</value>
+  </data>
+  <data name="Migration2_InnoFailed" xml:space="preserve">
+    <value>OpenClaw kon de toestemming voor migratie niet opslaan of de Store-pagina niet openen. Bekijk het applogboek en probeer het opnieuw. Verwijder deze app niet.</value>
+  </data>
+  <data name="Migration2_Close" xml:space="preserve">
+    <value>Sluiten</value>
+  </data>
+  <data name="Migration2_Busy" xml:space="preserve">
+    <value>Wacht totdat deze stap is voltooid.</value>
+  </data>
   <data name="Chat_Code_Copy" xml:space="preserve"><value>Code kopiëren</value></data>
   <data name="Chat_Code_Label" xml:space="preserve"><value>Codeblok</value></data>
   <data name="Chat_Model_Current" xml:space="preserve"><value>Huidig model</value></data>
@@ -7213,4 +7353,45 @@ Kies {1} om dit voorbeeld te sluiten zonder de migratie te starten en de vorige 
   <data name="Chat_Composer_Effort_Title" xml:space="preserve"><value>Denkinspanning</value></data>
   <data name="Chat_Composer_Effort_Faster" xml:space="preserve"><value>Sneller</value></data>
   <data name="Chat_Composer_Effort_Smarter" xml:space="preserve"><value>Grondiger</value></data>
+  <data name="Onboarding_Native_Title.Text" xml:space="preserve"><value>Een lokale native Gateway installeren</value></data>
+  <data name="Onboarding_Native_Description.Text" xml:space="preserve"><value>Een OpenClaw Gateway op dit apparaat installeren en instellen</value></data>
+  <data name="Onboarding_Wsl_Title.Text" xml:space="preserve"><value>Een lokale WSL Gateway installeren</value></data>
+  <data name="Onboarding_Native_CheckingSupport" xml:space="preserve"><value>Ondersteuning voor de native Gateway controleren...</value></data>
+  <data name="Onboarding_Native_SupportAvailable" xml:space="preserve"><value>De native Gateway wordt ondersteund op dit apparaat.</value></data>
+  <data name="Onboarding_Native_SupportUnavailable" xml:space="preserve"><value>De native Gateway wordt niet ondersteund. Installeer Windows Insider-build {0} of een nieuwere ondersteunde build via Windows Update en open deze pagina opnieuw. De beschikbaarheid van deze functie kan per apparaat verschillen.</value></data>
+  <data name="Onboarding_Native_SupportCheckFailed" xml:space="preserve"><value>De ondersteuning voor de native Gateway kon niet worden gecontroleerd. Open deze pagina opnieuw om het nogmaals te proberen. Als de controle blijft mislukken, werk Companion dan bij of herstel de app.</value></data>
+  <data name="Onboarding_Native_UnsupportedPlatform" xml:space="preserve"><value>Voor het instellen van de native Gateway is een ondersteunde Windows-client vereist. Windows Server wordt niet ondersteund.</value></data>
+  <data name="Onboarding_Native_WindowsUpdate.Content" xml:space="preserve"><value>Windows Update openen</value></data>
+  <data name="Onboarding_Native_Recommended.Text" xml:space="preserve"><value>Aanbevolen</value></data>
+  <data name="Onboarding_Native_Alternatives.Header" xml:space="preserve"><value>Andere Gateway-opties</value></data>
+  <data name="Onboarding_Native_UpdateLaunchFailed" xml:space="preserve"><value>Windows Update kon niet worden geopend. Open Windows-instellingen en vervolgens Windows Update.</value></data>
+  <data name="Onboarding_Native_Lifecycle.Text" xml:space="preserve"><value>Ga verder met dezelfde Gateway-wizard als voor WSL, hier in Companion. Configuratie en gezondheid worden vóór het verbinden gecontroleerd. Bestaande WSL-Gateways en uw standaard OpenClaw-profiel worden niet vervangen.</value></data>
+  <data name="Onboarding_Native_Acquisition.Text" xml:space="preserve"><value>Als de Gateway niet is geïnstalleerd, installeert de instelling deze vanuit Microsoft Store met WinGet en controleert het pakket voordat automatisch wordt doorgegaan.</value></data>
+  <data name="Onboarding_Native_InstallingPackage" xml:space="preserve"><value>De Gateway installeren vanuit Microsoft Store met WinGet...</value></data>
+  <data name="Onboarding_Native_VerifyingPackage" xml:space="preserve"><value>WinGet is klaar. Gateway-registratie en uitvoeringsaliassen controleren voordat wordt doorgegaan...</value></data>
+  <data name="Onboarding_Native_ProgressSubtitle.Text" xml:space="preserve"><value>Companion bereidt uw Gateway voor en opent automatisch de installatiewizard.</value></data>
+  <data name="Onboarding_Native_StepSupport" xml:space="preserve"><value>Apparaatondersteuning controleren</value></data>
+  <data name="Onboarding_Native_StepPackage" xml:space="preserve"><value>Gateway-pakket installeren of controleren</value></data>
+  <data name="Onboarding_Native_StepPrepare" xml:space="preserve"><value>Uw Gateway-profiel voorbereiden</value></data>
+  <data name="Onboarding_Native_StepVerify" xml:space="preserve"><value>De Gateway starten en controleren</value></data>
+  <data name="Onboarding_Native_Retry.Content" xml:space="preserve"><value>Instelling opnieuw proberen</value></data>
+  <data name="Onboarding_Native_Preview" xml:space="preserve"><value>Alleen een voorbeeld. Er wordt geen pakket geïnstalleerd of Gateway gestart.</value></data>
+  <data name="Onboarding_Native_Review.Text" xml:space="preserve"><value>Door Gateway instellen te selecteren, machtigt u WinGet om het ontbrekende Gateway-pakket vanuit Microsoft Store te installeren en accepteert u de pakket- en Store-bronovereenkomsten. Companion controleert vervolgens het pakket, bereidt een apart profiel voor en opent de Gateway-instelling. Aanmelding bij de provider blijft interactief. Deze methode installeert geen WSL, lokale AI of Tailscale.</value></data>
+  <data name="Onboarding_Native_FeaturesNote.Text" xml:space="preserve"><value>Deze Windows-functies zijn bruikbaar nadat de nodemodus verbinding heeft gemaakt en met de Gateway is gekoppeld. Windows-machtigingen en opdrachtgoedkeuringen blijven van toepassing.</value></data>
+  <data name="Onboarding_Native_ConfiguredTitle" xml:space="preserve"><value>Native Gateway geconfigureerd</value></data>
+  <data name="Onboarding_Native_CapabilitySummary" xml:space="preserve"><value>{0}. U kunt deze keuzes wijzigen in de instellingen van Companion.</value></data>
+  <data name="Onboarding_Native_ReviewTitle" xml:space="preserve"><value>Klaar om uw native Gateway in te stellen</value></data>
+  <data name="Onboarding_Native_Start.Content" xml:space="preserve"><value>Gateway instellen</value></data>
+  <data name="Onboarding_Native_Cancel.Content" xml:space="preserve"><value>Instelling annuleren</value></data>
+  <data name="Onboarding_Native_Back.Content" xml:space="preserve"><value>Terug</value></data>
+  <data name="Onboarding_Native_Open.Content" xml:space="preserve"><value>Companion openen om te verbinden</value></data>
+  <data name="Onboarding_Native_Checking" xml:space="preserve"><value>Het geïnstalleerde Gateway-pakket en de uitvoeringsaliassen controleren...</value></data>
+  <data name="Onboarding_Native_Available" xml:space="preserve"><value>Gateway-pakket {0} is geïnstalleerd.</value></data>
+  <data name="Onboarding_Native_InProgress" xml:space="preserve"><value>De native Gateway wordt voorbereid voor de gedeelde wizard. Vragen over de provider en het model verschijnen hier in Companion.</value></data>
+  <data name="Onboarding_Native_Cancelled" xml:space="preserve"><value>Instelling geannuleerd. Het WinGet-verzoek is geannuleerd, maar Windows kan de implementatie nog voltooien. Ingevoerde configuratie blijft bewaard in het aparte native profiel. Er is geen Gateway-pakket verwijderd.</value></data>
+  <data name="Onboarding_Native_Configured" xml:space="preserve"><value>Gateway-configuratie en geauthenticeerde gezondheid gecontroleerd op {0}. Open Companion om de Gateway te starten en het apparaat te koppelen in de verbindingsinstellingen. Uw geselecteerde Windows-functies zijn opgeslagen.</value></data>
+  <data name="Onboarding_Native_ReplaceDraftTitle" xml:space="preserve"><value>Onvoltooide Gateway-instelling vervangen?</value></data>
+  <data name="Onboarding_Native_ReplaceDraftContent" xml:space="preserve"><value>Hiermee wordt alleen het Companion-instellingsconcept gewist. Bestaande werkruimtebestanden, configuratie en referenties blijven behouden. De nieuwe installatie gebruikt een nieuw profiel en importeert of wijzigt geen oude Gateway-gegevens, WSL-instellingen of pakketbeheerd profiel.</value></data>
+  <data name="Onboarding_Native_ReplaceDraftPrimary" xml:space="preserve"><value>Verwijderen en opnieuw instellen</value></data>
+  <data name="Onboarding_Native_ReplaceDraftClose" xml:space="preserve"><value>Concept behouden</value></data>
 </root>

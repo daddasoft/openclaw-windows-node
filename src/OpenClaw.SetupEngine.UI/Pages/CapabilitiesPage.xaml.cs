@@ -26,6 +26,7 @@ public sealed partial class CapabilitiesPage : Page
     private bool _suppressLocalAiSelection;
     private bool _suppressLocalAiConsent;
     private bool _skipPermissions;
+    private bool _nativeGateway;
     private bool _skipWizardWithoutLocalAi;
     private bool _localAiSelectionEligible;
     private bool _localAiNetworkingConsentRequired;
@@ -78,6 +79,7 @@ public sealed partial class CapabilitiesPage : Page
     {
         var args = e.Parameter as CapabilitiesPageArgs;
         _config = args?.Config ?? e.Parameter as SetupConfig ?? new SetupConfig();
+        _nativeGateway = args?.NativeGateway == true;
         // The tray always registers device.info/status with Node Mode. Keep the
         // setup declaration and gateway allowlist aligned with that runtime contract.
         _config.Capabilities.Device = true;
@@ -103,6 +105,15 @@ public sealed partial class CapabilitiesPage : Page
         _setupWindow = SetupWindow.Active;
         if (_setupWindow is not null)
             _setupWindow.Activated += SetupWindow_Activated;
+        if (_nativeGateway)
+        {
+            GatewayTitle.Text = SetupLocalization.GetString("Onboarding_Native_Title.Text");
+            LocalAiProfileNote.Visibility = Visibility.Collapsed;
+            WslReviewContent.Visibility = Visibility.Collapsed;
+            NativeReviewContent.Visibility = Visibility.Visible;
+            GoToStep(1);
+            return;
+        }
         TailscaleToggle.IsOn = _config.Tailscale.Enabled;
         TailscaleTrustAuthToggle.IsOn = _config.Tailscale.TrustTailscaleAuth;
         TailscaleAuthModeSelector.SelectedIndex = _config.Tailscale.AuthMode == TailscaleAuthMode.AuthKey ? 1 : 0;
@@ -173,9 +184,13 @@ public sealed partial class CapabilitiesPage : Page
         {
             1 => "What should your agent be able to do?",
             2 => "Windows permissions",
-            _ => "What setup will install on this PC",
+            _ => _nativeGateway
+                ? SetupLocalization.GetString("Onboarding_Native_ReviewTitle")
+                : "What setup will install on this PC",
         };
-        PrimaryButton.Content = step == 3 ? "Install & set up" : "Next";
+        PrimaryButton.Content = step == 3
+            ? _nativeGateway ? SetupLocalization.GetString("Onboarding_Native_Start.Content") : "Install & set up"
+            : "Next";
         // Back is always available — from step 1 it returns to the Welcome screen.
         BackButton.Visibility = Visibility.Visible;
         UpdatePrimaryButtonState();
@@ -214,7 +229,10 @@ public sealed partial class CapabilitiesPage : Page
                 break;
             default:
                 WriteCapabilities();
-                SetupWindow.Active?.NavigateToProgress();
+                if (_nativeGateway)
+                    SetupWindow.Active?.NavigateToNativeGatewaySetup();
+                else
+                    SetupWindow.Active?.NavigateToProgress();
                 break;
         }
     }
@@ -253,6 +271,11 @@ public sealed partial class CapabilitiesPage : Page
             }
         }
         config.Settings.ApplyCapabilities(caps);
+        if (_nativeGateway)
+        {
+            config.Settings.EnableNodeMode = true;
+            return;
+        }
         config.Tailscale.Enabled = TailscaleToggle.IsOn == true;
         config.Tailscale.TrustTailscaleAuth = TailscaleTrustAuthToggle.IsOn == true;
         config.Tailscale.AuthMode = TailscaleAuthModeSelector.SelectedIndex == 1
@@ -271,6 +294,8 @@ public sealed partial class CapabilitiesPage : Page
 
     private void ApplySetupReviewSummary(SetupConfig config)
     {
+        if (_nativeGateway)
+            return;
         var summary = SetupReviewSummaryBuilder.Build(
             config,
             SetupWindow.Active?.DataDir,
@@ -330,9 +355,18 @@ public sealed partial class CapabilitiesPage : Page
                 ? deviceEligibility.Plan?.Model.Id
                 : null;
 
-            if (!deviceEligibility.CanInstall || deviceEligibility.Plan is null || deviceEligibility.SelectedGpu is null)
+            // A SKU with no recommended default (RTX Spark 32 GB) still runs an already
+            // configured model. Gate availability on that configured selection when there is
+            // one, so rerunning setup does not switch Local AI off on a working machine.
+            // _localAiRecommendedModelId stays null so nothing is labelled Recommended.
+            LocalInferenceEligibilityResult availability =
+                LocalInferenceEligibility.EvaluateForConfiguredAvailability(
+                    _localAiHardware,
+                    _config!.LocalAi.SelectedModelId);
+
+            if (!availability.CanInstall || availability.Plan is null || availability.SelectedGpu is null)
             {
-                hardwareReason = DescribeLocalAiUnavailable(deviceEligibility);
+                hardwareReason = DescribeLocalAiUnavailable(availability);
             }
             else
             {
@@ -343,7 +377,7 @@ public sealed partial class CapabilitiesPage : Page
                 // model instead of leaving setup stuck on a known-incompatible selection. A
                 // merely busy GPU (EligibleButBusy) is not reconciled away: the same model would
                 // still work once the GPU frees up, and CanInstall already covers that case.
-                if (_config!.LocalAi.SelectedModelId is { } selectedModelId)
+                if (_config.LocalAi.SelectedModelId is { } selectedModelId)
                 {
                     LocalInferenceEligibilityResult selectedEligibility =
                         LocalInferenceEligibility.Evaluate(_localAiHardware, selectedModelId);
@@ -356,7 +390,7 @@ public sealed partial class CapabilitiesPage : Page
                         _config.LocalAi.SelectedModelId = null;
                     }
                 }
-                _config.LocalAi.SelectedModelId ??= _localAiRecommendedModelId ?? deviceEligibility.Plan.Model.Id;
+                _config.LocalAi.SelectedModelId ??= _localAiRecommendedModelId ?? availability.Plan.Model.Id;
 
                 eligibility ??= LocalInferenceEligibility.Evaluate(
                         _localAiHardware,
@@ -670,7 +704,7 @@ public sealed partial class CapabilitiesPage : Page
             LocalAiModelSelector.Items.Add(new ComboBoxItem
             {
                 Content = $"{SetupReviewSummaryBuilder.DisplayModelName(model)} " +
-                    $"({FormatSize(model.Weights.SizeBytes)}, " +
+                    $"({FormatSize(LocalModelCatalog.TotalDownloadSizeBytes(model))}, " +
                     $"{FormatContext(plan.Profile.ContextTokens)}, " +
                     $"{LocalModelCatalog.ToDisplayCacheType(plan.Profile.KeyCachePrecision)} KV)" +
                     (isRecommended ? " (Recommended)" : string.Empty),
@@ -780,7 +814,7 @@ public sealed partial class CapabilitiesPage : Page
             "loads on first request";
         LocalAiModelDetailText.Text =
             $"{SetupReviewSummaryBuilder.DisplayModelName(plan.Model)}, " +
-            $"{FormatSize(plan.Model.Weights.SizeBytes)} from Hugging Face";
+            $"{FormatSize(LocalModelCatalog.TotalDownloadSizeBytes(plan.Model))} from Hugging Face";
         UpdatePrimaryButtonState();
     }
 
@@ -800,7 +834,7 @@ public sealed partial class CapabilitiesPage : Page
         // has a way out: turning Local AI off satisfies the LocalAiToggle.IsOn != true branch
         // below immediately, without needing Continue to advance on incomplete information.
         PrimaryButton.IsEnabled =
-            _step != 3 ||
+            _nativeGateway || _step != 3 ||
             (!_localAiRecoveryOnly && LocalAiToggle.IsOn != true) ||
             (LocalAiToggle.IsOn == true &&
              _localAiSelectionEligible &&
@@ -967,6 +1001,12 @@ public sealed partial class CapabilitiesPage : Page
         var n = _toggles.Values.Count(t => t.IsOn);
         return $"{n} of {Capabilities.Length} capabilities";
     }
+
+    internal static string DescribeCapabilities(CapabilitiesConfig capabilities) =>
+        string.Join(", ", Capabilities
+            .Where(capability => typeof(CapabilitiesConfig).GetProperty(capability.Key)?.GetValue(capabilities) is true)
+            .Select(capability => capability.Name)
+            .Append("Device info and status"));
 
     private string PermissionSummary()
     {

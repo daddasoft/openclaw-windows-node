@@ -52,6 +52,14 @@
                             <StackPanel x:Name="ConsoleBannerLines" Spacing="6" />
                         </StackPanel>
                     </Border>
+                    <StackPanel x:Name="ConsoleRecovery" Visibility="Collapsed" Spacing="8">
+                        <TextBlock x:Name="ConsoleIssueText" TextWrapping="Wrap"
+                                   IsTextSelectionEnabled="True"
+                                   Foreground="{ThemeResource SystemFillColorCautionBrush}" />
+                        <Button x:Name="ConsoleRecoveryTerminalButton" Content="Open terminal" HorizontalAlignment="Left"
+                                AutomationProperties.AutomationId="WizardConsoleRecoveryTerminal"
+                                Click="OpenGatewayTerminal_Click" />
+                    </StackPanel>
                     <ListView x:Name="SelectOptions" Visibility="Collapsed" SelectionMode="Single" />
                     <StackPanel x:Name="MultiOptions" Visibility="Collapsed" Spacing="8" />
                     <TextBox x:Name="TextInput" Visibility="Collapsed" PlaceholderText="Enter value" />
@@ -106,7 +114,7 @@
                                     <FontIcon Glyph="&#xE72C;" IsTextScaleFactorEnabled="False" />
                                 </MenuFlyoutItem.Icon>
                             </MenuFlyoutItem>
-                            <MenuFlyoutItem Text="Skip &amp; exit" Click="SkipWizard_Click">
+                            <MenuFlyoutItem x:Name="SkipWizardMenuItem" Text="Skip &amp; exit" Click="SkipWizard_Click">
                                 <MenuFlyoutItem.Icon>
                                     <FontIcon Glyph="&#xE72A;" IsTextScaleFactorEnabled="False" />
                                 </MenuFlyoutItem.Icon>
