@@ -46,6 +46,23 @@ public class WizardConsoleTailTests
     }
 
     [Fact]
+    public async Task GatewayReaderPassesCancellationToTheAuthorizedTransport()
+    {
+        using var cancellation = new CancellationTokenSource();
+        CancellationToken observed = default;
+        var reader = WizardConsoleTail.CreateGatewayLogReader(async (_, _, _, ct) =>
+        {
+            observed = ct;
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            return Payload(0, 0);
+        });
+        var pending = reader(null, cancellation.Token);
+        Assert.Equal(cancellation.Token, observed);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+    }
+
+    [Fact]
     public async Task IsolatedTailUsesAuthenticatedCursorAndOnlyDisplaysNewPluginConsoleLines()
     {
         string oauth = """{"_meta":{"name":"openclaw","path":{"method":"console.log"}},"message":"Open https://auth.example/authorize?client_id=fixture"}""";
@@ -210,7 +227,8 @@ public class WizardConsoleTailTests
     [InlineData(true)]
     public async Task IsolatedTailRetriesTransientFailureWithoutLosingItsCursor(bool reconnect)
     {
-        var delivered = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var delivered = new TaskCompletionSource<(string Message, long?[] Cursors)>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         var cursors = new List<long?>();
         var issues = new List<GatewayLogTailIssue>();
         using var tail = new WizardConsoleTail(gatewayLogTail: (cursor, _) =>
@@ -226,17 +244,21 @@ public class WizardConsoleTailTests
                 """{"_meta":{"name":"openclaw","path":{"method":"console.log"}},"message":"new OAuth instructions"}"""));
         });
 
-        await tail.StartGatewayAsync(message => delivered.TrySetResult(message), issues.Add, default);
-        Assert.Equal("new OAuth instructions", await delivered.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+        // Snapshot cursors inside onMessage: it runs in the same sequential flow as the
+        // gatewayLogTail delegate, so a late test continuation cannot observe the next poll.
+        await tail.StartGatewayAsync(message => delivered.TrySetResult((message, cursors.ToArray())), issues.Add, default);
+        var (message, observed) = await delivered.Task.WaitAsync(TimeSpan.FromSeconds(5));
         tail.Stop();
-        Assert.Equal(new long?[] { null, 100, 100 }, cursors);
+        Assert.Equal("new OAuth instructions", message);
+        Assert.Equal(new long?[] { null, 100, 100 }, observed);
         Assert.Empty(issues);
     }
 
     [Fact]
     public async Task IsolatedTailRetriesInitialAnchorBeforeDisplayingOnlyNewConsoleOutput()
     {
-        var delivered = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var delivered = new TaskCompletionSource<(string Message, long?[] Cursors)>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         var cursors = new List<long?>();
         var issues = new List<GatewayLogTailIssue>();
         using var tail = new WizardConsoleTail(gatewayLogTail: (cursor, _) =>
@@ -251,10 +273,11 @@ public class WizardConsoleTailTests
                     """{"_meta":{"name":"openclaw","path":{"method":"console.log"}},"message":"new instructions"}"""));
         });
 
-        await tail.StartGatewayAsync(message => delivered.TrySetResult(message), issues.Add, default);
-        Assert.Equal("new instructions", await delivered.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+        await tail.StartGatewayAsync(message => delivered.TrySetResult((message, cursors.ToArray())), issues.Add, default);
+        var (message, observed) = await delivered.Task.WaitAsync(TimeSpan.FromSeconds(5));
         tail.Stop();
-        Assert.Equal(new long?[] { null, null, 100 }, cursors);
+        Assert.Equal("new instructions", message);
+        Assert.Equal(new long?[] { null, null, 100 }, observed);
         Assert.Empty(issues);
     }
 

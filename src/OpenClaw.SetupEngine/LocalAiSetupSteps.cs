@@ -47,9 +47,15 @@ public sealed class PreflightLocalAiHardwareStep : SetupStep
                 ex));
         }
 
-        LocalInferenceEligibilityResult eligibility = LocalInferenceEligibility.Evaluate(
-            hardware,
-            ctx.Config.LocalAi.SelectedModelId);
+        string? selectedModelId = ctx.Config.LocalAi.SelectedModelId;
+        LocalInferenceEligibilityResult eligibility =
+            !string.IsNullOrWhiteSpace(selectedModelId) &&
+            string.Equals(
+                selectedModelId,
+                ctx.Config.LocalAi.InstalledReceiptModelId,
+                StringComparison.OrdinalIgnoreCase)
+                ? LocalInferenceEligibility.EvaluateInstalled(hardware, selectedModelId)
+                : LocalInferenceEligibility.Evaluate(hardware, selectedModelId);
         ctx.LocalAiHardware = hardware;
         ctx.LocalAiEligibility = eligibility;
         ctx.Config.LocalAi.SelectedProfileId = eligibility.Plan?.Profile.Id;
@@ -396,7 +402,12 @@ public sealed class AcquireLocalAiRuntimeStep : SetupStep
                 progress,
                 linked.Token);
             ctx.LocalAiRuntimeInstall = install;
-            return StepResult.Ok($"Installed llama-server {plan.Runtime.ReleaseTag}.");
+            string message = install.ReusedCachedArchiveCount == 0
+                ? $"Installed llama-server {plan.Runtime.ReleaseTag}."
+                : $"Installed llama-server {plan.Runtime.ReleaseTag} " +
+                  $"({install.ReusedCachedArchiveCount} of {plan.Runtime.Artifacts.Count} archives " +
+                  "reused from the local download cache).";
+            return StepResult.Ok(message);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -780,6 +791,19 @@ public sealed class PersistLocalAiManifestStep : SetupStep
             ctx.LocalAiResolvedInstall = null;
             ctx.LocalAiUpgradeOriginalInstall = null;
             ctx.LocalAiManifestCreatedThisRun = false;
+            string cacheRoot = Path.Combine(
+                ctx.LocalDataDir,
+                LocalAiPathPolicy.ArchiveCacheDirectoryName);
+            if (Directory.Exists(cacheRoot))
+            {
+                int retainedSets = LocalAiArtifactInstaller.ParseRetainedArchiveSets(
+                    Environment.GetEnvironmentVariable(LocalAiArtifactInstaller.RetainedArchiveSetsEnvironmentVariable));
+                ctx.Logger.Info(
+                    $"Kept the verified Local AI download cache at '{cacheRoot}' for faster reinstalls. " +
+                    $"It holds the current runtime plus at most {retainedSets} " +
+                    $"older runtime sets (set {LocalAiArtifactInstaller.RetainedArchiveSetsEnvironmentVariable} to change this). " +
+                    "Delete this folder to reclaim disk space.");
+            }
             return;
         }
 

@@ -105,19 +105,23 @@ validation remains required.
 
 The separate **native Gateway MSIX** Welcome path does not use
 `SetupStepFactory.BuildDefaultSteps()`. `NativeGatewaySetupService` owns its
-dedicated-profile and package preparation. `NativeGatewaySetupSession` owns
-staged-record runtime authorization, reload suspension/restoration, retry/cancel,
+package-contract and profile preparation. `NativeGatewaySetupSession` owns
+staged-record runtime authorization, legacy-only reload suspension/restoration, retry/cancel,
 authenticated health/config gates, and final registry publication.
-`WizardPage` is the single hosted WinUI wizard for both WSL and native:
-`wizard.start/next/cancel` transport, upstream prompts, and provider/model cards
-are not duplicated. Native uses the upstream `installDaemon: false` contract.
+Both installations use the shared focused `AiSetupPage` and verified
+three-destination `AiReadyPage`. `WizardPage` remains an explicit compatibility
+fallback when focused setup methods are unavailable. Its native requests retain
+the owned `NativeGatewaySetupConnection` authorization and upstream
+`installDaemon: false` contract.
 `NativeGatewayPackageResolver`
 checks Windows package registration and package-qualified aliases.
 `NativeGatewayMsixInstaller` installs the fixed Store product using the current-user
 App Installer alias and `CommandRunner`:
 `winget install --id 9NV70LV3D6XC --source msstore --silent --accept-package-agreements --accept-source-agreements --disable-interactivity --no-upgrade`.
-Native review explicitly explains installation and agreement acceptance before
-the user selects **Set up gateway**. Microsoft Store owns architecture selection,
+The shared capabilities page shows the native installation and agreement
+disclosure before its **Set up gateway** action; other routes retain **Next**.
+This preserves consent without adding a separate native review step.
+Microsoft Store owns architecture selection,
 signature validation and deployment; no local MSIX path is required. Missing
 WinGet, Store access failures and nonzero exit codes surface bounded, sanitized
 diagnostics and retry guidance instead of opening a manual Store page.
@@ -130,17 +134,24 @@ registration. Installation and verified package readiness share a five-minute
 deadline. Cancellation stops the WinGet request, but Windows deployment may
 continue. Repair errors and timeouts stay visible, with explicit retry rather
 than repeated installer launches; retries recheck registration before installing.
-Native setup shares the capability profiles and Windows permissions page with
-WSL but skips WSL/Local AI/Tailscale installation review and probes. The native
-progress page uses shared spinner/checkmark rows and automatically enters the
-Gateway wizard after preparing its runtime. Finalization applies the selected
-Gateway command allowlist before config/health gates, then persists only the
-Companion node/capability settings. Completion does not claim node pairing.
+Native setup shares the `SetupAccessDraft` capability profiles with WSL but
+skips WSL/Local AI/Tailscale installation review and probes. The native
+progress page uses `SetupPhaseStatus` rows and automatically enters **Connect
+your AI** after preparing its runtime. Finalization applies the selected Gateway
+command allowlist before config/health gates, verifies the exact primary model
+after the owned runtime restart, then persists reviewed Companion settings
+without overwriting unrelated settings or startup preferences.
+Completion does not claim node pairing.
 `NativeGatewaySetupHost` runs captured `clawctl setup`, config validation, and
 health commands, plus an explicitly requested profile-scoped recovery terminal.
 It never launches `openclaw onboard` or WSL.
-`NativeGatewayRuntime` in the Connection project owns the gateway process.
-This path is non-isolated and UI-only. Companion never downloads an MSIX itself
+`NativeGatewayRuntimeRouter` selects the package-owned `IsolatedGatewayRuntime`
+or the recognized legacy `NativeGatewayRuntime`. Isolated configuration, credentials
+and workspace stay under the agent account; Companion does not read a host-side
+config or forward host profile overrides. Shared AI and classic fallback console
+output use authenticated `logs.tail` for isolated sessions, with per-request
+authorization and explicit gap/failure recovery. Legacy console output retains
+its profile log. This path is UI-only. Companion never downloads an MSIX itself
 or bypasses Microsoft Store installation.
 Existing headless setup arguments continue to select the WSL pipeline.
 See [Native Gateway MSIX](ONBOARDING_WIZARD.md#native-gateway-msix-isolated-or-legacy)
@@ -165,6 +176,43 @@ manual recheck button; reopening the page checks again. The separate isolation w
 2026-09-18 product decision; general security consent remains. This is not
 session provisioning. Gateway distribution includes x64, ARM64 and MSIX bundle
 artifacts, but the temporary development installer remains ARM64-only.
+
+Interactive WSL setup uses `OnboardingFlowPolicy` to select the installation
+subset. It defers the classic wizard and Windows workspace finalization until
+after the focused AI flow. The separate native MSIX route retains the hosted
+classic wizard. `GatewayAiSetupClient` owns typed provider discovery,
+selection, activation and recovery; the native AI page renders that state.
+`AiSetupPresentationModel` owns presentation-only grouping. A single
+page-owned `ProviderSetupDialog` owns prompt controls and secret clearing,
+without another client, persistence store or top-level setup page.
+`SetupWindow` remains the completion host. Verified AI opens the native chooser;
+an explicit choice restarts into Chat, Channels or Skills with a bound receipt.
+The experimental browser-completion path is removed. See the completion handoff
+in `ONBOARDING_WIZARD.md`.
+Headless setup keeps `SetupStepFactory.BuildDefaultSteps()` and the
+classic wizard contract. See [Onboarding Wizard](ONBOARDING_WIZARD.md) for current
+page composition, compatibility behavior and artwork.
+
+AI provider commands admit one page-owned dialog lifetime immediately, before
+awaiting Gateway replies. The controller continues an explicitly chosen Gateway
+preparation into its exact returned model, preserving conversation-discovery
+consent, route and generation fences; it never answers client-owned server
+prompts automatically. It also owns fresh HTTPS auth-link admission and the
+bounded same-authority restart wait. Native input/secret clearing stays in
+`ProviderSetupDialog`; exact activation/verification stays in the focused client.
+No provisioning or earlier setup-page ownership moves into this presentation.
+
+Managed Local AI can be chosen after Gateway installation on **Connect your AI**.
+`ISetupLocalAiHost` is the typed bridge to the existing tray-owned runtime and
+canonical provider coordinator. `LocalAiSetupRouteResolver` shares Settings'
+unique app-owned Gateway admission with this same-window path. The read-only
+`LocalAiOnboardingObservation` does not use runtime refresh or receipt
+reconciliation because those owners can mutate state. Explicit setup/repair
+reuses `BuildLocalAiRecoverySteps`, even when no prior Local AI receipt exists.
+`SetupWindow` retains its lock, access draft and startup choice throughout review,
+pipeline execution and exact-model Gateway verification. Interactive normal
+new-setup review no longer offers a competing Local AI toggle; explicit config,
+Settings recovery and headless contracts remain supported.
 
 > **Status note (2026-07-06):** Current default setup includes `WindowsNodeBootstrapContextStep`, which injects Windows-node context into the WSL workspace `AGENTS.md` after onboarding.
 
@@ -206,7 +254,9 @@ src/OpenClaw.SetupEngine.UI/
 └── Pages/
     ├── SecurityNoticePage.xaml / .cs # Device-trust warning
     ├── WelcomePage.xaml / .cs        # Install WSL gateway vs connect existing
-    ├── CapabilitiesPage.xaml / .cs   # Profile, inline permissions, install review
+    ├── CapabilitiesPage.xaml / .cs   # Typed capability profile and transport choices
+    ├── GatewaySetupPage.xaml / .cs   # Generated WSL installation review
+    ├── GatewaySetupDetailPage.xaml / .cs # Full-window Local AI, Tailscale and consent views
     ├── ProgressPage.xaml / .cs       # Live step rows + gateway-installed handoff
     ├── WizardPage.xaml / .cs         # OpenClaw onboard transcript
     └── CompletePage.xaml / .cs       # Mascot status badge, summary, startup toggle
@@ -363,6 +413,40 @@ name such as `node` or `openclaw` alone is insufficient. Conflicts retain the
 port-in-use error and include owning process names when available. Missing
 listener ownership or a failed listener inspection does not bypass the check.
 
+Setup operator and node sockets share the gateway record's full device identity.
+Before the first operator or node pairing attempt, setup snapshots the pending
+request IDs and retains that baseline across step retries. A gateway may refresh
+the same request ID when the socket reconnects, so a fresh baseline on retry
+would incorrectly classify setup's request as pre-existing. Finalization and
+wizard sockets still take their own pre-connect snapshots. If a socket omits a
+pairing request ID, setup selects exactly one request absent from its baseline
+and matching the full identity, not a request already pending before setup, the
+shortened display ID, or the only request in the queue. Missing identity, a
+failed baseline on that attempt, no new match, or multiple new matches fail
+closed. If the first baseline capture fails, retries take a new snapshot that
+excludes any requests already pending, including requests from earlier setup
+attempts. Later cleanup excludes requests that predate the retained successful
+baseline. A socket-provided request ID still uses the exact device-approval path.
+
+### Native Local AI integration
+
+`BuildNativeLocalAiAcquisitionSteps` is an artifact-only pipeline: Windows OS/GPU
+preflight, verified receipt reconciliation, pinned runtime/model acquisition and
+receipt persistence. Unlike WSL recovery, it never installs WSL, changes mirrored
+networking, starts a listener, forces inference, publishes a provider, or restarts
+a Gateway. Its caller must retain exact native-session admission and return to an
+explicit **Use Local AI** action after acquisition.
+
+Native onboarding and Settings select this pipeline only after exact native
+target admission. It does not participate in WSL registry settlement. Acquisition
+returns to AI setup without claiming that a model is configured. Explicit Use
+creates the durable native binding and starts the single app-owned authenticated
+runtime. Existing setup verification proves the exact Gateway primary before
+completion; the native session reconciles its Local AI revision after capability
+configuration and before registry publication. Cancellation drains mutations and
+withdraws the selected Local AI route before releasing the native session.
+A damaged or foreign ownership receipt is never adopted implicitly.
+
 ### Local AI GPU admission
 
 Local AI uses the CUDA driver's `cuMemGetInfo` total and free memory directly
@@ -387,6 +471,30 @@ materialization copies from that same verified open handle. A configured cache
 root equal to or below the app-owned `LocalAI` directory is rejected before
 mutation because uninstall removes that managed tree recursively.
 
+### Local AI runtime archive cache
+
+Verified llama.cpp runtime zips are kept in
+`<LocalDataDir>\LocalAICache\archives\<sha256>\<file>`, next to the
+uninstall-owned `LocalAI` tree, so reinstalls hash-verify and extract without
+downloading. A cached zip is used only after a full SHA-256 check against the
+compiled-in pin over the same open handle that extraction reads. A set is every
+archive a runtime install pinned together (the llama.cpp binary zip and its CUDA
+dependency zip). Only after the installed runtime passes inspection, and the
+install was not cancelled, setup records the current pins as a completed set in
+`<LocalDataDir>\LocalAICache\sets\<set-id>.json` and prunes: it keeps the current
+pins plus every archive of the 3 most recently used older completed sets, and
+deletes other entries. A rejected or cancelled install never deletes cache
+entries. Archives left by a failed acquisition stay available for a retry of the
+same pins, never count as a set, and are deleted by the next successful install
+of different pins. An archive shared by several sets stays while any kept set
+uses it. Set records are bookkeeping only: reuse is still gated by the SHA-256
+pin check. Set `OPENCLAW_SETUP_LOCAL_AI_CACHE_RETAIN_SETS` to a non-negative
+integer to change the number of older sets kept (`0` keeps only the current
+pins); other values are ignored with a warning. Uninstall keeps the cache, which is bounded
+by this retention and logged with its path so users can delete it to reclaim
+space. Set `OPENCLAW_SETUP_DISABLE_LOCAL_AI_CACHE` to any value other than `0`
+or `false` to skip all cache reads, writes, and pruning.
+
 Manifest schema 3 remains the compatibility format for existing app-owned
 model paths. Passive manifest loads, status refresh, recovery inspection, and
 uninstall reads do not migrate it. Setup reconciliation is the explicit
@@ -406,6 +514,12 @@ rollback baseline. A successful repair always writes schema 4 with the verified
 hub-cache snapshot as the active model path, while preserving the legacy
 compatibility path and the prior gateway fallback, install time, and rollback
 metadata.
+
+Before restoring the original endpoint receipt, recovery resolves its model
+through the same existing-file handle resolver used for native runtime launch.
+The health probe compares physical model paths; receipts and cleanup ownership
+remain logical. If resolution fails, rollback warns and keeps the replacement
+receipt rather than probing with the unresolved alias.
 
 Runtime upgrades validate the installed executable against its recorded runtime
 release, not the current catalog release. A verified schema-3 model is migrated
@@ -514,26 +628,39 @@ Log path defaults to `%APPDATA%\OpenClawTray\Logs\Setup\setup-engine-<yyyyMMdd-H
 
 The WinUI app is a **thin shell** - no business logic, just rendering pipeline state. End-user UI runs default to `RollbackOnFailure=true`; `--no-rollback-on-failure` preserves an explicit debugging opt-out.
 
-### Page Flow: Security → Welcome → WSL readiness gate → Capabilities → Progress → OpenClaw onboard → Complete
+### Interactive flow: Welcome/trust → Gateway → PC capabilities and Windows access → WSL review → Installation → AI → native Chat
 
 **SecurityNoticePage**
-- Native warning InfoBar for device-trust and setup transparency
+- Three feature rows and an inline trust notice using native SettingsCard controls
 
 **WelcomePage**
 - OpenClaw icon + "OpenClaw Setup" title bar
 - Capability-checked native Gateway first and recommended; Windows Update/retry guidance when unavailable
-- Collapsed WSL alternative or visible connection to an existing gateway
-- Replacement prompt when an app-owned WSL gateway already exists
+- WSL and existing Gateway choices remain visible regardless of native availability
+- The native choice enters PC capabilities before separate package preparation and its hosted wizard
+- Read-only WSL readiness and existing-config checks, with inline error/retry
+- Replacement confirmation occurs in the main-window review, not a modal
 
 **CapabilitiesPage**
-- Capability profile defaults to Standard
-- Inline Windows permission status for selected capabilities
-- Install review showing WSL distro, OpenClaw CLI, local gateway service, and possible UAC
+- `SetupWindow` owns one `SetupAccessDraft` tied to the same `SetupConfig`
+- Only bundled all-on placeholders default to Standard, once; explicit Full/custom intent survives
+- Three full-width presets; inline Fine-tune inspection preserves profile, edits mark Custom with no preset selected
+- Draft retains Fine-tune disclosure and all eight flags across Back/Next
+- Node mode, local MCP and Ollama sharing remain independent; no early persistence
+- Windows privacy checks and runtime consent remain outside onboarding, in Companion Settings
+- Managed Next goes directly to review; existing/remote to AI; MCP-only/deferred complete asynchronously here
+- No separate permissions page, preview or progress dot; headless SkipPermissions is unchanged
+
+**GatewaySetupPage / GatewaySetupDetailPage**
+- Generated WSL, CLI and Gateway review plus the retained startup preference
+- Focused Local AI and Tailscale controls retain generation-fenced probes and session-only options
+- Separate full-window global networking consent and exact-distro replacement confirmation
+- Only ManagedWsl can navigate to installation; alternate routes return the same config to the native connection host
 
 **ProgressPage**
 - Step rows with spinning ProgressRing → ✓/✗ badges
 - Live activity ledger collapsed by default
-- On success → gateway-installed milestone with explicit OpenClaw onboard CTA
+- On success → focused AI setup, then native Chat without an extra success page
 - On failure → navigates to Complete(success=false)
 
 **WizardPage**
@@ -545,7 +672,7 @@ The WinUI app is a **thin shell** - no business logic, just rendering pipeline s
 - "All set!" / error heading
 - Native InfoBar for node mode
 - "Launch OpenClaw at startup" toggle defaults on and is persisted before restart
-- "Finish" asks the tray host to self-restart and open chat
+- Compatibility/resume and error surface; not an extra gate on successful focused setup
 
 ### Window Properties
 - 720×820 logical pixels (DPI-scaled)
