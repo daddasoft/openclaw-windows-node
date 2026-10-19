@@ -179,6 +179,7 @@ public sealed class OpenClawChatDataProvider : IChatDataProvider
 
         _bridge.StatusChanged += OnStatusChanged;
         _bridge.SessionsUpdated += OnSessionsUpdated;
+        _bridge.SessionUsageSnapshotUpdated += OnSessionUsageSnapshotUpdated;
         _bridge.SessionCommandCompleted += OnSessionCommandCompleted;
         _bridge.ChatMessageReceived += OnChatMessageReceived;
         _bridge.AgentEventReceived += OnAgentEventReceived;
@@ -1129,6 +1130,7 @@ public sealed class OpenClawChatDataProvider : IChatDataProvider
             _persistence.Dispose();
             _bridge.StatusChanged -= OnStatusChanged;
             _bridge.SessionsUpdated -= OnSessionsUpdated;
+            _bridge.SessionUsageSnapshotUpdated -= OnSessionUsageSnapshotUpdated;
             _bridge.SessionCommandCompleted -= OnSessionCommandCompleted;
             _bridge.ChatMessageReceived -= OnChatMessageReceived;
             _bridge.AgentEventReceived -= OnAgentEventReceived;
@@ -1201,6 +1203,18 @@ public sealed class OpenClawChatDataProvider : IChatDataProvider
         foreach (var threadId in transition.QueuedThreadsToDrain)
         {
             TryDispatchNextQueuedSend(threadId);
+        }
+    }
+
+    private void OnSessionUsageSnapshotUpdated(object? sender, SessionUsageSnapshot usage)
+    {
+        if (_state.IsDisposed)
+            return;
+        if (_state.ApplyAuthoritativeSessionUsage(
+                usage,
+                ProjectionContext()) is { } snapshot)
+        {
+            Publish(snapshot);
         }
     }
 
@@ -1472,12 +1486,7 @@ public sealed class OpenClawChatDataProvider : IChatDataProvider
                 IsStreaming: !message.IsFinal),
             preparation.Metadata);
 
-        var hasUsage = message.InputTokens is not null ||
-                       message.OutputTokens is not null ||
-                       message.ResponseTokens is not null ||
-                       message.ContextPercent is not null;
-        if (hasUsage &&
-            _state.SnapshotAssistantUsageContribution(
+        if (_state.SnapshotAssistantUsageFrame(
                 threadId,
                 preparation.Metadata,
                 ProjectionContext()) is { } usageSnapshot)
