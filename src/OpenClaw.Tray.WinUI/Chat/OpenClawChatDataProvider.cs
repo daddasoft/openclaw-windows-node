@@ -258,7 +258,10 @@ public sealed class OpenClawChatDataProvider : IChatDataProvider
     Task IChatDataProvider.SendMessageAsync(string threadId, string message, CancellationToken cancellationToken)
         => SendMessageAsync(threadId, message, cancellationToken, attachments: null);
 
-    public async Task SendMessageAsync(string threadId, string message, CancellationToken cancellationToken = default, IReadOnlyList<ChatAttachment>? attachments = null)
+    public Task SendMessageAsync(string threadId, string message, CancellationToken cancellationToken = default, IReadOnlyList<ChatAttachment>? attachments = null)
+        => SendMessageReportingAcceptanceAsync(threadId, message, cancellationToken, attachments);
+
+    internal async Task<bool> SendMessageReportingAcceptanceAsync(string threadId, string message, CancellationToken cancellationToken = default, IReadOnlyList<ChatAttachment>? attachments = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -345,11 +348,12 @@ public sealed class OpenClawChatDataProvider : IChatDataProvider
         Publish(admission.Snapshot);
 
         if (dispatch is not null)
-            await DispatchQueuedSendAsync(
+            return await DispatchQueuedSendAsync(
                 dispatch,
                 queueCompletion,
                 rethrow: true,
                 cancellationToken);
+        return true;
     }
 
     internal Task<bool> EnqueueCompactCommandAsync(
@@ -461,7 +465,7 @@ public sealed class OpenClawChatDataProvider : IChatDataProvider
         return Task.FromResult(canceled);
     }
 
-    private async Task DispatchQueuedSendAsync(
+    private async Task<bool> DispatchQueuedSendAsync(
         ChatQueuedSendDispatch dispatch,
         ChatTelemetryTracker.QueuePhaseCompletion? queueCompletion,
         bool rethrow,
@@ -474,7 +478,7 @@ public sealed class OpenClawChatDataProvider : IChatDataProvider
                 dispatch,
                 lifecycleCommand,
                 cancellationToken).ConfigureAwait(false);
-            return;
+            return true;
         }
 
         _telemetry.CompleteQueueDispatch(queueCompletion);
@@ -495,7 +499,7 @@ public sealed class OpenClawChatDataProvider : IChatDataProvider
                     Publish(preparation.Snapshot);
                     TryDispatchNextQueuedSend(threadId);
                 }
-                return;
+                return false;
             }
             sendOperation = _telemetry.StartSendAttempt(request.Id);
             var sendResult = await _bridge.SendChatMessageForRunAsync(
@@ -590,6 +594,8 @@ public sealed class OpenClawChatDataProvider : IChatDataProvider
                     request.Attachments!,
                     DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             }
+
+            return commit.IsCurrent;
         }
         catch (Exception ex)
         {
@@ -615,7 +621,10 @@ public sealed class OpenClawChatDataProvider : IChatDataProvider
                     Publish(failure.Snapshot);
                     TryDispatchNextQueuedSend(threadId);
                 }
-                return;
+
+                // The task completes so a reset does not surface as an error.
+                // false tells the composer this send was not accepted.
+                return false;
             }
 
             var rejectedCompletion = _telemetry.PrepareFinishByMessageId(
@@ -639,6 +648,7 @@ public sealed class OpenClawChatDataProvider : IChatDataProvider
             TryDispatchNextQueuedSend(threadId);
             if (rethrow)
                 throw;
+            return false;
         }
     }
 
@@ -1158,6 +1168,12 @@ public sealed class OpenClawChatDataProvider : IChatDataProvider
         CancellationToken cancellationToken) =>
         _bridge.ResolveAssistantMediaAsync(sessionKey, media, cancellationToken);
 
+    internal Task<AssistantFileDownloadStatus> DownloadAssistantFileAsync(
+        string sessionKey,
+        ChatMediaContentInfo media,
+        CancellationToken cancellationToken) =>
+        _bridge.DownloadAssistantFileAsync(sessionKey, media, cancellationToken);
+
     // ── Event handlers ──
 
     private void OnStatusChanged(object? sender, ConnectionStatus status)
@@ -1312,9 +1328,13 @@ public sealed class OpenClawChatDataProvider : IChatDataProvider
     private void OnChatMessageReceived(object? sender, ChatMessageInfo message)
     {
         if (message is null || _state.IsDisposed)
+        {
+            message?.SuppressNotification();
             return;
+        }
         if (string.IsNullOrEmpty(message.SessionKey))
         {
+            message.SuppressNotification();
             Logger.Warn($"[ChatProvider] Dropping chat message with empty sessionKey (role={message.Role})");
             RaiseKeylessEventDiagnosticOnce();
             return;
@@ -1337,11 +1357,13 @@ public sealed class OpenClawChatDataProvider : IChatDataProvider
             gate.RuntimeGeneration);
         if (gate.Suppressed)
         {
-            Logger.Debug($"[ABORT] Suppressed ChatMessage for threadId='{threadId}' (role={message.Role})");
+            message.SuppressNotification();
+            Logger.Debug($"[ChatProvider] Suppressed aborted or stale chat message for threadId='{threadId}' (role={message.Role})");
             return;
         }
         if (gate.Drop)
         {
+            message.SuppressNotification();
             if (gate.Snapshot is not null)
                 Publish(gate.Snapshot);
             if (gate.RequestRemoteBackfill)
@@ -1454,6 +1476,7 @@ public sealed class OpenClawChatDataProvider : IChatDataProvider
             ChatMessageInfo.IsSilentAssistantDirective(role, message.Text) ||
             (string.IsNullOrEmpty(message.Text) && assistantContent is null))
         {
+            message.SuppressNotification();
             return;
         }
 
@@ -1466,10 +1489,19 @@ public sealed class OpenClawChatDataProvider : IChatDataProvider
             assistantContent);
         if (preparation.PromotionSnapshot is not null)
             Publish(preparation.PromotionSnapshot);
+        if (preparation.IsBackgroundFinal)
+        {
+            message.SuppressNotification();
+            if (preparation.BackgroundFinalSnapshot is not null)
+                Publish(preparation.BackgroundFinalSnapshot);
+            return;
+        }
+        // Duplicate-frame dedupe is not run admission: keep pre-veto notification behavior.
         if (preparation.Disposition != AssistantQueueFrameDisposition.Render)
             return;
         if (!message.IsFinal && _state.IsLateNonFinalAssistantFrame(threadId))
         {
+            message.SuppressNotification();
             Logger.Warn($"[ChatProvider] Dropping late non-final assistant frame after completed turn for threadId='{threadId}' len={traceText.Length}");
             return;
         }
@@ -1648,10 +1680,9 @@ public sealed class OpenClawChatDataProvider : IChatDataProvider
                             runId,
                             runtimeGeneration,
                             ProjectionContext());
+                    Logger.Warn($"[ABORT] Deferred chat.abort failed: {ex.Message}");
                     if (rollbackSnapshot is not null)
                     {
-                        Logger.Warn(
-                            $"[ABORT] Deferred chat.abort failed, cleared suppression: {ex.Message}");
                         Publish(
                             rollbackSnapshot,
                             new ChatProviderNotification(
