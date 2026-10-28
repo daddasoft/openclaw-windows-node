@@ -3,6 +3,8 @@ using OpenClaw.Shared;
 using OpenClaw.Shared.Telemetry;
 using OpenClaw.TestSupport.Gateway;
 using OpenClawTray.Chat;
+using OpenClawTray.Presentation;
+using OpenClawTray.Services;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
@@ -834,8 +836,11 @@ public class OpenClawChatDataProviderTests
             bridge.RaiseStatus(ConnectionStatus.Connected);
             await provider.SendMessageAsync("main", "first");
             bridge.RaiseAgent(MakeAgentEvent("lifecycle", """{"phase":"start"}""", runId: "run-1"));
-            using var composer = new ChatComposerFactory(new Presentation.RecordingUiDispatcher()).Create(
-                provider, new ChatComposerHostActions(null, null, null, null), initialSpeakerMuted: false);
+            var dispatcher = new Presentation.RecordingUiDispatcher();
+            using var temp = new OpenClaw.TestSupport.TempDirectory();
+            using var store = new SettingsStore(new SettingsManager(temp.Path), dispatcher);
+            using var composer = new ChatComposerFactory(dispatcher, store, new SandboxStatusStore()).Create(
+                provider, new ChatComposerHostActions(null, null, null, null, null), initialSpeakerMuted: false);
             composer.ApplyInputs(new ChatComposerInputs(
                 "connected", true, snapshots[^1].Threads.Single(thread => thread.Id == "main"),
                 [], null, true, [], null, false));
@@ -12017,7 +12022,10 @@ public class OpenClawChatDataProviderTests
             throw new InvalidOperationException("stale failure");
         };
         var initialSnapshot = await provider.LoadAsync();
-        var factory = new ChatComposerFactory(new Presentation.RecordingUiDispatcher());
+        var dispatcher = new Presentation.RecordingUiDispatcher();
+        using var settingsDirectory = new OpenClaw.TestSupport.TempDirectory();
+        using var settingsStore = new SettingsStore(new SettingsManager(settingsDirectory.Path), dispatcher);
+        var factory = new ChatComposerFactory(dispatcher, settingsStore, new SandboxStatusStore());
         using var staleComposer = factory.Create(
             provider, new ChatComposerHostActions(null, null, null, null, null), initialSpeakerMuted: false);
         using var freshComposer = factory.Create(
@@ -15462,6 +15470,45 @@ public class OpenClawChatDataProviderTests
             (n.Message?.Contains("pre-reconnect drop") ?? false) ||
             (n.Title?.Contains("post-reconnect drop") ?? false) ||
             (n.Message?.Contains("post-reconnect drop") ?? false));
+    }
+
+    [Fact]
+    public async Task RunUsage_RoutesSessionlessActiveRun_AndFencesReplayForeignRunsAndNewTurns()
+    {
+        var (bridge, provider, snapshots, notifications) = CreateProvider([MainSession()]);
+        await using var lifetime = provider;
+        await provider.LoadAsync();
+        bridge.RaiseAgent(MakeAgentEvent("lifecycle", """{"phase":"start"}""", runId: "run"));
+        var usage = MakeAgentEvent("usage", """{"outputTokens":120}""", sessionKey: "", runId: "run");
+        usage.Seq = 8;
+        bridge.RaiseAgent(usage);
+        Assert.Equal(120, snapshots[^1].Timelines["main"].RunUsage!.OutputTokens);
+        Assert.DoesNotContain(notifications, n => n.Title == "Chat_Notification_KeylessEventDropped");
+
+        usage.Data = JsonDocument.Parse("""{"outputTokens":999}""").RootElement.Clone();
+        usage.RunId = "foreign";
+        usage.Seq = 10;
+        bridge.RaiseAgent(usage);
+        Assert.Equal(120, snapshots[^1].Timelines["main"].RunUsage!.OutputTokens);
+        usage.RunId = "run";
+        usage.SessionKey = "other";
+        bridge.RaiseAgent(usage);
+        Assert.Null(snapshots[^1].Timelines["other"].RunUsage);
+        usage.SessionKey = "main";
+        usage.Seq = 7;
+        bridge.RaiseAgent(usage);
+        Assert.Equal(120, snapshots[^1].Timelines["main"].RunUsage!.OutputTokens);
+
+        bridge.RaiseAgent(MakeAgentEvent("lifecycle", """{"phase":"end"}""", runId: "run"));
+        usage.Data = JsonDocument.Parse("""{"outputTokens":115}""").RootElement.Clone();
+        usage.Seq = 9;
+        bridge.RaiseAgent(usage);
+        Assert.Equal(115, snapshots[^1].Timelines["main"].RunUsage!.OutputTokens);
+        Assert.False(snapshots[^1].Timelines["main"].TurnActive);
+
+        bridge.RaiseAgent(MakeAgentEvent("lifecycle", """{"phase":"start"}""", runId: "next-run"));
+        bridge.RaiseAgent(usage);
+        Assert.Null(snapshots[^1].Timelines["main"].RunUsage!.OutputTokens);
     }
 
     [Fact]
