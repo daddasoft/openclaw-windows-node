@@ -12,6 +12,21 @@ dotnet test tests\OpenClaw.Tray.UITests --no-build -c Debug -r win-x64 --filter 
 
 Those tests launch the app in a real Windows desktop process and scan pages for WCAG violations through Axe.Windows. Failures are summarized in the GitHub Actions step summary and written to `Accessibility.trx`.
 
+Failure diagnostics retain rule IDs, bounded rule descriptions and canonical
+control types with scan-result ordinals. They omit UIA names, automation IDs
+(which can be data-derived), arbitrary properties and desktop focus state.
+Only the first 20 violations are printed; the total count remains visible.
+Missing or inconsistent scan metadata fails validation, including incomplete
+results for excluded rules. Test-authored context labels are bounded to 128
+characters; use static page/scenario labels, never user content.
+
+The data-only `FullyQualifiedName~AxeHelperTests` filter exercises failure
+reporting and the one-retry workflow without launching Companion or a native UI
+fixture. Scripted scan results and a small UI Automation adapter cover refusal
+for missing automation IDs, foreign processes, missing/offscreen/empty elements,
+and incomplete results, including the second scan. These tests do not replace
+real accessibility scans or prove native UI Automation behavior.
+
 ## Running locally
 
 From the repository root:
@@ -22,6 +37,20 @@ dotnet test tests\OpenClaw.Tray.UITests -c Debug -r win-x64 --no-build --filter 
 ```
 
 Run this lane for UI changes that add or modify pages, dialogs, controls, focus behavior, labels, contrast-sensitive visuals, or keyboard navigation.
+
+For owned private launches on a shared host, use
+[`scripts\Invoke-PrivateDesktop.ps1`](../scripts/Invoke-PrivateDesktop.ps1).
+It creates a new desktop with Default's DACL and mandatory label without
+modifying Default or switching the shared input desktop. NULL-security desktop
+creation can otherwise deny low-integrity sandboxed children the access needed
+to initialize USER32. The
+[real MXC desktop regression](../tests/OpenClaw.DesktopHarness/README.md)
+checks USER32/PowerShell execution through the current published SDK owner on
+both caller-desktop variants. The original 0.8 bridge failure proof is historical;
+SDK 1.0.0 can inherit the caller's task desktop. Inspect the actual assigned
+desktop rather than treating the requested UI policy as proof of a separate
+execution desktop. See the regression guide for current policy assertions and
+runtime qualification requirements.
 
 ### Isolated desktop startup
 
@@ -43,6 +72,12 @@ runtime anchor never activates and needs no such registration. If the optional
 tray icon reports `NotImplementedException`, Companion logs the unavailable tray
 and continues opening the requested Hub. Other startup failures still propagate.
 Do not increase the fixture's 60-second Hub deadline to hide a failed app launch.
+
+The explicit no-Gateway accessibility fixture supplies sessions and an agent
+roster before Workspace creation. Only the enabled isolated fixture treats
+that initial snapshot as current. Normal launches still wait for a fresh
+Gateway roster. Synthetic selection tests do not prove live connectivity or
+pairing.
 
 ## Relationship to other validation
 

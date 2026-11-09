@@ -30,16 +30,15 @@ public enum ReactorChatTimelineMode
 public sealed record ReactorChatTimelineProps(
     ReactorChatTimelineMode Mode,
     ChatTimelinePresentationContext Timeline,
-    ReactorChatIdentity? AssistantIdentity = null,
+    ChatAgentIdentity? AssistantIdentity = null,
     Action<string>? OnOpenCheckpoints = null,
     long HistoryRevision = 0,
     double ViewportWidth = 800,
-    Func<string, bool>? TryCopyText = null);
-
-public sealed record ReactorChatIdentity(
-    string? DisplayName = null,
-    string? Avatar = null,
-    string? Emoji = null);
+    Func<string, bool>? TryCopyText = null,
+    string? AssistantAgentId = null,
+    OpenClaw.Shared.ChatPlacementCatalog? AssistantCatalog = null,
+    IChatAgentAvatarImageSource? AssistantAvatarImageSource = null,
+    ChatAgentPresentation? AssistantRosterAgent = null);
 
 /// <summary>
 /// Reactor-owned production timeline. Reactor's keyed ItemsView handles row
@@ -452,7 +451,7 @@ public sealed class ReactorChatTimeline : Component<ReactorChatTimelineProps>
             .HAlign(HorizontalAlignment.Stretch)
             .AutomationName(accessibleText)
             .AutomationId(queuedMessage is null ? string.Empty : $"ChatQueuedMessage_{queuedMessage.Id}")
-            .Set(panel => AutomationProperties.SetItemStatus(panel, status))
+            .ItemStatus(status)
             .LiveRegion(queuedMessage is null ? AutomationLiveSetting.Off : AutomationLiveSetting.Polite);
     }
 
@@ -582,25 +581,17 @@ public sealed class ReactorChatTimeline : Component<ReactorChatTimelineProps>
                 .Margin(0, 0, 8, 0)
                 .VAlign(VerticalAlignment.Top);
 
-        var identity = row.Props.AssistantIdentity;
-        var glyph = !string.IsNullOrWhiteSpace(identity?.Avatar)
-            ? identity.Avatar
-            : identity?.Emoji;
-        Element content = !string.IsNullOrWhiteSpace(glyph)
-            ? Text(glyph, 16, FontWeights.SemiBold, "TextFillColorSecondaryBrush").Center()
-            : Image("ms-appx:///Assets/Square44x44Logo.targetsize-256_altform-unplated.png")
-                .Size(36, 36)
-                .AutomationName(identity?.DisplayName ?? "Assistant");
-
-        return Border(content)
+        // Same identity rules as the welcome header and sidebar: image, text avatar, then generated face.
+        var agent = ChatWelcomePresentation.AgentIdentity(
+            row.Props.AssistantCatalog, row.Props.AssistantAgentId,
+            row.Props.AssistantIdentity, row.Props.AssistantRosterAgent);
+        return NativeChatWelcomeAvatarElement.NativeChatWelcomeAvatar()
+            .Set(avatar => avatar.Update(agent, 36, row.Props.AssistantAvatarImageSource))
             .Size(36, 36)
-            .CornerRadius(18)
-            .Background(BrushFor("CardBackgroundFillColorDefaultBrush", Color.FromArgb(0x24, 0x80, 0x80, 0x80)))
-            .BorderBrush(BrushFor("ControlStrokeColorDefaultBrush", Color.FromArgb(0x40, 0x80, 0x80, 0x80)))
-            .BorderThickness(1)
             .Margin(0, 0, 8, 0)
             .VAlign(VerticalAlignment.Top)
-            .AutomationName(identity?.DisplayName ?? "Assistant");
+            .AutomationId("ChatAssistantAvatar")
+            .AutomationName(agent.Name);
     }
 
     internal static Element BuildSafeMarkdown(string? text, Func<string, bool>? tryCopy = null)
@@ -611,7 +602,6 @@ public sealed class ReactorChatTimeline : Component<ReactorChatTimelineProps>
             Paragraph = ChatMarkdownPresentation.Paragraph,
             CodeBlock = (code, language) => ChatMarkdownPresentation.CodeBlock(code, language, tryCopy: tryCopy),
             ParserFlags = MarkdownParserFlags.Tables | MarkdownParserFlags.NoHtml,
-            ListItem = BuildWrappingMarkdownListItem,
             Image = (alt, _) => Text(
                     string.IsNullOrWhiteSpace(alt) ? "[Image]" : $"[Image: {alt}]",
                     14,
@@ -628,19 +618,7 @@ public sealed class ReactorChatTimeline : Component<ReactorChatTimelineProps>
         };
 
         return ChatMarkdownPresentation.MessageBlocks(
-            Microsoft.UI.Reactor.Factories.Markdown(ChatMarkdownSanitizer.Sanitize(text), options));
-    }
-
-    private static Element BuildWrappingMarkdownListItem(Element defaultElement)
-    {
-        // preview.12 measures list content at infinite width in an HStack. Use the
-        // Auto/Star layout from microsoft/microsoft-ui-reactor#1197 until #1424 retires the pin.
-        if (defaultElement is not StackElement { Orientation: Orientation.Horizontal, Children.Length: 2 } row)
-            throw new InvalidOperationException("Unexpected Reactor Markdown list item shape. Review the preview.12 workaround.");
-
-        return Grid([GridSize.Auto, GridSize.Star()], [],
-            row.Children[0],
-            row.Children[1].Grid(column: 1)) with { ColumnSpacing = row.Spacing };
+            Microsoft.UI.Reactor.Advanced.Factories.Markdown(ChatMarkdownSanitizer.Sanitize(text), options));
     }
 
     private static Element BuildAssistantFooter(

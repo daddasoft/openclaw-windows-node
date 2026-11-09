@@ -43,7 +43,8 @@ public static class ReactorChatHostExtensions
         bool initialMuted,
         Action onSandboxSettingsClick,
         Action? onSessionNavigationStarting = null,
-        Action<string, string?>? onSessionSelected = null)
+        Action<string, string?>? onSessionSelected = null,
+        Action<string>? onSpeechTargetChanged = null)
     {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(composerFactory);
@@ -83,7 +84,8 @@ public static class ReactorChatHostExtensions
             onSpeakerMuteChanged,
             onSessionNavigationStarting,
             onSessionSelected,
-            onSandboxSettingsClick);
+            SandboxSettingsNavigation: onSandboxSettingsClick,
+            SpeechTargetChanged: onSpeechTargetChanged);
         return composerFactory.Create(provider, hostActions, initialMuted);
     }
 
@@ -97,7 +99,8 @@ public static class ReactorChatHostExtensions
         Func<string, Task>? onReadAloud = null,
         Action? onStopSpeaking = null,
         Action<string>? onOpenCheckpoints = null,
-        bool initialThreadIsExplicitSelection = true)
+        bool initialThreadIsExplicitSelection = true,
+        IChatAgentRosterSource? agentRosterSource = null)
     {
         ArgumentNullException.ThrowIfNull(composerSession);
         MountedReactorChat? mounted = null;
@@ -124,7 +127,8 @@ public static class ReactorChatHostExtensions
                 onReadAloud,
                 onStopSpeaking,
                 onOpenCheckpoints,
-                InitialThreadIsExplicitSelection: initialThreadIsExplicitSelection);
+                InitialThreadIsExplicitSelection: initialThreadIsExplicitSelection,
+                AgentRosterSource: agentRosterSource);
             var host = new ReactorHostControl();
             mounted = new MountedReactorChat(target, host, callbacks, composerSession);
             host.Mount(_ => Component<OpenClawReactorChatRoot, OpenClawReactorChatRootProps>(props));
@@ -157,11 +161,15 @@ public sealed class MountedReactorChat(
 {
     private int _disposed;
 
+    internal string? CurrentThreadId => session.ViewModel.Inputs?.CurrentThread.Id;
+
     internal bool TrySelectSession(string sessionKey) => session.Controller.TrySelectSession(sessionKey);
 
     internal void InvalidatePendingSessionNavigation() => session.Controller.InvalidatePendingSessionNavigation();
 
     internal void CancelVoiceRecording() => session.Controller.CancelVoiceRecording();
+
+    internal void SetHostVisible(bool visible) => session.SetHostVisible(visible);
 
     public void AttachFiles(IReadOnlyList<ChatAttachment> attachments) =>
         callbacks.AttachFiles?.Invoke(attachments);

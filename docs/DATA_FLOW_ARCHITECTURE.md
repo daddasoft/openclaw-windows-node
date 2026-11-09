@@ -26,15 +26,16 @@ Single source of truth for all gateway-cached data. Implements `INotifyPropertyC
 src/OpenClaw.Tray.WinUI/Services/AppState.cs
 ```
 
-**Properties** (24+): `Status`, `CurrentActivity`, `Sessions`, `Channels`, `Nodes`, `Usage`, `UsageCost`, `UsageStatus`, `GatewaySelf`, `NodePairList`, `DevicePairList`, `ModelsList`, `Presence`, `AgentsList`, `Config`, `ConfigSchema`, `SkillsData`, `CronList`, `CronStatus`, `CronRuns`, `AgentFilesList`, `AgentFileContent`, `AuthFailureMessage`, `UpdateInfo`, `LastCheckTime`
+**Properties** (24+): `Status`, `CurrentActivity`, `Sessions`, `Channels`, `Nodes`, `Usage`, `UsageCost`, `UsageStatus`, `GatewaySelf`, `NodePairList`, `DevicePairList`, `ModelsList`, `Presence`, `AgentsList`, `Config`, `ConfigSchema`, `CronList`, `CronStatus`, `CronRuns`, `AgentFilesList`, `AgentFileContent`, `AuthFailureMessage`, `UpdateInfo`, `LastCheckTime`
 
 **Threading model**: All property writes must happen on the UI thread (enforced by `Debug.Assert` in `SetField`). This guarantees `PropertyChanged` fires on the UI thread, so pages can update UI directly without `DispatcherQueue.TryEnqueue`.
 
 **Lifetime**: Created once in `App.OnLaunched`, lives for the app's lifetime. Accessible globally via `((App)Application.Current).AppState`. Connections come and go; pages always have a single stable view of the data.
 
+The standalone Event Stream page has been removed. Chat still consumes the Gateway `AgentEventReceived` stream directly through `IChatGatewayBridge` and `OpenClawChatDataProvider` for live rendering. `AppState` no longer retains a separate event buffer. The Connection Timeline remains a separate diagnostics action.
+
 **Key methods**:
 - `ClearCachedData()` - resets all gateway data fields on disconnect (does NOT reset `Status` - that's managed by `OnManagerStateChanged`)
-- `AddAgentEvent(evt)` - ring buffer, newest-first, capped at 400
 - `GetAgentIds()` - computed from `AgentsList` JSON
 - `SetSessionPreview/GetSessionPreview/PruneSessionPreviews` - thread-safe via lock
 
@@ -124,15 +125,11 @@ private void OnAppStateChanged(object? sender, PropertyChangedEventArgs e)
 |------|----------|
 | ConnectionPage | Status, NodePairList, DevicePairList, Channels, UsageCost, Sessions, GatewaySelf |
 | SessionsPage | Sessions, ModelsList |
-| ChannelsPage | Channels |
 | UsagePage | Usage, UsageCost, UsageStatus |
 | InstancesPage | Nodes, Presence |
 | ConfigPage | Config, ConfigSchema |
-| BindingsPage | Config |
 | CronPage | CronList, CronStatus, CronRuns |
-| SkillsPage | SkillsData |
 | WorkspacePage | AgentFilesList, AgentFileContent |
-| AgentEventsPage | AgentEventAdded (separate event) |
 | AboutPage | GatewaySelf |
 
 Pages that don't observe AppState: ChatPage, SettingsPage, SandboxPage,

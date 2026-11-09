@@ -22,6 +22,607 @@ public sealed class GatewayFixtureUiFactAttribute : FactAttribute
 [Collection("Gateway fixture UI")]
 public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
 {
+    private const string HandoffSettleTimeoutVariable = "OPENCLAW_GATEWAY_FIXTURE_HANDOFF_TIMEOUT_SECONDS";
+    // Sender process, app relaunch, verify RPC and receipt persistence; hosted runners exceeded 20 s.
+    private static readonly TimeSpan HandoffSettleTimeout =
+        int.TryParse(Environment.GetEnvironmentVariable(HandoffSettleTimeoutVariable), out var seconds) && seconds > 0
+            ? TimeSpan.FromSeconds(seconds) : TimeSpan.FromSeconds(45);
+    // The footer photo is a flat disc about 24 DIPs across, so a painted one covers hundreds of pixels at any display scale.
+    private const int OwnerPhotoChannelTolerance = 8;
+    private const int OwnerPhotoMinimumPixels = 150;
+
+    [GatewayFixtureUiFact]
+    [Trait("Category", "GatewayFixture")]
+    public async Task HomeSidebar_CustomizeDoesNotNavigate_AndHomeRestoresCanonicalConversation()
+    {
+        await WithAppAsync(async run =>
+        {
+            await run.InvokeAsync("app.navigate", new { page = "chat" });
+            await SelectSessionAsync(run, GatewayScenario.LongTitle, GatewayScenario.LongSessionKey);
+            var window = FindHub(run);
+            var scale = FindById(run, "WorkspaceTogglePane")!.Current.BoundingRectangle.Width / 40;
+            var customize = FindById(run, "WorkspacePagesCustomize")!;
+            var customizeBounds = customize.Current.BoundingRectangle;
+            var addBounds = FindById(run, "WorkspaceSessionsAdd")!.Current.BoundingRectangle;
+            Assert.InRange((customizeBounds.Right - addBounds.Right) / scale, -1, 1);
+            Assert.InRange(customizeBounds.Width / scale, 39, 41);
+            Assert.InRange(customizeBounds.Height / scale, 35, 37);
+            Assert.Equal("Customize pages", customize.Current.Name);
+            const string draft = "Keep this other conversation draft";
+            ((ValuePattern)FindById(run, "ChatComposerInput")!.GetCurrentPattern(ValuePattern.Pattern)).SetValue(draft);
+            await WaitUiAsync(run, () => ComposerText(run) == draft &&
+                FindById(run, "ChatComposerPrimaryAction") is { Current.Name: "Send", Current.IsEnabled: true },
+                "non-main draft acknowledged before native pointer input");
+            Assert.Null(FindById(run, $"WorkspaceSession:{GatewayScenario.MainSessionKey}"));
+
+            async Task TogglePinAsync(string tag, bool keyboard)
+            {
+                var gear = FindById(run, "WorkspacePagesCustomize")!;
+                if (keyboard)
+                {
+                    if (!SetForegroundWindow(new IntPtr(window.Current.NativeWindowHandle)) &&
+                        !ForegroundBelongsTo(run.AppProcessId))
+                        throw new InvalidOperationException("Cannot activate the isolated Workspace for customize keyboard proof.");
+                    gear.SetFocus();
+                    await WaitUiAsync(run, () => gear.Current.HasKeyboardFocus, "customize keyboard focus");
+                    Send(run, window, " ");
+                }
+                else ClickOwnedElement(run, window, gear);
+                await WaitUiAsync(run, () => FindById(run, $"WorkspacePagesToggle:{tag}") is not null, "customize flyout");
+                foreach (var excluded in new[] { "settings", "local-ai", "voice", "permissions", "sandbox" })
+                    Assert.Null(FindById(run, $"WorkspacePagesToggle:{excluded}"));
+                Assert.Null(FindText(run, "This computer"));
+                Invoke(FindById(run, $"WorkspacePagesToggle:{tag}")!);
+                await WaitUiAsync(run, () => FindById(run, $"WorkspacePagesToggle:{tag}") is null, "customize flyout closed");
+            }
+
+            await TogglePinAsync("connection", keyboard: false);
+            await WaitComposerSelectionAsync(run, GatewayScenario.LongSessionKey);
+            Assert.Equal(draft, ComposerText(run));
+            Invoke(FindById(run, "WorkspacePinnedPage:connection")!);
+            await WaitUiAsync(run, () => FindById(run, "ConnectionPageMarker")?.Current.IsOffscreen == false, "embedded Connection");
+            var connectionRow = FindById(run, "WorkspacePinnedPage:connection")!.GetRuntimeId();
+            await TogglePinAsync("sessions", keyboard: false);
+            Assert.False(FindById(run, "ConnectionPageMarker")!.Current.IsOffscreen);
+            Assert.Null(FindById(run, "ChatComposerInput"));
+            Assert.Equal(connectionRow, FindById(run, "WorkspacePinnedPage:connection")!.GetRuntimeId());
+            await TogglePinAsync("sessions", keyboard: false);
+            Assert.False(FindById(run, "ConnectionPageMarker")!.Current.IsOffscreen);
+            Assert.Null(FindById(run, "WorkspacePinnedPage:sessions"));
+
+            // Removing an automation peer is not an acknowledgment of the remaining rows' arrange pass.
+            // Keep two matching native samples, without another action or an extra timeout.
+            (string Identity, System.Windows.Rect Home, System.Windows.Rect Pin,
+                System.Windows.Rect Header, System.Windows.Rect Other, System.Windows.Rect Anchor)? previous = null;
+            AutomationElement? readyHome = null;
+            var samples = 0;
+            double? firstGap = null, lastGap = null;
+            static bool Usable(System.Windows.Rect rect) => !rect.IsEmpty && rect.Width > 0 && rect.Height > 0
+                && double.IsFinite(rect.Left) && double.IsFinite(rect.Top)
+                && double.IsFinite(rect.Right) && double.IsFinite(rect.Bottom);
+            AutomationElement? InWorkspace(string id) => window.FindFirst(TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.AutomationIdProperty, id));
+            try
+            {
+                await WaitUiAsync(run, () =>
+                {
+                    var prior = previous;
+                    previous = null; // A missing/stale peer or invalid sample breaks consecutive readiness.
+                    samples++;
+                    if (!double.IsFinite(scale) || scale <= 0
+                        || FindById(run, "WorkspacePagesToggle:sessions") is not null
+                        || InWorkspace("WorkspacePinnedPage:sessions") is not null)
+                        return false;
+                    var homeCandidate = InWorkspace("WorkspaceNavHome");
+                    var pin = InWorkspace("WorkspacePinnedPage:connection");
+                    var anchor = InWorkspace("WorkspaceSessionsAdd");
+                    var conversation = InWorkspace($"WorkspaceSession:{GatewayScenario.LongSessionKey}");
+                    var connection = InWorkspace("ConnectionPageMarker");
+                    if (homeCandidate is null || pin is null || anchor is null || conversation is null || connection is null)
+                        return false;
+                    AutomationElement[] owners = [window, homeCandidate, pin, anchor, conversation, connection];
+                    if (owners.Any(element => element.Current.ProcessId != run.AppProcessId || element.Current.IsOffscreen)
+                        || !pin.GetRuntimeId().SequenceEqual(connectionRow))
+                        return false;
+                    var homeRect = homeCandidate.Current.BoundingRectangle;
+                    var pinRect = pin.Current.BoundingRectangle;
+                    var anchorRect = anchor.Current.BoundingRectangle;
+                    var otherRect = conversation.Current.BoundingRectangle;
+                    if (!Usable(homeRect) || !Usable(pinRect) || !Usable(anchorRect) || !Usable(otherRect))
+                        return false;
+
+                    // The authored header has Sessions text beside its existing add button. Use that
+                    // native row band, not the first Sessions substring or an assumed UIA parent chain.
+                    AutomationElement? header = null;
+                    var headerRect = System.Windows.Rect.Empty;
+                    var labels = window.FindAll(TreeScope.Descendants, new AndCondition(
+                        new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Text),
+                        new PropertyCondition(AutomationElement.NameProperty, "Sessions"),
+                        new PropertyCondition(AutomationElement.IsOffscreenProperty, false)));
+                    foreach (AutomationElement label in labels)
+                    {
+                        var bounds = label.Current.BoundingRectangle;
+                        if (label.Current.ProcessId != run.AppProcessId || label.Current.IsOffscreen || !Usable(bounds)
+                            || bounds.Top < anchorRect.Top || bounds.Bottom > anchorRect.Bottom
+                            || bounds.Left < homeRect.Left || bounds.Right > anchorRect.Left)
+                            continue;
+                        if (header is not null) return false; // Ambiguous labels are not a section receipt.
+                        header = label;
+                        headerRect = bounds;
+                    }
+                    if (header is null) return false;
+                    var homeGap = (pinRect.Top - homeRect.Bottom) / scale;
+                    var headerGap = (headerRect.Top - pinRect.Bottom) / scale;
+                    if (!double.IsFinite(homeGap) || !double.IsFinite(headerGap)) return false;
+                    firstGap ??= headerGap;
+                    lastGap = headerGap;
+                    if (homeGap is < -1 or > 8 || headerGap is < 4 or > 48 || otherRect.Top < headerRect.Bottom)
+                        return false;
+                    // Runtime IDs are numeric, role-delimited and private to this observer; no UI text is retained.
+                    var identities = owners.Append(header).Select(element => element.GetRuntimeId()).ToArray();
+                    if (identities.Any(id => id is null || id.Length == 0)) return false;
+                    var identity = string.Join("|", identities.Select(id => string.Join(",", id)));
+                    var sample = (identity, homeRect, pinRect, headerRect, otherRect, anchorRect);
+                    previous = sample;
+                    if (prior is null || prior.Value != sample) return false;
+                    readyHome = homeCandidate;
+                    return true;
+                }, "stable post-unpin sidebar geometry");
+            }
+            finally
+            {
+                try
+                {
+                    output.WriteLine("Sidebar post-unpin geometry: " + JsonSerializer.Serialize(
+                        new { samples, firstGap, lastGap, stable = readyHome is not null }));
+                }
+                catch (Exception) { /* Best-effort numeric diagnostics must not replace the test failure. */ }
+            }
+            var settled = previous!.Value;
+            var home = readyHome!;
+            var homeBounds = settled.Home;
+            var pinBounds = settled.Pin;
+            var sessionsHeader = settled.Header;
+            var other = settled.Other;
+            Assert.InRange((pinBounds.Top - homeBounds.Bottom) / scale, -1, 8);
+            Assert.InRange((sessionsHeader.Top - pinBounds.Bottom) / scale, 4, 48);
+            Assert.True(other.Top >= sessionsHeader.Bottom);
+            Assert.Null(FindText(run, "Pages"));
+            Assert.Null(FindText(run, "Pin pages here with the customize button."));
+            Invoke(home);
+            await WaitComposerSelectionAsync(run, GatewayScenario.MainSessionKey);
+            await WaitUiAsync(run, () => IsVisibleInTimeline(run, GatewayScenario.MainSentinel), "Home main history rendered");
+            Assert.Null(FindById(run, $"WorkspaceSession:{GatewayScenario.MainSessionKey}"));
+            Assert.True(((SelectionItemPattern)home.GetCurrentPattern(SelectionItemPattern.Pattern)).Current.IsSelected);
+            Invoke(FindById(run, "WorkspaceBack")!);
+            await WaitUiAsync(run, () => FindById(run, "ConnectionPageMarker")?.Current.IsOffscreen == false, "Back restores page");
+            Invoke(FindById(run, "WorkspaceBack")!);
+            await WaitComposerSelectionAsync(run, GatewayScenario.LongSessionKey);
+            Assert.Equal(draft, ComposerText(run));
+            await SelectSessionAsync(run, GatewayScenario.MainTitle, GatewayScenario.MainSessionKey);
+            await SelectSessionAsync(run, GatewayScenario.LongTitle, GatewayScenario.LongSessionKey);
+            Assert.Equal(draft, ComposerText(run));
+            output.WriteLine("Native invocation, pin identity/order, canonical Home history and other-conversation draft assertions passed.");
+            await TogglePinAsync("sessions", keyboard: true);
+            await WaitComposerSelectionAsync(run, GatewayScenario.LongSessionKey);
+            Assert.Equal(draft, ComposerText(run));
+            await SelectSessionAsync(run, GatewayScenario.MainTitle, GatewayScenario.MainSessionKey);
+            OwnedWindowCapture.Save(run, window, "simplified-home-sidebar.png", home, customize,
+                FindById(run, "WorkspaceSessionsAdd")!);
+        });
+    }
+
+    [GatewayFixtureUiFact]
+    [Trait("Category", "GatewayFixture")]
+    public async Task PinnedPages_DisconnectRetainsDisabledRowsAndFocus_AndReconnectEnablesSameRows()
+    {
+        Action? releaseHandshake = null;
+        void ReleaseHandshake()
+        {
+            var release = releaseHandshake;
+            releaseHandshake = null;
+            release?.Invoke();
+        }
+        await WithAppAsync(async run =>
+        {
+            await run.InvokeAsync("app.navigate", new { page = "chat" });
+            await WaitComposerSelectionAsync(run, GatewayScenario.MainSessionKey);
+            foreach (var tag in new[] { "sessions", "instances", "connection" })
+            {
+                await WaitUiAsync(run, () => FindById(run, "WorkspacePagesCustomize") is not null, "customization button");
+                Invoke(FindById(run, "WorkspacePagesCustomize")!);
+                await WaitUiAsync(run, () => FindById(run, $"WorkspacePagesToggle:{tag}") is not null, "pin toggle");
+                Invoke(FindById(run, $"WorkspacePagesToggle:{tag}")!);
+                await WaitUiAsync(run, () => FindById(run, $"WorkspacePinnedPage:{tag}") is not null, "pinned row");
+            }
+            var identities = new[] { "sessions", "instances", "connection" }.ToDictionary(
+                tag => tag, tag => FindById(run, $"WorkspacePinnedPage:{tag}")!.GetRuntimeId());
+            var composerIdentity = FindById(run, "ChatComposerInput")!.GetRuntimeId();
+            var row = FindById(run, "WorkspacePinnedPage:sessions")!;
+            row.SetFocus();
+            await WaitUiAsync(run, () => row.Current.HasKeyboardFocus, "Gateway pin focused");
+            run.Gateway.HoldConnectionHandshakes();
+            releaseHandshake = run.Gateway.ReleaseConnectionHandshakes;
+            await run.Gateway.CloseConnectionsAsync();
+            await WaitUiAsync(run, () => FindById(run, "WorkspacePinnedPage:sessions") is { Current.IsEnabled: false },
+                "saved Sessions pin remains visible but disabled");
+            foreach (var (tag, identity) in identities)
+            {
+                var retained = FindById(run, $"WorkspacePinnedPage:{tag}")!;
+                Assert.False(retained.Current.IsOffscreen);
+                Assert.Equal(identity, retained.GetRuntimeId());
+                Assert.Equal(tag == "connection", retained.Current.IsEnabled);
+            }
+            Assert.True(FindById(run, "WorkspacePagesCustomize")!.Current.HasKeyboardFocus);
+            // Stay on Chat so the existing unavailable-current-Settings-page prune policy
+            // cannot be mistaken for navigation caused by disabling or focusing a pin.
+            Assert.Equal(composerIdentity, FindById(run, "ChatComposerInput")!.GetRuntimeId());
+            Assert.Null(FindById(run, "ConnectionPageMarker"));
+            try { Invoke(row); }
+            catch (ElementNotEnabledException) { }
+            await run.InvokeAsync("app.status", new { });
+            Assert.Equal(composerIdentity, FindById(run, "ChatComposerInput")!.GetRuntimeId());
+            Assert.Null(FindById(run, "SessionsPageMarker"));
+            Assert.True(((SelectionItemPattern)FindById(run, "WorkspaceNavHome")!
+                .GetCurrentPattern(SelectionItemPattern.Pattern)).Current.IsSelected);
+            await CaptureIfRequestedAsync(run, "pins-offline-retained-disabled.png");
+
+            // Any Gateway-dependent catalog page that is not pinned above proves the offline picker.
+            const string offlinePinTag = "usage";
+            Invoke(FindById(run, "WorkspacePagesCustomize")!);
+            await WaitUiAsync(run, () => FindById(run, $"WorkspacePagesToggle:{offlinePinTag}") is not null, "offline picker");
+            foreach (var tag in identities.Keys)
+            {
+                var toggle = FindById(run, $"WorkspacePagesToggle:{tag}")!;
+                Assert.True(toggle.Current.IsEnabled);
+                Assert.Equal(ToggleState.On, ((TogglePattern)toggle.GetCurrentPattern(TogglePattern.Pattern)).Current.ToggleState);
+            }
+            Invoke(FindById(run, $"WorkspacePagesToggle:{offlinePinTag}")!);
+            await WaitUiAsync(run, () => FindById(run, $"WorkspacePinnedPage:{offlinePinTag}") is { Current.IsEnabled: false },
+                "offline picker can add an unavailable page");
+            Assert.Equal(composerIdentity, FindById(run, "ChatComposerInput")!.GetRuntimeId());
+            ReleaseHandshake();
+            await WaitUiAsync(run, () => FindById(run, "WorkspacePinnedPage:sessions") is { Current.IsEnabled: true },
+                "retained pin enabled after reconnect");
+            foreach (var (tag, identity) in identities)
+            {
+                var retained = FindById(run, $"WorkspacePinnedPage:{tag}")!;
+                Assert.Equal(identity, retained.GetRuntimeId());
+                Assert.True(retained.Current.IsEnabled);
+            }
+            Assert.True(FindById(run, $"WorkspacePinnedPage:{offlinePinTag}")!.Current.IsEnabled);
+            Invoke(FindById(run, "WorkspacePinnedPage:sessions")!);
+            await WaitUiAsync(run, () => FindById(run, "SessionsPageMarker")?.Current.IsOffscreen == false, "restored pin remains usable");
+            await CaptureIfRequestedAsync(run, "pins-reconnected-enabled.png");
+        }, releasePendingResponses: ReleaseHandshake);
+    }
+
+    [GatewayFixtureUiFact]
+    [Trait("Category", "GatewayFixture")]
+    public async Task PinnedPages_HistoryFocusAndFeedbackRemainOnVisibleSurface()
+    {
+        await WithAppAsync(async run =>
+        {
+            await run.InvokeAsync("app.navigate", new { page = "chat" });
+            await WaitUiAsync(run, () => FindById(run, "ChatComposerInput")?.Current.IsOffscreen == false, "initial composer");
+            var window = FindHub(run);
+            if (!SetForegroundWindow(new IntPtr(window.Current.NativeWindowHandle)))
+                throw new InvalidOperationException("Cannot activate the isolated Workspace for pin keyboard proof.");
+
+            foreach (var tag in new[] { "connection", "sessions" })
+            {
+                await WaitUiAsync(run, () => FindById(run, "WorkspacePagesCustomize")?.Current.IsOffscreen == false,
+                    "customize button ready");
+                Invoke(FindById(run, "WorkspacePagesCustomize")!);
+                var toggleId = $"WorkspacePagesToggle:{tag}";
+                await WaitUiAsync(run, () => FindById(run, toggleId) is not null, "pin toggle");
+                Invoke(FindById(run, toggleId)!);
+                await WaitUiAsync(run, () => FindById(run, $"WorkspacePinnedPage:{tag}") is not null, "pinned row");
+            }
+
+            Invoke(FindById(run, "WorkspacePinnedPage:connection")!);
+            await WaitUiAsync(run, () => FindById(run, "ConnectionPageMarker")?.Current.IsOffscreen == false, "embedded Connection");
+            Invoke(FindById(run, "WorkspaceBack")!);
+            await WaitUiAsync(run, () => FindById(run, "ChatComposerInput")?.Current.IsOffscreen == false, "returned composer");
+            FindById(run, "ChatComposerInput")!.SetFocus();
+            await WaitUiAsync(run, () => FindById(run, "ChatComposerInput")!.Current.HasKeyboardFocus, "composer focus");
+            Send(run, window, "%{RIGHT}");
+            await WaitUiAsync(run, () => FindById(run, "ConnectionPageMarker")?.Current.IsOffscreen == false, "keyboard Forward");
+            FindById(run, "WorkspacePinnedPage:sessions")!.SetFocus();
+            Send(run, window, "%{LEFT}");
+            await WaitUiAsync(run, () => FindById(run, "ChatComposerInput")?.Current.HasKeyboardFocus == true,
+                "history restores composer despite a merely focused sidebar row");
+            await CaptureIfRequestedAsync(run, "pin-history-composer-focus.png");
+
+            Send(run, window, "%{RIGHT}");
+            await WaitUiAsync(run, () => FindById(run, "ConnectionPageMarker")?.Current.IsOffscreen == false, "embedded Connection again");
+            var sessions = FindById(run, "WorkspacePinnedPage:sessions")!;
+            sessions.SetFocus();
+            Send(run, window, "{ENTER}");
+            await WaitUiAsync(run, () => FindById(run, "SessionsPageMarker")?.Current.IsOffscreen == false, "keyboard pin invocation");
+            Assert.True(((SelectionItemPattern)sessions.GetCurrentPattern(SelectionItemPattern.Pattern)).Current.IsSelected);
+
+            Send(run, window, "^k");
+            await WaitUiAsync(run, () => FindById(run, "WorkspaceSearchBox") is not null, "Workspace search over embedded page");
+            Assert.Null(FindById(run, "SettingsSearchBox"));
+            OwnedWindowCapture.Save(run, window, "pin-embedded-search.png", FindById(run, "WorkspaceSearchBox")!);
+            Send(run, window, "{ESC}");
+            await WaitUiAsync(run, () => FindById(run, "WorkspaceSearchBox") is null, "embedded search dismissed");
+            Invoke(FindById(run, "WorkspaceTogglePane")!);
+            await WaitUiAsync(run, () => FindById(run, "WorkspaceReopenPane")?.Current.IsOffscreen == false, "collapsed embedded sidebar");
+            Send(run, window, "^k");
+            await WaitUiAsync(run, () => FindById(run, "WorkspaceSearchBox") is not null, "embedded search on collapsed sidebar anchor");
+            Assert.Null(FindById(run, "SettingsSearchBox"));
+            OwnedWindowCapture.Save(run, window, "pin-embedded-search-collapsed.png", FindById(run, "WorkspaceSearchBox")!);
+            Send(run, window, "{ESC}");
+            await WaitUiAsync(run, () => FindById(run, "WorkspaceSearchBox") is null, "collapsed search dismissed");
+            Invoke(FindById(run, "WorkspaceReopenPane")!);
+            await WaitUiAsync(run, () => FindById(run, "WorkspaceSessionsAdd")?.Current.IsOffscreen == false, "sidebar restored");
+
+            Invoke(FindById(run, "WorkspaceSessionsAdd")!);
+            await WaitUiAsync(run, () => FindById(run, "WorkspaceEmbeddedOperationFeedback")?.Current.IsOffscreen == false,
+                "visible rejected-operation feedback above embedded content");
+            Assert.Contains("Fixture Gateway is read-only", FindText(run, "Fixture Gateway is read-only")!.Current.Name);
+            await CaptureIfRequestedAsync(run, "pin-operation-error-visible.png");
+
+            await run.InvokeAsync("app.navigate", new { page = "settings" });
+            await WaitUiAsync(run, () => FindById(run, "SettingsBack")?.Current.IsOffscreen == false, "full Settings presentation");
+            Assert.True(FindById(run, "WorkspaceEmbeddedOperationFeedback") is null or { Current.IsOffscreen: true });
+            Invoke(FindById(run, "SettingsBack")!);
+            await WaitUiAsync(run, () => FindById(run, "WorkspaceEmbeddedOperationFeedback")?.Current.IsOffscreen == false,
+                "undismissed feedback survives presentation change");
+            var feedback = FindById(run, "WorkspaceEmbeddedOperationFeedback")!;
+            var close = feedback.FindFirst(TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button));
+            Assert.NotNull(close);
+            Invoke(close);
+            await WaitUiAsync(run, () => FindById(run, "WorkspaceEmbeddedOperationFeedback") is null or { Current.IsOffscreen: true },
+                "user dismisses embedded feedback");
+            FindById(run, "WorkspaceNavHome")!.SetFocus();
+            Send(run, window, "{ENTER}");
+            await WaitUiAsync(run, () => FindById(run, "ChatComposerInput")?.Current.IsOffscreen == false, "keyboard Home navigation");
+            Assert.True(FindById(run, "WorkspaceNavHome")!.Current.HasKeyboardFocus);
+            Assert.True(FindById(run, "WorkspaceOperationFeedback") is null or { Current.IsOffscreen: true });
+        });
+    }
+
+    [GatewayFixtureUiFact]
+    [Trait("Category", "GatewayFixture")]
+    public async Task PinnedPages_BackgroundFollowsThemeWhenReturningFromSettings()
+    {
+        await WithAppAsync(async run =>
+        {
+            await run.InvokeAsync("app.navigate", new { page = "chat" });
+            await WaitUiAsync(run, () => FindById(run, "WorkspacePagesCustomize") is not null, "pin customization");
+            Invoke(FindById(run, "WorkspacePagesCustomize")!);
+            await WaitUiAsync(run, () => FindById(run, "WorkspacePagesToggle:connection") is not null, "Connection pin toggle");
+            Assert.Null(FindById(run, "WorkspacePagesToggle:settings"));
+            Invoke(FindById(run, "WorkspacePagesToggle:connection")!);
+            await WaitUiAsync(run, () => FindById(run, "WorkspacePinnedPage:connection") is not null, "Connection pin");
+            Invoke(FindById(run, "WorkspacePinnedPage:connection")!);
+            await WaitUiAsync(run, () => FindById(run, "ConnectionPageMarker")?.Current.IsOffscreen == false, "embedded Connection");
+            var window = AppWindows(run).First(w => w.FindFirst(TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.AutomationIdProperty, "ConnectionPageMarker")) is not null);
+            foreach (var theme in new[] { "Dark", "Light", "Dark" })
+            {
+                // Settings remains reachable normally, but is no longer itself a pinnable page.
+                await run.InvokeAsync("app.navigate", new { page = "settings" });
+                await WaitUiAsync(run, () => FindById(run, "SettingsPageAppTheme")?.Current.IsOffscreen == false, "theme selector");
+                var selector = FindById(run, "SettingsPageAppTheme")!;
+                ((ExpandCollapsePattern)selector.GetCurrentPattern(ExpandCollapsePattern.Pattern)).Expand();
+                await WaitUiAsync(run, () => FindInApp(run, new AndCondition(
+                    new PropertyCondition(AutomationElement.NameProperty, theme),
+                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ListItem))) is not null, $"theme {theme}");
+                var option = FindInApp(run, new AndCondition(
+                    new PropertyCondition(AutomationElement.NameProperty, theme),
+                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ListItem)))!;
+                ((SelectionItemPattern)option.GetCurrentPattern(SelectionItemPattern.Pattern)).Select();
+                ((ExpandCollapsePattern)selector.GetCurrentPattern(ExpandCollapsePattern.Pattern)).Collapse();
+                await WaitUiAsync(run, () => FindById(run, "SettingsBack") is { Current.IsEnabled: true, Current.IsOffscreen: false },
+                    "Settings history button after theme update");
+                Invoke(FindById(run, "SettingsBack")!);
+                var name = $"pinned-connection-theme-{theme.ToLowerInvariant()}.png";
+                await WaitUiAsync(run, () =>
+                {
+                    var pageMarker = FindById(run, "ConnectionPageMarker");
+                    if (pageMarker is null || pageMarker.Current.IsOffscreen) return false;
+                    OwnedWindowCapture.Save(run, window, name, pageMarker);
+                    var path = Path.Combine(run.ArtifactsDirectory, name);
+                    using var metadata = JsonDocument.Parse(File.ReadAllText(Path.ChangeExtension(path, ".json")));
+                    var marker = metadata.RootElement.GetProperty("assertions")[0];
+                    var y = (int)(marker.GetProperty("top").GetDouble() + marker.GetProperty("Height").GetDouble()) + 8;
+                    using var bitmap = new System.Drawing.Bitmap(path);
+                    var color = bitmap.GetPixel(bitmap.Width - 50, y);
+                    return theme == "Dark"
+                        ? color.R < 128 && color.G < 128 && color.B < 128
+                        : color.R > 192 && color.G > 192 && color.B > 192;
+                }, $"embedded background matches {theme} after returning from Settings");
+            }
+        });
+    }
+
+    [GatewayFixtureUiFact]
+    [Trait("Category", "GatewayFixture")]
+    public async Task SettingsPane_KeepsToggleChoiceAcrossPinnedPagesAndRestart()
+    {
+        await WithAppAsync(async run =>
+        {
+            var app = Environment.GetEnvironmentVariable("OPENCLAW_GATEWAY_FIXTURE_APP")!;
+            const int CollapsedPaneStablePolls = 5;
+            // Search sits in the section-list toolbar and shows only while the list is expanded.
+            bool ListExpanded() => FindById(run, "SettingsSearch") is { Current.IsOffscreen: false };
+            async Task ShowFullSettingsAsync(string description)
+            {
+                await run.InvokeAsync("app.navigate", new { page = "settings" });
+                await WaitUiAsync(run, () => FindById(run, "SettingsPageMarker")?.Current.IsOffscreen == false
+                    && FindById(run, "SettingsTogglePane") is { Current.IsOffscreen: false }, description);
+            }
+            async Task WaitForCollapsedSettingsAsync(string description)
+            {
+                var stablePolls = 0;
+                await WaitUiAsync(run, () =>
+                {
+                    if (FindById(run, "SettingsTogglePane") is not { Current.IsOffscreen: false } || ListExpanded())
+                    {
+                        stablePolls = 0;
+                        return false;
+                    }
+
+                    return ++stablePolls >= CollapsedPaneStablePolls;
+                }, description);
+            }
+            async Task ShowPinnedConnectionAsync()
+            {
+                Invoke(await WaitForElementByIdAsync(run, "WorkspacePinnedPage:connection", "Connection pin"));
+                await WaitUiAsync(run, () => FindById(run, "ConnectionPageMarker")?.Current.IsOffscreen == false, "embedded Connection");
+            }
+
+            await ShowFullSettingsAsync("Settings");
+            await WaitUiAsync(run, ListExpanded, "section list expanded by default");
+            await run.InvokeAsync("app.navigate", new { page = "chat" });
+            Invoke(await WaitForElementByIdAsync(run, "WorkspacePagesCustomize", "pin customization"));
+            Invoke(await WaitForElementByIdAsync(run, "WorkspacePagesToggle:connection", "Connection pin toggle"));
+            // A pinned page hides the section list. Exit while one is showing.
+            await ShowPinnedConnectionAsync();
+            await run.RestartAppAsync(app);
+
+            await ShowFullSettingsAsync("Settings after restart");
+            await WaitUiAsync(run, ListExpanded, "section list still expanded after exiting from a pinned page");
+            Invoke(FindById(run, "SettingsTogglePane")!);
+            await WaitUiAsync(run, () => !ListExpanded(), "toggle collapses the section list");
+            await run.WaitForAsync(() =>
+            {
+                using var settings = JsonDocument.Parse(File.ReadAllText(Path.Combine(run.Profile.DataDirectory, "settings.json")));
+                return Task.FromResult(!settings.RootElement.GetProperty("HubNavPaneOpen").GetBoolean());
+            }, "toggle choice persisted");
+
+            await run.InvokeAsync("app.navigate", new { page = "chat" });
+            await ShowPinnedConnectionAsync();
+            await ShowFullSettingsAsync("Settings after the pinned page");
+            await WaitForCollapsedSettingsAsync("section list stays collapsed after returning from a pinned page");
+
+            await run.RestartAppAsync(app);
+            await ShowFullSettingsAsync("Settings after restarting with the list collapsed");
+            await WaitForCollapsedSettingsAsync("section list stays collapsed after restarting");
+        });
+    }
+
+    [GatewayFixtureUiFact]
+    [Trait("Category", "GatewayFixture")]
+    public async Task PinnedPages_NativeSwitchTiming()
+    {
+        await WithAppAsync(async run =>
+        {
+            await run.InvokeAsync("app.navigate", new { page = "chat" });
+            const string draft = "Keep this draft while preparing pinned pages";
+            await WaitUiAsync(run, () => FindById(run, "ChatComposerInput")?.Current.IsOffscreen == false,
+                "initial chat composer");
+            ((ValuePattern)FindById(run, "ChatComposerInput")!.GetCurrentPattern(ValuePattern.Pattern)).SetValue(draft);
+            var logPath = Path.Combine(run.Profile.DataDirectory, "openclaw-tray.log");
+            var initialLogLength = File.Exists(logPath) ? File.ReadAllText(logPath).Length : 0;
+            foreach (var tag in new[] { "connection", "sessions" })
+            {
+                Invoke(FindById(run, "WorkspacePagesCustomize")!);
+                var toggleId = $"WorkspacePagesToggle:{tag}";
+                await WaitUiAsync(run, () => FindById(run, toggleId) is not null, "pin toggle");
+                Invoke(FindById(run, toggleId)!);
+                await WaitUiAsync(run, () => FindById(run, $"WorkspacePinnedPage:{tag}") is not null, "pinned row");
+            }
+
+            Assert.True(((SelectionItemPattern)FindById(run, "WorkspaceNavHome")!
+                .GetCurrentPattern(SelectionItemPattern.Pattern)).Current.IsSelected);
+            Assert.Equal(draft, ((ValuePattern)FindById(run, "ChatComposerInput")!
+                .GetCurrentPattern(ValuePattern.Pattern)).Current.Value);
+            Assert.Null(FindById(run, "ConnectionPageMarker"));
+            Assert.Null(FindById(run, "SessionsPageMarker"));
+            var pinSaveLog = File.ReadAllText(logPath)[initialLogLength..];
+            Assert.DoesNotContain("[SETTINGS] Change impact", pinSaveLog);
+            Assert.DoesNotContain("Connecting to gateway:", pinSaveLog);
+            var samples = new List<object>();
+            for (var pass = 0; pass < 4; pass++)
+            {
+                foreach (var (tag, marker) in new[] { ("connection", "ConnectionPageMarker"), ("sessions", "SessionsPageMarker") })
+                {
+                    var row = FindById(run, $"WorkspacePinnedPage:{tag}")!;
+                    var timer = System.Diagnostics.Stopwatch.StartNew();
+                    Invoke(row);
+                    var invocationMs = timer.Elapsed.TotalMilliseconds;
+                    await WaitUiAsync(run, () => FindById(run, marker)?.Current.IsOffscreen == false, $"visible {tag}");
+                    var visibleMs = timer.Elapsed.TotalMilliseconds;
+                    Assert.True(((SelectionItemPattern)row.GetCurrentPattern(SelectionItemPattern.Pattern)).Current.IsSelected);
+                    samples.Add(new { tag, pass, invocationMs, visibleMs });
+                }
+            }
+            var selectedRow = FindById(run, "WorkspacePinnedPage:sessions")!;
+            var selectedIdentity = selectedRow.GetRuntimeId();
+            selectedRow.SetFocus();
+            await WaitUiAsync(run, () => selectedRow.Current.HasKeyboardFocus, "pin focus before unrelated setting save");
+            await run.InvokeAsync("app.settings.set", new { name = "HasSeenActivityStreamTip", value = "true" });
+            await run.InvokeAsync("app.settings.get", new { name = "HasSeenActivityStreamTip" });
+            selectedRow = FindById(run, "WorkspacePinnedPage:sessions")!;
+            Assert.Equal(selectedIdentity, selectedRow.GetRuntimeId());
+            Assert.True(selectedRow.Current.HasKeyboardFocus);
+            Assert.True(((SelectionItemPattern)selectedRow.GetCurrentPattern(SelectionItemPattern.Pattern)).Current.IsSelected);
+            var json = JsonSerializer.Serialize(samples, new JsonSerializerOptions { WriteIndented = true });
+            output.WriteLine(json);
+            await File.WriteAllTextAsync(Path.Combine(run.ArtifactsDirectory, "pin-switch-timing.json"), json);
+            await CaptureIfRequestedAsync(run, "pinned-sessions-timing.png");
+            await run.InvokeAsync("app.navigate", new { page = "chat" });
+            await WaitUiAsync(run, () => FindById(run, "ChatComposerInput")?.Current.IsOffscreen == false, "retained chat");
+            Assert.Equal(draft, ((ValuePattern)FindById(run, "ChatComposerInput")!
+                .GetCurrentPattern(ValuePattern.Pattern)).Current.Value);
+        });
+    }
+
+    [GatewayFixtureUiFact]
+    [Trait("Category", "GatewayFixture")]
+    public async Task PinnedPages_SelectionCallbacksDoNotReinvokeNavigation()
+    {
+        await WithAppAsync(async run =>
+        {
+            await run.InvokeAsync("app.navigate", new { page = "chat" });
+            foreach (var tag in new[] { "connection", "sessions" })
+            {
+                Invoke(FindById(run, "WorkspacePagesCustomize")!);
+                var toggleId = $"WorkspacePagesToggle:{tag}";
+                await WaitUiAsync(run, () => FindById(run, toggleId) is not null, "pin toggle");
+                Invoke(FindById(run, toggleId)!);
+                await WaitUiAsync(run, () => FindById(run, $"WorkspacePinnedPage:{tag}") is not null, "pinned row");
+            }
+
+            // Use the real shipped NavigationView: its SelectedItem setter can synchronously
+            // raise ItemInvoked even though the pin has SelectsOnInvoked=false.
+            foreach (var (tag, marker) in new[]
+            {
+                ("connection", "ConnectionPageMarker"),
+                ("sessions", "SessionsPageMarker"),
+                ("connection", "ConnectionPageMarker"),
+                ("connection", "ConnectionPageMarker"),
+            })
+            {
+                Invoke(FindById(run, $"WorkspacePinnedPage:{tag}")!);
+                await WaitUiAsync(run, () => FindById(run, marker)?.Current.IsOffscreen == false,
+                    $"responsive embedded {tag} page");
+                var row = FindById(run, $"WorkspacePinnedPage:{tag}")!;
+                Assert.True(((SelectionItemPattern)row.GetCurrentPattern(SelectionItemPattern.Pattern)).Current.IsSelected);
+                Assert.False(((SelectionItemPattern)FindById(run, "WorkspaceNavHome")!
+                    .GetCurrentPattern(SelectionItemPattern.Pattern)).Current.IsSelected);
+                Assert.False(FindById(run, "WorkspacePagesCustomize")!.Current.IsOffscreen);
+                run.EnsureRunning();
+            }
+            await CaptureIfRequestedAsync(run, "pinned-connection-selected.png");
+            Invoke(FindById(run, "WorkspaceBack")!);
+            await WaitUiAsync(run, () => FindById(run, "SessionsPageMarker")?.Current.IsOffscreen == false,
+                "Back restores the preceding pin, not a recursive duplicate");
+            Invoke(FindById(run, "WorkspaceForward")!);
+            await WaitUiAsync(run, () => FindById(run, "ConnectionPageMarker")?.Current.IsOffscreen == false,
+                "Forward restores the selected pin");
+            await run.InvokeAsync("app.navigate", new { page = "chat" });
+            await WaitUiAsync(run, () => FindById(run, "ChatComposerInput")?.Current.IsOffscreen == false,
+                "chat remains usable after pin navigation");
+        });
+    }
+
     [GatewayFixtureUiFact]
     [Trait("Category", "GatewayFixture")]
     public async Task HistoricalFractionalVoiceConversationRendersWithoutLoadingPlaceholder()
@@ -29,9 +630,30 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
         await WithAppAsync(async run =>
         {
             await run.InvokeAsync("app.navigate", new { page = "chat" });
-            await SelectSessionAsync(run, GatewayScenario.VoiceTitle, GatewayScenario.VoiceSessionKey);
-            await WaitUiAsync(run, () => RenderConsumedHistory(run, GatewayScenario.VoiceSessionKey)
-                && IsVisibleInTimeline(run, GatewayScenario.VoiceFinalSentinel), "visible historical fractional voice reply");
+            var observation = new VoiceTailObservation();
+            await SelectSessionAsync(run, GatewayScenario.VoiceTitle, GatewayScenario.VoiceSessionKey,
+                observeHistory: observation.ObserveHistory);
+            try
+            {
+                await WaitUiAsync(run, () =>
+                {
+                    var native = observation.BeginPoll();
+                    // Keep the original short circuit and native reads. Unknown visibility
+                    // means it was not evaluated, not that the final row was offscreen.
+                    try
+                    {
+                        return RenderConsumedHistory(run, GatewayScenario.VoiceSessionKey, native)
+                            && IsVisibleInTimeline(run, GatewayScenario.VoiceFinalSentinel, native);
+                    }
+                    finally { native.CompletedAtUtc = DateTimeOffset.UtcNow; }
+                }, "visible historical fractional voice reply");
+                observation.WaitSucceeded = true;
+            }
+            finally
+            {
+                // Cached values only: no new UIA or MCP calls on the failure path.
+                await observation.WriteAsync(run.ArtifactsDirectory);
+            }
             Assert.Null(FindText(run, "Loading messages..."));
             var snapshot = await run.InvokeAsync("app.chat.snapshot", new { threadId = GatewayScenario.VoiceSessionKey });
             var timeline = snapshot.GetProperty("selectedTimeline");
@@ -190,9 +812,46 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
             var owner = FindById(run, "WorkspaceOwner")!;
             Assert.Contains("Connected", owner.Current.HelpText, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("Personal workspace", owner.Current.HelpText);
-            Assert.Contains(run.Gateway.Requests, request => request.Method == "users.self" && request.Outcome == "ok");
-            await CaptureIfRequestedAsync(run, "owner-profile.png");
+            await WaitForAuthenticatedOwnerPhotoAsync(run);
         });
+    }
+
+    [GatewayFixtureUiFact]
+    [Trait("Category", "GatewayFixture")]
+    public async Task OwnerFooterRendersNamedSharedOwnerForGatewayOwnerProfile()
+    {
+        await WithAppAsync(async run =>
+        {
+            await run.InvokeAsync("app.navigate", new { page = "chat" });
+            await WaitUiAsync(run, () => FindById(run, "WorkspaceOwner")?.Current.Name == "Fixture Shared Person · Shared owner",
+                "named shared Gateway owner label in footer");
+            var owner = FindById(run, "WorkspaceOwner")!;
+            Assert.Equal("Fixture Shared Person · Shared owner", owner.Current.Name);
+            Assert.Contains("Connected", owner.Current.HelpText, StringComparison.OrdinalIgnoreCase);
+            await WaitForAuthenticatedOwnerPhotoAsync(run);
+        }, scenario: GatewayScenario.CreateBrowseWithOwnerProfile("gateway-owner", "Fixture Shared Person"));
+    }
+
+    [GatewayFixtureUiFact]
+    [Trait("Category", "GatewayFixture")]
+    public async Task OwnerFooterLoadsAvatarForProfileWithoutEmailOrUploadMetadata()
+    {
+        await WithAppAsync(async run =>
+        {
+            await run.InvokeAsync("app.navigate", new { page = "chat" });
+            await WaitUiAsync(run, () => FindById(run, "WorkspaceOwner")?.Current.Name == "Fixture Owner",
+                "named profile without avatar eligibility hints in footer");
+            var owner = FindById(run, "WorkspaceOwner")!;
+            Assert.Contains("Connected", owner.Current.HelpText, StringComparison.OrdinalIgnoreCase);
+            await WaitForAuthenticatedOwnerPhotoAsync(run);
+            await run.InvokeAsync("app.navigate", new { page = "settings" });
+            await WaitUiAsync(run, () => FindById(run, "SettingsOwner") is
+                { Current.IsOffscreen: false, Current.Name: "Fixture Owner" },
+                "authenticated owner in newly created Settings footer");
+            if (Environment.GetEnvironmentVariable("OPENCLAW_GATEWAY_FIXTURE_SCREENSHOTS") == "1")
+                await WaitUiAsync(run, () => OwnerPhotoPainted(run, "SettingsOwner", "settings-owner-profile.png"),
+                    "cached owner photo painted in newly created Settings footer");
+        }, scenario: GatewayScenario.CreateBrowseWithOwnerProfile("fixture-owner", "Fixture Owner"));
     }
 
     [GatewayFixtureUiFact]
@@ -357,7 +1016,24 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
                 transform.Resize(name == "narrow" ? 900 : narrowWidth + 400, name == "narrow" ? 720 : 950);
                 await ScrollToAsync(run, 0);
                 await ScrollToAsync(run, 100);
-                await WaitUiAsync(run, () => IsVisibleInTimeline(run, GatewayScenario.LongHistoryFinalMarker), $"message 240 visible at {name} width");
+                try
+                {
+                    await WaitUiAsync(run, () => IsVisibleInTimeline(run, GatewayScenario.LongHistoryFinalMarker), $"message 240 visible at {name} width");
+                }
+                catch (TimeoutException)
+                {
+                    var timeline = FindTimeline(run);
+                    var message = FindText(run, GatewayScenario.LongHistoryFinalMarker);
+                    output.WriteLine(JsonSerializer.Serialize(new
+                    {
+                        width = name,
+                        viewport = timeline?.Current.BoundingRectangle.ToString(),
+                        messageBounds = message?.Current.BoundingRectangle.ToString(),
+                        messageOffscreen = message?.Current.IsOffscreen,
+                        window = window.Current.BoundingRectangle.ToString(),
+                    }));
+                    throw;
+                }
                 var bounds = window.Current.BoundingRectangle;
                 if (name == "narrow")
                     narrowWidth = bounds.Width;
@@ -639,21 +1315,28 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
 
     private async Task WithAppAsync(Func<GatewayFixtureRun, Task> test, bool allowAgentCreation = false,
         bool requireAgentSelection = false, bool allowSessionMutations = false, GatewayScenario? scenario = null,
-        Func<GatewayFixtureProfile, string>? prepareSetupHandoff = null)
+        Func<GatewayFixtureProfile, string>? prepareSetupHandoff = null, bool postSetupRestart = false,
+        Action? releasePendingResponses = null, Action<GatewayFixtureProfile>? configureProfile = null,
+        bool connectGateway = true, TimeSpan? testTimeout = null)
     {
         var appPath = Environment.GetEnvironmentVariable("OPENCLAW_GATEWAY_FIXTURE_APP")
             ?? throw new InvalidOperationException("Set OPENCLAW_GATEWAY_FIXTURE_APP to the freshly built app. No installed-app fallback is allowed.");
-        await using var run = await GatewayFixtureRun.StartAsync(appPath,
+        var run = await GatewayFixtureRun.StartAsync(appPath,
             Environment.GetEnvironmentVariable("OPENCLAW_GATEWAY_FIXTURE_ARTIFACTS"),
             allowAgentCreation: allowAgentCreation, requireAgentSelection: requireAgentSelection,
             allowSessionMutations: allowSessionMutations,
-            scenario: scenario, prepareSetupHandoff: prepareSetupHandoff);
-        output.WriteLine($"Fixture run {run.Profile.RunId}, PID {run.AppProcessId}, artifacts: {run.ArtifactsDirectory}");
+            scenario: scenario, prepareSetupHandoff: prepareSetupHandoff, postSetupRestart: postSetupRestart,
+            releasePendingResponses: releasePendingResponses, configureProfile: configureProfile,
+            connectGateway: connectGateway);
+        Task body = Task.CompletedTask;
+        var failed = false;
         try
         {
+            output.WriteLine($"Fixture run {run.Profile.RunId}, PID {run.AppProcessId}, artifacts: {run.ArtifactsDirectory}");
             // UIA is synchronous and can block inside a hung app. Keep the deadline
             // outside that worker so failure reporting and owned-process cleanup still run.
-            await Task.Run(() => test(run)).WaitAsync(TimeSpan.FromSeconds(150)).ConfigureAwait(false);
+            body = Task.Run(() => test(run));
+            await body.WaitAsync(testTimeout ?? TimeSpan.FromSeconds(150)).ConfigureAwait(false);
             run.EnsureRunning();
             Assert.Empty(run.Gateway.UnexpectedRequests);
             var crashLog = Path.Combine(run.Profile.DataDirectory, "crash.log");
@@ -662,47 +1345,185 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
         }
         catch (Exception ex)
         {
-            await run.WriteReportAsync("failed", ex);
-            if (run.IsRunning)
+            failed = true;
+            // The owner bounds the whole synchronous capture entry, stops its app,
+            // joins body/capture workers, then disposes. Never return to another fixture
+            // with a live UIA worker or overwrite the original assertion with teardown.
+            await run.FinishUiFailureAsync(ex, body,
+                token => CaptureIfRequestedAsync(run, "failure.png", token), releasePendingResponses);
+            throw;
+        }
+        finally
+        {
+            if (!failed)
             {
-                try { await CaptureIfRequestedAsync(run, "failure.png"); }
-                catch (Exception captureError)
-                {
-                    output.WriteLine($"Failure screenshot unavailable: {captureError.Message}");
-                    await File.WriteAllTextAsync(Path.Combine(run.ArtifactsDirectory, "screenshot-error.txt"), captureError.ToString());
-                }
+                // Release response gates before the server joins its connections.
+                try { releasePendingResponses?.Invoke(); }
+                finally { await run.DisposeAsync(); }
             }
+        }
+    }
+
+    private const string SessionAgentSelectorId = "WorkspaceAssistantSelector";
+    private sealed record SessionSelectionStage(string Stage, string IntendedAgent, string ObservedAgent,
+        bool? RowPresent = null, bool? RowOffscreen = null, bool? RowSelected = null,
+        string? Operation = null, string? Edge = null, int Attempt = 0, int ElapsedMs = 0,
+        int OperationElapsedMs = 0, bool? PopupCollapsed = null, int UnavailableCount = 0,
+        string? ExceptionCategory = null, int? HResult = null,
+        string? LastUnavailableOperation = null, int? LastUnavailableHResult = null,
+        bool CountersSaturated = false);
+
+    private static async Task SelectSessionAsync(GatewayFixtureRun run, string title, string key, bool waitForHistory = true,
+        Action<SessionSelectionStage>? observe = null, Action<JsonElement>? observeHistory = null)
+    {
+        var agentId = $"WorkspaceAgent:{SessionDisplayResolver.Resolve(new SessionInfo { Key = key }).AgentId}";
+        static string SafeAgent(string id) => id switch
+        {
+            "WorkspaceAgent:main" => "main", "WorkspaceAgent:research" => "research", "" => "none", _ => "other"
+        };
+        var probe = new SessionSelectionProbe(SafeAgent(agentId), observe);
+        void Trace(string stage, bool? present = null, bool? offscreen = null, bool? selected = null) =>
+            probe.Emit(probe.Current with { Stage = stage, RowPresent = present, RowOffscreen = offscreen, RowSelected = selected });
+        Task WaitSelectionAsync(string stage, Func<bool> condition, string description) =>
+            WaitUiAsync(run, () => { probe.BeginAttempt(stage); return condition(); }, description, onProbeError: probe.Fault);
+        bool AgentAcknowledged(AutomationElement? element)
+        {
+            if (element is null)
+            {
+                probe.Emit(probe.Current with { Stage = "agent-observed", ObservedAgent = "none" });
+                return false;
+            }
+            var pattern = probe.Read("selection-pattern", () => (SelectionPattern)element.GetCurrentPattern(SelectionPattern.Pattern));
+            var items = probe.Read("get-selection", () => pattern.Current.GetSelection());
+            var id = probe.Read("selected-id", () => items.Length == 1 ? items[0].Current.AutomationId : string.Empty);
+            probe.Emit(probe.Current with { Stage = "agent-observed",
+                ObservedAgent = items.Length == 1 ? SafeAgent(id) : items.Length == 0 ? "none" : "multiple" });
+            return items.Length == 1 && string.Equals(id, agentId, StringComparison.Ordinal);
+        }
+        try
+        {
+            AutomationElement? selector = null;
+            AutomationElement? selectorWindow = null;
+            var ownedProcessId = run.AppProcessId;
+            var ownedWindowHandle = 0;
+            int[] windowRuntimeId = [];
+            int[] selectorRuntimeId = [];
+
+            static bool HasFiniteBounds(System.Windows.Rect bounds) =>
+                !bounds.IsEmpty && double.IsFinite(bounds.X) && double.IsFinite(bounds.Y) &&
+                double.IsFinite(bounds.Width) && double.IsFinite(bounds.Height) && bounds.Width > 0 && bounds.Height > 0;
+
+            bool SelectorIsLive()
+            {
+                probe.Run("owned-app-check", run.EnsureRunning);
+                return probe.Read("retained-selector-current", () =>
+                {
+                    if (selector is null || selectorWindow is null) return false;
+                    var owner = selectorWindow.Current;
+                    var current = selector.Current;
+                    var ownerBounds = owner.BoundingRectangle;
+                    var bounds = current.BoundingRectangle;
+                    return run.AppProcessId == ownedProcessId && owner.ProcessId == ownedProcessId &&
+                        ownedWindowHandle != 0 && owner.NativeWindowHandle == ownedWindowHandle &&
+                        owner.ControlType == ControlType.Window && owner.IsEnabled && !owner.IsOffscreen &&
+                        windowRuntimeId.Length > 0 && selectorWindow.GetRuntimeId().SequenceEqual(windowRuntimeId) &&
+                        current.ProcessId == ownedProcessId && current.ControlType == ControlType.ComboBox &&
+                        current.AutomationId == SessionAgentSelectorId && current.IsEnabled && !current.IsOffscreen &&
+                        selectorRuntimeId.Length > 0 && selector.GetRuntimeId().SequenceEqual(selectorRuntimeId) &&
+                        HasFiniteBounds(ownerBounds) && HasFiniteBounds(bounds) && ownerBounds.Contains(bounds);
+                });
+            }
+
+            bool FindOwnedSelector()
+            {
+                selector = null;
+                selectorWindow = null;
+                // Capture the owner from the existing initial discovery, not another global query.
+                foreach (var window in AppWindows(run, probe))
+                {
+                    var match = probe.Read("owned-descendant-lookup", () => window.FindFirst(TreeScope.Descendants,
+                        new PropertyCondition(AutomationElement.AutomationIdProperty, SessionAgentSelectorId)));
+                    if (match is null) continue;
+                    var identity = probe.Read("selector-owner-capture", () =>
+                        (Handle: window.Current.NativeWindowHandle, Window: window.GetRuntimeId(), Selector: match.GetRuntimeId()));
+                    selectorWindow = window;
+                    selector = match;
+                    ownedWindowHandle = identity.Handle;
+                    windowRuntimeId = identity.Window;
+                    selectorRuntimeId = identity.Selector;
+                    return SelectorIsLive();
+                }
+                return false;
+            }
+
+            await WaitSelectionAsync("selector-lookup", () => probe.Read("selector-lookup", FindOwnedSelector),
+                "live owned agent selector");
+            if (!AgentAcknowledged(selector))
+            {
+                var dropdown = probe.Read("expand-pattern", () =>
+                    (ExpandCollapsePattern)selector!.GetCurrentPattern(ExpandCollapsePattern.Pattern));
+                probe.Run("expand", dropdown.Expand);
+                AutomationElement? item = null;
+                await WaitSelectionAsync("agent-item-lookup", () =>
+                    (item = probe.Read("item-lookup", () => FindById(run, agentId, probe))) is not null, "session's agent");
+                // ComboBox selection is a required native contract, not a generic Invoke fallback.
+                // WinUI's SelectionItem provider collapses its parent after this one selection.
+                var selection = probe.Read("selection-item-pattern", () =>
+                    (SelectionItemPattern)item!.GetCurrentPattern(SelectionItemPattern.Pattern));
+                probe.Run("select-once", selection.Select);
+            }
+            await WaitSelectionAsync("agent-acknowledgement", () =>
+            {
+                // AssistantSelector is the same PaneHeader control for this selection's lifetime.
+                // Reuse only its live peer, never cached properties/selection or another window's peer.
+                if (!SelectorIsLive()) return false;
+                var popup = probe.Read("popup-pattern", () =>
+                    (ExpandCollapsePattern)selector!.GetCurrentPattern(ExpandCollapsePattern.Pattern));
+                var collapsed = probe.Read("popup-state", () => popup.Current.ExpandCollapseState) == ExpandCollapseState.Collapsed;
+                probe.Emit(probe.Current with { PopupCollapsed = collapsed });
+                var selected = AgentAcknowledged(selector);
+                return collapsed && selected;
+            }, "collapsed popup and exact selected session agent acknowledged");
+            var rowId = key == GatewayScenario.MainSessionKey ? "WorkspaceNavHome" : $"WorkspaceSession:{key}";
+            AutomationElement? row = null;
+            await WaitSelectionAsync("row-lookup", () =>
+            {
+                row = probe.Read("row-lookup", () => FindById(run, rowId, probe));
+                Trace("row-observed", present: row is not null);
+                return row is not null;
+            }, $"sidebar session {title}");
+            var selectedRow = row!;
+            if (observe is not null)
+            {
+                var offscreen = probe.Read("row-offscreen", () => selectedRow.Current.IsOffscreen);
+                bool? selected = probe.Read("row-selection", () => selectedRow.TryGetCurrentPattern(SelectionItemPattern.Pattern, out var pattern)
+                    ? (bool?)((SelectionItemPattern)pattern).Current.IsSelected : null);
+                Trace("row-before-invoke", true, offscreen, selected);
+            }
+            probe.Run("row-invoke", () => Invoke(selectedRow));
+            Trace("composer-acknowledgement");
+            await WaitComposerSelectionAsync(run, key, waitForHistory);
+            if (key != GatewayScenario.MainSessionKey)
+                await WaitUiAsync(run, () => SessionSelected(run, title), $"selected session {title}");
+            if (waitForHistory) await WaitHistoryAsync(run, key, observeHistory);
+            Trace("selection-complete", true, selected: key == GatewayScenario.MainSessionKey ? null : true);
+        }
+        catch (Exception error)
+        {
+            probe.Fault(error); // Cached operation only; never query UIA while reporting a failure.
             throw;
         }
     }
 
-    private static async Task SelectSessionAsync(GatewayFixtureRun run, string title, string key, bool waitForHistory = true)
-    {
-        await WaitUiAsync(run, () => FindById(run, "WorkspaceAssistantSelector") is not null, "agent selector");
-        var selector = FindById(run, "WorkspaceAssistantSelector")!;
-        var agentId = $"WorkspaceAgent:{SessionDisplayResolver.Resolve(new SessionInfo { Key = key }).AgentId}";
-        var selection = (SelectionPattern)selector.GetCurrentPattern(SelectionPattern.Pattern);
-        if (!selection.Current.GetSelection().Any(item => item.Current.AutomationId == agentId))
-        {
-            var dropdown = (ExpandCollapsePattern)selector.GetCurrentPattern(ExpandCollapsePattern.Pattern);
-            dropdown.Expand();
-            await WaitUiAsync(run, () => FindById(run, agentId) is not null, "session's agent");
-            Invoke(FindById(run, agentId)!);
-            dropdown.Collapse();
-        }
-        await WaitUiAsync(run, () => FindById(run, $"WorkspaceSession:{key}") is not null, $"sidebar session {title}");
-        Invoke(FindById(run, $"WorkspaceSession:{key}")!);
-        await WaitUiAsync(run, () => SessionSelected(run, title), $"selected session {title}");
-        if (waitForHistory) await WaitHistoryAsync(run, key);
-    }
-
-    private static Task WaitHistoryAsync(GatewayFixtureRun run, string key) =>
+    private static Task WaitHistoryAsync(GatewayFixtureRun run, string key, Action<JsonElement>? observe = null) =>
         run.WaitForAsync(async () =>
         {
             var snapshot = await run.InvokeAsync("app.chat.snapshot", new { threadId = key });
-            return snapshot.TryGetProperty("selectedTimeline", out var timeline)
+            var loaded = snapshot.TryGetProperty("selectedTimeline", out var timeline)
                 && timeline.ValueKind == JsonValueKind.Object
                 && timeline.GetProperty("historyLoaded").GetBoolean();
+            observe?.Invoke(snapshot);
+            return loaded;
         }, $"history loaded for {key}");
 
     private static bool SessionSelected(GatewayFixtureRun run, string title)
@@ -713,13 +1534,26 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
         return item is not null && ((SelectionItemPattern)item.GetCurrentPattern(SelectionItemPattern.Pattern)).Current.IsSelected;
     }
 
-    private static bool RenderConsumedHistory(GatewayFixtureRun run, string key)
+    private static bool RenderConsumedHistory(GatewayFixtureRun run, string key,
+        VoiceTailNativeObservation? observation = null)
     {
         var composer = FindById(run, "ChatComposerInput");
-        if (composer is null || string.IsNullOrEmpty(composer.Current.ItemStatus)) return false;
+        if (observation is not null) observation.ComposerPresent = composer is not null;
+        if (composer is null || string.IsNullOrEmpty(composer.Current.ItemStatus))
+        {
+            if (observation is not null) observation.RenderConsumedHistory = false;
+            return false;
+        }
         using var rendered = JsonDocument.Parse(composer.Current.ItemStatus);
-        return rendered.RootElement.GetProperty("loadedThreadIds").EnumerateArray()
+        var consumed = rendered.RootElement.GetProperty("loadedThreadIds").EnumerateArray()
             .Any(thread => thread.GetString() == key);
+        if (observation is not null)
+        {
+            observation.RenderConsumedHistory = consumed;
+            observation.SelectedThreadMatches = rendered.RootElement.TryGetProperty("selectedThreadId", out var selected)
+                && selected.ValueKind == JsonValueKind.String && selected.GetString() == key;
+        }
+        return consumed;
     }
 
     private static void Invoke(AutomationElement element)
@@ -734,8 +1568,8 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
             throw new InvalidOperationException($"Control '{element.Current.Name}' has no activation pattern. Available: {string.Join(", ", element.GetSupportedPatterns().Select(pattern => pattern.ProgrammaticName))}");
     }
 
-    private static AutomationElement? FindById(GatewayFixtureRun run, string id) =>
-        FindInApp(run, new PropertyCondition(AutomationElement.AutomationIdProperty, id));
+    private static AutomationElement? FindById(GatewayFixtureRun run, string id, SessionSelectionProbe? probe = null) =>
+        FindInApp(run, new PropertyCondition(AutomationElement.AutomationIdProperty, id), probe);
 
     private static AutomationElement? FindButton(GatewayFixtureRun run, string name) =>
         FindInApp(run, new AndCondition(
@@ -755,20 +1589,26 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
         return null;
     }
 
-    private static AutomationElement? FindInApp(GatewayFixtureRun run, Condition condition)
+    private static AutomationElement? FindInApp(GatewayFixtureRun run, Condition condition, SessionSelectionProbe? probe = null)
     {
-        foreach (var window in AppWindows(run))
-            if (window.FindFirst(TreeScope.Descendants, condition) is { } match)
-                return match;
+        foreach (var window in AppWindows(run, probe))
+        {
+            var match = probe is null ? window.FindFirst(TreeScope.Descendants, condition)
+                : probe.Read("owned-descendant-lookup", () => window.FindFirst(TreeScope.Descendants, condition));
+            if (match is not null) return match;
+        }
         return null;
     }
 
-    private static IEnumerable<AutomationElement> AppWindows(GatewayFixtureRun run)
+    private static IEnumerable<AutomationElement> AppWindows(GatewayFixtureRun run, SessionSelectionProbe? probe = null)
     {
-        run.EnsureRunning();
-        return AutomationElement.RootElement.FindAll(TreeScope.Children,
-            new PropertyCondition(AutomationElement.ProcessIdProperty, run.AppProcessId)).Cast<AutomationElement>()
-            .Where(window => !window.Current.IsOffscreen);
+        if (probe is null) run.EnsureRunning();
+        else probe.Run("owned-app-check", run.EnsureRunning);
+        AutomationElementCollection ReadWindows() => AutomationElement.RootElement.FindAll(TreeScope.Children,
+            new PropertyCondition(AutomationElement.ProcessIdProperty, run.AppProcessId));
+        var windows = probe is null ? ReadWindows() : probe.Read("owned-window-enumeration", ReadWindows);
+        return windows.Cast<AutomationElement>().Where(window => !(probe is null ? window.Current.IsOffscreen
+            : probe.Read("owned-window-offscreen", () => window.Current.IsOffscreen)));
     }
 
     private static AutomationElement FindHub(GatewayFixtureRun run) =>
@@ -778,49 +1618,154 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
     private static AutomationElement? FindTimeline(GatewayFixtureRun run) =>
         FindInApp(run, new PropertyCondition(AutomationElement.NameProperty, "Chat messages"));
 
-    private static bool IsVisibleInTimeline(GatewayFixtureRun run, string text)
+    private static bool IsVisibleInTimeline(GatewayFixtureRun run, string text,
+        VoiceTailNativeObservation? observation = null)
     {
         var timeline = FindTimeline(run);
         var message = FindText(run, text);
-        if (timeline is null || message is null || message.Current.IsOffscreen)
+        if (observation is not null)
+        {
+            observation.TimelinePresent = timeline is not null;
+            observation.FinalElementPresent = message is not null;
+        }
+        var visible = timeline is not null && message is not null && IsVisibleInTimeline(timeline, message, observation);
+        if (observation is not null) observation.FinalVisible = visible;
+        return visible;
+    }
+
+    private static bool IsVisibleInTimeline(AutomationElement timeline, AutomationElement message,
+        VoiceTailNativeObservation? observation = null)
+    {
+        var offscreen = message.Current.IsOffscreen;
+        if (observation is not null) observation.FinalOffscreen = offscreen;
+        if (offscreen)
             return false;
         var viewport = timeline.Current.BoundingRectangle;
         var bounds = message.Current.BoundingRectangle;
+        if (observation is not null)
+        {
+            observation.FinalHasPositiveBounds = !bounds.IsEmpty && bounds.Width > 0 && bounds.Height > 0;
+            observation.FinalWithinVerticalViewport = bounds.Top >= viewport.Top - 1 && bounds.Bottom <= viewport.Bottom + 1;
+            observation.FinalOverlapsHorizontalViewport = bounds.Right > viewport.Left && bounds.Left < viewport.Right;
+        }
         return !bounds.IsEmpty && bounds.Width > 0 && bounds.Height > 0
             && bounds.Top >= viewport.Top - 1 && bounds.Bottom <= viewport.Bottom + 1
             && bounds.Right > viewport.Left && bounds.Left < viewport.Right;
     }
 
-    private static async Task ScrollToAsync(GatewayFixtureRun run, double percent)
+    private async Task ScrollToAsync(GatewayFixtureRun run, double percent)
     {
-        var timeline = FindTimeline(run) ?? throw new InvalidOperationException("Chat timeline is not mounted.");
-        var scrollElement = timeline;
+        AutomationElement? timeline = null;
+        await WaitUiAsync(run, () => (timeline = FindTimeline(run)) is not null,
+            "mounted chat timeline before scrolling");
+        var scrollElement = timeline!;
         if (!scrollElement.TryGetCurrentPattern(ScrollPattern.Pattern, out var pattern))
         {
-            scrollElement = timeline.FindFirst(TreeScope.Descendants,
+            scrollElement = scrollElement.FindFirst(TreeScope.Descendants,
                 new PropertyCondition(AutomationElement.IsScrollPatternAvailableProperty, true))
                 ?? throw new InvalidOperationException("Chat timeline has no accessible scroll control.");
             pattern = scrollElement.GetCurrentPattern(ScrollPattern.Pattern);
         }
-        ((ScrollPattern)pattern).SetScrollPercent(ScrollPattern.NoScroll, percent);
+        var scroll = (ScrollPattern)pattern;
+        var before = scroll.Current.VerticalScrollPercent;
+        scroll.SetScrollPercent(ScrollPattern.NoScroll, percent);
         await Task.Delay(100);
+        try
+        {
+            var after = scroll.Current;
+            output.WriteLine($"Timeline scroll {percent}%: before={before}%, after={after.VerticalScrollPercent}%, view={after.VerticalViewSize}%.");
+        }
+        catch (ElementNotAvailableException)
+        {
+            output.WriteLine($"Timeline scroll {percent}%: before={before}%; post-scroll metrics unavailable because the UIA provider was removed.");
+        }
     }
 
-    private static async Task WaitUiAsync(GatewayFixtureRun run, Func<bool> condition, string description)
+    private static async Task<AutomationElement> WaitForElementByIdAsync(GatewayFixtureRun run, string id, string description)
+    {
+        AutomationElement? element = null;
+        // Keep the successful poll's element instead of racing a second tree lookup.
+        await WaitUiAsync(run, () => (element = FindById(run, id)) is not null, description);
+        return element!;
+    }
+
+    private static async Task WaitUiAsync(GatewayFixtureRun run, Func<bool> condition, string description,
+        TimeSpan? timeout = null, Action<Exception>? onProbeError = null)
     {
         await run.WaitForAsync(() =>
         {
             try { return Task.FromResult(condition()); }
-            catch (ElementNotAvailableException) { return Task.FromResult(false); }
-        }, description);
+            catch (ElementNotAvailableException error)
+            {
+                onProbeError?.Invoke(error);
+                return Task.FromResult(false);
+            }
+            catch (Exception error) { onProbeError?.Invoke(error); throw; }
+        }, description, timeout);
     }
 
-    private static Task CaptureIfRequestedAsync(GatewayFixtureRun run, string name)
+    private static Task CaptureIfRequestedAsync(GatewayFixtureRun run, string name, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (Environment.GetEnvironmentVariable("OPENCLAW_GATEWAY_FIXTURE_SCREENSHOTS") != "1")
             return Task.CompletedTask;
         OwnedWindowCapture.Save(run, AppWindows(run).OrderByDescending(window =>
-            window.Current.BoundingRectangle.Width * window.Current.BoundingRectangle.Height).First(), name);
+            window.Current.BoundingRectangle.Width * window.Current.BoundingRectangle.Height).First(), name, cancellationToken);
         return Task.CompletedTask;
+    }
+
+    private static async Task WaitForAuthenticatedOwnerPhotoAsync(GatewayFixtureRun run)
+    {
+        Assert.Contains(run.Gateway.Requests, request => request.Method == "users.self" && request.Outcome == "ok");
+        // The photo arrives over plain HTTP after the name, so wait for the fixture to serve it before the test ends.
+        await run.WaitForAsync(() => Task.FromResult(run.Gateway.Requests.Any(request =>
+            request.Method == FixtureGatewayServer.AvatarRequestMethod && request.Outcome == "ok")),
+            "authenticated owner photo served");
+        // Native capture is strict and opt-in, so only screenshot runs also wait for the photo to be painted.
+        if (Environment.GetEnvironmentVariable("OPENCLAW_GATEWAY_FIXTURE_SCREENSHOTS") == "1")
+            await WaitUiAsync(run, () => OwnerPhotoPainted(run), "owner photo painted in footer");
+    }
+
+    /// <summary>Captures the Workspace window and reports whether the footer button shows the served photo's colour.</summary>
+    private static bool OwnerPhotoPainted(GatewayFixtureRun run, string ownerAutomationId = "WorkspaceOwner",
+        string captureName = "owner-profile.png")
+    {
+        var ownerId = new PropertyCondition(AutomationElement.AutomationIdProperty, ownerAutomationId);
+        foreach (var window in AppWindows(run))
+        {
+            if (window.FindFirst(TreeScope.Descendants, ownerId) is not { } owner || owner.Current.IsOffscreen)
+                continue;
+            OwnedWindowCapture.Save(run, window, captureName, owner);
+            return CountOwnerPhotoPixels(Path.Combine(run.ArtifactsDirectory, captureName)) >= OwnerPhotoMinimumPixels;
+        }
+        return false;
+    }
+
+    /// <summary>Counts pixels inside the capture's asserted footer button that match the served photo's colour.</summary>
+    private static int CountOwnerPhotoPixels(string capturePath)
+    {
+        using var metadata = JsonDocument.Parse(File.ReadAllText(Path.ChangeExtension(capturePath, ".json")));
+        var button = metadata.RootElement.GetProperty("assertions")[0];
+        using var bitmap = new System.Drawing.Bitmap(capturePath);
+        var left = Math.Max(0, (int)button.GetProperty("left").GetDouble());
+        var top = Math.Max(0, (int)button.GetProperty("top").GetDouble());
+        var right = Math.Min(bitmap.Width, left + (int)button.GetProperty("Width").GetDouble());
+        var bottom = Math.Min(bitmap.Height, top + (int)button.GetProperty("Height").GetDouble());
+        var red = (FixtureGatewayServer.OwnerAvatarRgb >> 16) & 0xFF;
+        var green = (FixtureGatewayServer.OwnerAvatarRgb >> 8) & 0xFF;
+        var blue = FixtureGatewayServer.OwnerAvatarRgb & 0xFF;
+        var painted = 0;
+        for (var y = top; y < bottom; y++)
+        {
+            for (var x = left; x < right; x++)
+            {
+                var pixel = bitmap.GetPixel(x, y);
+                if (Math.Abs(pixel.R - red) <= OwnerPhotoChannelTolerance
+                    && Math.Abs(pixel.G - green) <= OwnerPhotoChannelTolerance
+                    && Math.Abs(pixel.B - blue) <= OwnerPhotoChannelTolerance)
+                    painted++;
+            }
+        }
+        return painted;
     }
 }

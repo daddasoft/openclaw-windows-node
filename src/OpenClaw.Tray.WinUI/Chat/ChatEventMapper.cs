@@ -54,6 +54,32 @@ internal static class ChatEventMapper
         evt.Data.TryGetProperty("phase", out var phase) &&
         string.Equals(phase.GetString(), "start", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Character count of a gateway <c>thinking</c> archive delta (<c>{ text, delta }</c>). The
+    /// timeline ignores this stream, but it is the only live signal while a model reasons.
+    /// Persistence receipts on the same stream carry no <c>delta</c> and return null.
+    /// </summary>
+    internal static int? ThinkingDeltaLength(AgentEventInfo evt) =>
+        string.Equals(evt.Stream, "thinking", StringComparison.OrdinalIgnoreCase) &&
+        evt.Data.ValueKind == JsonValueKind.Object &&
+        evt.Data.TryGetProperty("delta", out var delta) &&
+        delta.ValueKind == JsonValueKind.String
+            ? delta.GetString()?.Length ?? 0
+            : null;
+
+    /// <summary>
+    /// Run-cumulative output tokens from a gateway <c>usage</c> event, emitted once per completed
+    /// model call as <c>{ outputTokens, usageReport? }</c>.
+    /// </summary>
+    internal static long? RunOutputTokens(AgentEventInfo evt) =>
+        string.Equals(evt.Stream, "usage", StringComparison.OrdinalIgnoreCase) &&
+        evt.Data.ValueKind == JsonValueKind.Object &&
+        evt.Data.TryGetProperty("outputTokens", out var tokens) &&
+        tokens.ValueKind == JsonValueKind.Number &&
+        tokens.TryGetInt64(out var value)
+            ? value
+            : null;
+
     internal static bool IsTerminalRunEvent(AgentEventInfo evt)
     {
         if (evt.Data.ValueKind != JsonValueKind.Object)
@@ -536,9 +562,11 @@ internal static class ChatEventMapper
         if (string.IsNullOrEmpty(requestId))
             return new(null);
 
-        var host = StringProperty(evt.Data, "host");
+        var hostStatus = ExecApprovalCommandDisplaySanitizer.SanitizeWithStatus(StringProperty(evt.Data, "host"));
+        var host = hostStatus.Text;
         var commandStatus = ExecApprovalCommandDisplaySanitizer.SanitizeWithStatus(StringProperty(evt.Data, "command"));
-        var title = StringProperty(evt.Data, "title");
+        var titleStatus = ExecApprovalCommandDisplaySanitizer.SanitizeWithStatus(StringProperty(evt.Data, "title"));
+        var title = titleStatus.Text;
         var messageStatus = ExecApprovalCommandDisplaySanitizer.SanitizeWithStatus(StringProperty(evt.Data, "message"));
         var detail = string.IsNullOrEmpty(messageStatus.Text)
             ? commandStatus.Text
@@ -554,7 +582,9 @@ internal static class ChatEventMapper
 
         var canReviewInFull = !string.IsNullOrWhiteSpace(commandStatus.Text)
             && !commandStatus.Truncated && !commandStatus.Oversized && !commandStatus.UnsafeConcealment
-            && !messageStatus.Truncated && !messageStatus.Oversized && !messageStatus.UnsafeConcealment;
+            && !messageStatus.Truncated && !messageStatus.Oversized && !messageStatus.UnsafeConcealment
+            && !hostStatus.Truncated && !hostStatus.Oversized && !hostStatus.UnsafeConcealment
+            && !titleStatus.Truncated && !titleStatus.Oversized && !titleStatus.UnsafeConcealment;
         var mapped = new ChatPermissionRequestEvent(
             requestId,
             !string.IsNullOrEmpty(title) ? title : "Exec approval",

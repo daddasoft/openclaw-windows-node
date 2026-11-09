@@ -170,6 +170,12 @@ public partial class App
             }));
         }
 
+        steps.Add(new AppShutdownStep("voice playback mute", () =>
+        {
+            _voicePlaybackMute.Dispose();
+            return ValueTask.CompletedTask;
+        }));
+
         steps.Add(new AppShutdownStep("ssh tunnel service", () =>
         {
             _sshTunnelService?.Dispose();
@@ -190,6 +196,8 @@ public partial class App
         {
             _settingsPersistenceNotification?.Dispose();
             _settingsPersistenceNotification = null;
+            _inboxGatewaySource?.Dispose();
+            _inboxGatewaySource = null;
             if (_appState != null)
                 _appState.PropertyChanged -= OnAppStateChanged;
             PermissionsRuntimeChanged = null;

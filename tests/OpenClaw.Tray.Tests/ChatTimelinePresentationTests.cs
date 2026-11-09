@@ -122,11 +122,11 @@ public sealed class ChatTimelinePresentationTests
         Assert.Contains("itemsView.Unloaded += OnUnloaded", binding);
         Assert.Contains("itemsView.Loaded -= OnLoaded", binding);
         Assert.Contains("itemsView.LayoutUpdated -= OnLayoutUpdated", binding);
+        Assert.Contains("scrollView.Loaded -= OnScrollViewLoaded", binding);
         Assert.DoesNotContain("ChangeView", binding);
         Assert.DoesNotContain("UpdateLayout", binding);
         Assert.DoesNotContain("TailSettle", binding);
         Assert.DoesNotContain("ScrollTo(", binding);
-        Assert.DoesNotContain("ScrollCompleted", binding);
         Assert.DoesNotContain("DispatcherTimer", binding);
         Assert.DoesNotContain("TextLength != current.TextLength", binding);
         Assert.DoesNotContain("ReactorStreamingTailState", binding);
@@ -138,6 +138,113 @@ public sealed class ChatTimelinePresentationTests
         var viewChanged = binding[viewChangedStart..tailRequestStart];
         Assert.DoesNotContain("VerticalAnchorRatio", viewChanged);
         Assert.DoesNotContain("StartBringItemIntoView", viewChanged);
+
+        var completedStart = binding.IndexOf("private void OnScrollCompleted", StringComparison.Ordinal);
+        var stateChangedStart = binding.IndexOf("private void OnScrollStateChanged", completedStart, StringComparison.Ordinal);
+        Assert.True(completedStart >= 0 && stateChangedStart > completedStart);
+        var completed = binding[completedStart..stateChangedStart];
+        Assert.DoesNotContain("StartTailRequest(", completed);
+        Assert.DoesNotContain("QueueTailRequest(", completed);
+        Assert.DoesNotContain("AwaitLayout(", completed);
+    }
+
+    [Fact]
+    public void ReactorTimeline_InitialTailResolvesLiveCoordinatesAfterLayoutAndDispatch()
+    {
+        var binding = File.ReadAllText(Path.Combine(
+            TestRepositoryPaths.GetRepositoryRoot(),
+            "src",
+            "OpenClaw.Tray.WinUI",
+            "Chat",
+            "ReactorItemsViewScrollController.cs"));
+
+        var requestStart = binding.IndexOf("public void Request(", StringComparison.Ordinal);
+        var updateStart = binding.IndexOf("public void UpdateTail(", requestStart, StringComparison.Ordinal);
+        Assert.Contains("AwaitLayout();", binding[requestStart..updateStart]);
+
+        var loadStart = binding.IndexOf("private void OnLoaded(", StringComparison.Ordinal);
+        var attachStart = binding.IndexOf("private void AttachScrollView(", loadStart, StringComparison.Ordinal);
+        var initialPositioning = binding[loadStart..attachStart];
+        Assert.Contains("_disposed || !_valid || !itemsView.IsLoaded", initialPositioning);
+        Assert.Contains("itemsView.ScrollView is { IsLoaded: false } scrollView", initialPositioning);
+        Assert.Contains("scrollView.Loaded += OnScrollViewLoaded", initialPositioning);
+        Assert.Contains("itemsView.LayoutUpdated += OnLayoutUpdated", initialPositioning);
+        Assert.Contains("DetachLayout();", initialPositioning);
+        Assert.Contains("AttachScrollView();", initialPositioning);
+        Assert.Contains("initialRequest.TryResolve(", initialPositioning);
+        Assert.Contains("StartTailRequest(request)", initialPositioning);
+        Assert.Contains("itemsView.DispatcherQueue.TryEnqueue", initialPositioning);
+        Assert.Contains("new InitialTailNavigationRequest(_version)", initialPositioning);
+        Assert.Contains("!itemsView.IsLoaded || initialRequest.Version != _version", initialPositioning);
+        var dispatchStart = initialPositioning.IndexOf("itemsView.DispatcherQueue.TryEnqueue", StringComparison.Ordinal);
+        Assert.DoesNotContain("TryCapture(", initialPositioning[..dispatchStart]);
+        Assert.DoesNotContain("TryResolve(", initialPositioning[..dispatchStart]);
+        Assert.DoesNotContain("_tailIndex", initialPositioning[..dispatchStart]);
+        Assert.DoesNotContain("_displayedTailKey", initialPositioning[..dispatchStart]);
+        Assert.DoesNotContain("_itemCount", initialPositioning[..dispatchStart]);
+        Assert.Contains("initialRequest.TryResolve(", initialPositioning[dispatchStart..]);
+        Assert.Contains("CompositionTarget.Rendering += _rendering", initialPositioning);
+
+        var unloadStart = binding.IndexOf("private void OnUnloaded(", StringComparison.Ordinal);
+        var detachLayoutStart = binding.IndexOf("private void DetachLayout(", unloadStart, StringComparison.Ordinal);
+        Assert.Contains("DetachLayout();", binding[unloadStart..detachLayoutStart]);
+        var disposeStart = binding.IndexOf("public void Dispose()", StringComparison.Ordinal);
+        Assert.Contains("DetachLayout();", binding[disposeStart..]);
+    }
+
+    [Fact]
+    public void InitialTailNavigationRequest_ResolvesSameKeyAtCurrentIndexAfterDispatch()
+    {
+        var initialRequest = new InitialTailNavigationRequest(Version: 1);
+        var tailIndex = 1;
+        var itemCount = 2;
+        const string thinkingKey = "thinking";
+        Assert.True(TailNavigationPolicy.TryCapture(tailIndex, thinkingKey, itemCount, out var staleRequest));
+
+        TailNavigationRequest? executed = null;
+        var dispatcher = new Queue<Action>();
+        dispatcher.Enqueue(() =>
+        {
+            if (initialRequest.TryResolve(1, tailIndex, thinkingKey, itemCount, out var request)
+                && TailNavigationPolicy.CanExecute(request, tailIndex, thinkingKey, itemCount))
+                executed = request;
+        });
+
+        // A tool row arrives before the same thinking row while initial navigation is queued.
+        tailIndex = 2;
+        itemCount = 3;
+        Assert.False(TailNavigationPolicy.CanExecute(staleRequest, tailIndex, thinkingKey, itemCount));
+        Assert.Null(executed);
+
+        dispatcher.Dequeue()();
+
+        Assert.Equal(new TailNavigationRequest(2, thinkingKey), executed);
+    }
+
+    [Fact]
+    public void InitialTailNavigationRequest_RejectsChangedSessionGeneration()
+    {
+        var initialRequest = new InitialTailNavigationRequest(Version: 1);
+
+        Assert.False(initialRequest.TryResolve(
+            currentVersion: 2,
+            currentTailIndex: 0,
+            currentDisplayedTailKey: "other-session",
+            itemCount: 1,
+            out _));
+    }
+
+    [Fact]
+    public void InitialTailNavigationRequest_RejectsTailThatBecameEmptyBeforeDispatch()
+    {
+        var initialRequest = new InitialTailNavigationRequest(Version: 1);
+
+        Assert.False(initialRequest.TryResolve(
+            currentVersion: 1,
+            currentTailIndex: -1,
+            currentDisplayedTailKey: null,
+            itemCount: 0,
+            out _));
     }
 
     [Fact]
@@ -209,6 +316,775 @@ public sealed class ChatTimelinePresentationTests
 
         Assert.False(queue.TryDequeue(currentVersion: 2, out _));
         Assert.False(queue.IsScheduled);
+    }
+
+    [Fact]
+    public void TailReflowCorrection_AllowsOnlyOneCorrectionPerResize()
+    {
+        var correction = new TailReflowCorrection();
+
+        Assert.False(correction.TryConsume(following: true, nearBottom: false, initialPending: false));
+        correction.Arm();
+        Assert.True(correction.TryConsume(following: true, nearBottom: false, initialPending: false));
+        Assert.False(correction.TryConsume(following: true, nearBottom: false, initialPending: false));
+
+        correction.Arm();
+        Assert.True(correction.TryConsume(following: true, nearBottom: false, initialPending: false));
+        Assert.False(correction.TryConsume(following: true, nearBottom: false, initialPending: false));
+    }
+
+    [Fact]
+    public void TailReflowCorrection_DoesNotPullBackAReaderOrConsumeAnUnneededCorrection()
+    {
+        var correction = new TailReflowCorrection();
+        correction.Arm();
+
+        Assert.False(correction.TryConsume(following: false, nearBottom: false, initialPending: false));
+        Assert.False(correction.TryConsume(following: true, nearBottom: true, initialPending: false));
+        Assert.True(correction.TryConsume(following: true, nearBottom: false, initialPending: false));
+    }
+
+    [Fact]
+    public void TailReflowCorrection_CancellationRejectsLateExtentChanges()
+    {
+        var correction = new TailReflowCorrection();
+        correction.Arm();
+        correction.Clear();
+
+        Assert.False(correction.TryConsume(following: true, nearBottom: false, initialPending: false));
+    }
+
+    [Fact]
+    public void TailReflowCorrection_DoesNotStartWhileInitialPositioningIsPending()
+    {
+        var correction = new TailReflowCorrection();
+        correction.Arm();
+
+        Assert.False(correction.TryConsume(following: true, nearBottom: false, initialPending: true));
+        // The resize budget survives, so reflow after the initial bring lands can still correct once.
+        Assert.True(correction.TryConsume(following: true, nearBottom: false, initialPending: false));
+    }
+
+    [Theory]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, true)]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, false)]
+    public void TailNavigationPolicy_OnlyReflowCorrectionRequiresFollowingAtDispatch(
+        bool reflowCorrection, bool following, bool expected)
+    {
+        Assert.Equal(expected, TailNavigationPolicy.CanDispatch(reflowCorrection, following));
+    }
+
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, false)]
+    public void TailNavigationPolicy_FollowCannotInterruptInitialPositioning(
+        bool following, bool initialPending, bool expected)
+    {
+        Assert.Equal(expected, TailNavigationPolicy.CanFollowTail(following, initialPending));
+    }
+
+    [Fact]
+    public void InitialTailDiagnostics_ReadsDoNotChangeCorrelationSettlingOrGeneration()
+    {
+        var confirmation = new InitialTailConfirmation();
+        var target = new object();
+        var generation = confirmation.Reset(target);
+        Assert.Equal(new InitialTailDiagnosticSnapshot(0, 0, 0, true, false, false, true), confirmation.Diagnostics);
+        confirmation.BringingIntoView(17, new object());
+        confirmation.ScrollCompleted(17);
+        Assert.False(confirmation.Diagnostics.HasCorrelation);
+        confirmation.BringingIntoView(18, target);
+        confirmation.ScrollCompleted(17);
+        Assert.False(confirmation.Diagnostics.BringCompleted);
+        confirmation.ScrollCompleted(18);
+        for (var frame = 1; frame <= 3; frame++)
+        {
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom: true));
+            var expected = new InitialTailDiagnosticSnapshot(frame, 0, frame, true, true, true, true);
+            Assert.Equal(expected, confirmation.Diagnostics);
+            Assert.Equal(expected, confirmation.Diagnostics);
+            Assert.True(confirmation.IsCurrent(generation));
+        }
+        Assert.Equal(InitialTailLanding.Landed, confirmation.Observe(idle: true, nearBottom: true));
+        var landed = confirmation.Diagnostics;
+        Assert.Equal(new InitialTailDiagnosticSnapshot(4, 0, 4, true, true, true, false), landed);
+        confirmation.Invalidate();
+        Assert.False(confirmation.IsCurrent(generation));
+        Assert.False(confirmation.Diagnostics.HasExpectedTarget);
+        Assert.True(landed.HasExpectedTarget); // Value copy survives cleanup without retaining the target.
+    }
+
+    [Fact]
+    public void InitialTailDiagnostics_ReadsPreserveThreeRetriesAndMissingBringFrameBudget()
+    {
+        var confirmation = new InitialTailConfirmation();
+        confirmation.Reset();
+        for (var attempt = 0; attempt < 4; attempt++)
+        {
+            for (var frame = 1; frame <= 30; frame++)
+            {
+                _ = confirmation.Diagnostics;
+                var decision = confirmation.Observe(idle: true, nearBottom: false);
+                Assert.Equal(frame < 30 ? InitialTailLanding.Wait
+                    : attempt < 3 ? InitialTailLanding.Retry : InitialTailLanding.GiveUp, decision);
+                var snapshot = confirmation.Diagnostics;
+                Assert.Equal(attempt * 30 + frame, snapshot.ObservedFrames);
+                Assert.Equal(frame == 30 && attempt < 3 ? attempt + 1 : attempt, snapshot.Retries);
+                Assert.False(snapshot.HasExpectedTarget);
+                Assert.False(snapshot.HasCorrelation);
+                Assert.False(snapshot.BringCompleted);
+            }
+            if (attempt < 3) confirmation.BeginAttempt();
+        }
+        Assert.Equal(new InitialTailDiagnosticSnapshot(120, 3, 30, false, false, false, false), confirmation.Diagnostics);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void InitialTailDiagnostics_ReadsDoNotExtendTheUnsettledOrInFlightBudget(bool inFlight)
+    {
+        var confirmation = new InitialTailConfirmation();
+        var target = new object();
+        confirmation.Reset(target);
+        if (inFlight) confirmation.BringingIntoView(17, target);
+        for (var frame = 1; frame <= 120; frame++)
+        {
+            _ = confirmation.Diagnostics;
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: inFlight, nearBottom: false));
+            Assert.Equal(new InitialTailDiagnosticSnapshot(frame, 0, 0, true, inFlight, false, true), confirmation.Diagnostics);
+        }
+        Assert.Equal(InitialTailLanding.GiveUp, confirmation.Observe(idle: inFlight, nearBottom: false));
+        Assert.Equal(new InitialTailDiagnosticSnapshot(121, 0, 0, true, inFlight, false, true), confirmation.Diagnostics);
+    }
+
+    [Fact]
+    public void InitialTailDiagnostics_ExposeOnlyAllowlistedCountsAndBooleans()
+    {
+        var fields = typeof(InitialTailDiagnosticSnapshot).GetProperties()
+            .ToDictionary(property => property.Name, property => property.PropertyType);
+        Assert.Equal(7, fields.Count);
+        foreach (var name in new[] { "ObservedFrames", "Retries", "SettledFrames" })
+            Assert.Equal(typeof(int), fields[name]);
+        foreach (var name in new[] { "HasExpectedTarget", "HasCorrelation", "BringCompleted", "AttemptActive" })
+            Assert.Equal(typeof(bool), fields[name]);
+    }
+
+    [Theory]
+    [InlineData(false, 0)]
+    [InlineData(true, 2410)]
+    public void InitialTailAttemptDiagnostics_DistinguishNoOpFromRecoilWithoutDeclaringLanding(bool moved, double expectedMaximum)
+    {
+        var confirmation = new InitialTailConfirmation();
+        var target = new object();
+        confirmation.Reset(target);
+        confirmation.BringingIntoView(17, target, (moved ? 2410 : 0, 0, 2410), targetIndex: 29);
+        if (moved) confirmation.ObserveOffset(2410);
+        confirmation.ScrollCompleted(17, (moved ? 2410 : 0, 2410), target, sourceReadSucceeded: true);
+        confirmation.ObserveOffset(0);
+        Assert.Equal(new InitialTailAttemptDiagnostics(moved ? 2410 : 0, 0, 2410, 29,
+            moved ? 2410 : 0, 2410, true, expectedMaximum), confirmation.AttemptDiagnostics);
+        for (var frame = 0; frame < 3; frame++)
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom: false));
+        Assert.Equal(InitialTailLanding.Retry, confirmation.Observe(idle: true, nearBottom: false));
+        confirmation.ObserveOffset(9999); // A finished attempt cannot absorb later movement.
+        Assert.Equal(expectedMaximum, confirmation.AttemptDiagnostics.MaxObservedOffset);
+    }
+
+    [Fact]
+    public void InitialTailAttemptDiagnostics_RejectWrongTargetAndCompletionCorrelation()
+    {
+        var confirmation = new InitialTailConfirmation();
+        var target = new object();
+        confirmation.Reset(target);
+        confirmation.BringingIntoView(17, new object(), (200, 100, 200), 9);
+        confirmation.BringingIntoView(-1, target, (200, 100, 200), 9);
+        confirmation.ObserveOffset(100);
+        Assert.Equal(default(InitialTailAttemptDiagnostics), confirmation.AttemptDiagnostics);
+        confirmation.BringingIntoView(17, target, (2410, 0, 2410), 29);
+        var accepted = confirmation.AttemptDiagnostics;
+        confirmation.BringingIntoView(18, new object(), (9999, 9999, 9999), 999);
+        confirmation.ScrollCompleted(18, (9999, 9999), target, true);
+        Assert.Equal(accepted, confirmation.AttemptDiagnostics);
+        Assert.False(confirmation.Diagnostics.BringCompleted);
+        confirmation.ScrollCompleted(17, (100, 2410), target, true);
+        confirmation.BringingIntoView(19, target, (2500, 100, 2500), 30);
+        Assert.Null(confirmation.AttemptDiagnostics.CompletedOffset);
+        Assert.Null(confirmation.AttemptDiagnostics.CompletionSourceItemMatches);
+        confirmation.ScrollCompleted(17, (9999, 9999), target, true);
+        Assert.Null(confirmation.AttemptDiagnostics.CompletedOffset);
+        Assert.Equal(100d, confirmation.AttemptDiagnostics.MaxObservedOffset);
+    }
+
+    [Fact]
+    public void InitialTailAttemptDiagnostics_ResetPerAttemptReplacementAndInvalidation()
+    {
+        var confirmation = new InitialTailConfirmation();
+        var oldTarget = new object();
+        var generation = confirmation.Reset(oldTarget);
+        confirmation.BringingIntoView(17, oldTarget, (300, 0, 300), 2);
+        confirmation.BeginAttempt(oldTarget);
+        Assert.True(confirmation.IsCurrent(generation));
+        Assert.Equal(default(InitialTailAttemptDiagnostics), confirmation.AttemptDiagnostics);
+        confirmation.ScrollCompleted(17, (300, 300), oldTarget, true);
+        confirmation.ObserveOffset(300);
+        Assert.Equal(default(InitialTailAttemptDiagnostics), confirmation.AttemptDiagnostics);
+        var newTarget = new object();
+        confirmation.Reset(newTarget);
+        Assert.False(confirmation.IsCurrent(generation));
+        confirmation.BringingIntoView(17, oldTarget, (300, 0, 300), 2);
+        Assert.Equal(default(InitialTailAttemptDiagnostics), confirmation.AttemptDiagnostics);
+        confirmation.BringingIntoView(18, newTarget, (500, 0, 500), 4);
+        var captured = confirmation.AttemptDiagnostics;
+        confirmation.Invalidate();
+        confirmation.BringingIntoView(18, newTarget, (500, 500, 500), 4);
+        confirmation.ScrollCompleted(18, (500, 500), newTarget, true);
+        confirmation.ObserveOffset(500);
+        Assert.Equal(default(InitialTailAttemptDiagnostics), confirmation.AttemptDiagnostics);
+        Assert.Equal(500d, captured.ProposedOffset); // Value copy survives cleanup.
+    }
+
+    [Theory]
+    [InlineData(false, true, null)]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, true)]
+    public void InitialTailAttemptDiagnostics_SeparateUnavailableSourceFromMismatch(bool available, bool matches, bool? expected)
+    {
+        var confirmation = new InitialTailConfirmation();
+        var target = new object();
+        confirmation.Reset(target);
+        confirmation.BringingIntoView(17, target);
+        confirmation.ScrollCompleted(17, currentSourceItem: matches ? target : new object(), sourceReadSucceeded: available);
+        Assert.Equal(expected, confirmation.AttemptDiagnostics.CompletionSourceItemMatches);
+        Assert.Null(confirmation.AttemptDiagnostics.CompletedOffset);
+        Assert.Null(confirmation.AttemptDiagnostics.TargetIndex);
+        Assert.True(confirmation.Diagnostics.BringCompleted);
+    }
+
+    [Fact]
+    public void InitialTailAttemptDiagnostics_NonFiniteReadsStayUnknownAndDoNotEraseFiniteMaximum()
+    {
+        var confirmation = new InitialTailConfirmation();
+        var target = new object();
+        confirmation.Reset(target);
+        confirmation.BringingIntoView(17, target, (double.NaN, 0, double.PositiveInfinity), -1);
+        confirmation.ObserveOffset(100);
+        confirmation.ObserveOffset(double.NaN);
+        confirmation.ObserveOffset(double.NegativeInfinity);
+        confirmation.ScrollCompleted(17, (double.PositiveInfinity, 500));
+        Assert.Equal(new InitialTailAttemptDiagnostics(null, 0, null, -1, null, 500, null, 100), confirmation.AttemptDiagnostics);
+    }
+
+    [Fact]
+    public void InitialTailAttemptDiagnostics_DoNotChangeThreeRetriesOrFourFrameDecisions()
+    {
+        var confirmation = new InitialTailConfirmation();
+        var target = new object();
+        confirmation.Reset(target);
+        for (var attempt = 0; attempt < 4; attempt++)
+        {
+            confirmation.BringingIntoView(17 + attempt, target, (10000, 10000, 10000), 29);
+            confirmation.ScrollCompleted(17 + attempt, (10000, 10000), target, true);
+            for (var frame = 0; frame < 3; frame++)
+                Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom: false));
+            Assert.Equal(attempt < 3 ? InitialTailLanding.Retry : InitialTailLanding.GiveUp,
+                confirmation.Observe(idle: true, nearBottom: false));
+            if (attempt < 3) confirmation.BeginAttempt(target);
+        }
+        Assert.Equal(new InitialTailDiagnosticSnapshot(16, 3, 4, true, true, true, false), confirmation.Diagnostics);
+    }
+
+    [Fact]
+    public void InitialTailAttemptDiagnostics_ContainOnlyNullableNumbersAndBoolean()
+    {
+        var fields = typeof(InitialTailAttemptDiagnostics).GetProperties()
+            .ToDictionary(property => property.Name, property => property.PropertyType);
+        Assert.Equal(8, fields.Count);
+        foreach (var name in new[] { "ProposedOffset", "BringOffset", "BringScrollableHeight",
+            "CompletedOffset", "CompletedScrollableHeight", "MaxObservedOffset" })
+            Assert.Equal(typeof(double?), fields[name]);
+        Assert.Equal(typeof(int?), fields["TargetIndex"]);
+        Assert.Equal(typeof(bool?), fields["CompletionSourceItemMatches"]);
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(null, true)]
+    [InlineData(true, null)]
+    public void InitialTailBringOptions_KeepUnknownAndCallbackValuesWithoutChangingDecisions(bool? canceled, bool? animated)
+    {
+        var confirmation = new InitialTailConfirmation();
+        var target = new object();
+        confirmation.Reset(target);
+        confirmation.BringingIntoView(17, target);
+        // Null models either independent native getter failing/unavailable; false is observed.
+        confirmation.ObserveBringOptions(17, target, canceled, animated);
+        Assert.Equal(new InitialTailBringOptionsObservation(canceled, animated), confirmation.BringOptionsObservation);
+        Assert.Equal(new InitialTailDiagnosticSnapshot(0, 0, 0, true, true, false, true), confirmation.Diagnostics);
+        confirmation.ScrollCompleted(17);
+        for (var frame = 0; frame < 3; frame++)
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom: false));
+        Assert.Equal(InitialTailLanding.Retry, confirmation.Observe(idle: true, nearBottom: false));
+        Assert.Equal(new InitialTailDiagnosticSnapshot(4, 1, 0, true, true, true, false), confirmation.Diagnostics);
+    }
+
+    [Fact]
+    public void InitialTailBringOptions_RejectUnacceptedWrongTargetAndSupersededCorrelation()
+    {
+        var confirmation = new InitialTailConfirmation();
+        var target = new object();
+        confirmation.Reset(target);
+        confirmation.ObserveBringOptions(17, target, true, true);
+        Assert.Equal(default(InitialTailBringOptionsObservation), confirmation.BringOptionsObservation);
+        confirmation.BringingIntoView(17, target);
+        confirmation.ObserveBringOptions(18, target, true, true);
+        confirmation.ObserveBringOptions(17, new object(), true, true);
+        Assert.Equal(default(InitialTailBringOptionsObservation), confirmation.BringOptionsObservation);
+        confirmation.ObserveBringOptions(17, target, true, false);
+        Assert.Equal(new InitialTailBringOptionsObservation(true, false), confirmation.BringOptionsObservation);
+        confirmation.BringingIntoView(18, target);
+        Assert.Equal(default(InitialTailBringOptionsObservation), confirmation.BringOptionsObservation);
+        confirmation.ObserveBringOptions(17, target, true, true);
+        confirmation.ObserveBringOptions(18, target, null, null);
+        Assert.Equal(default(InitialTailBringOptionsObservation), confirmation.BringOptionsObservation);
+    }
+
+    [Fact]
+    public void InitialTailBringOptions_ResetOnRetryRequestReplacementAndInvalidation()
+    {
+        var confirmation = new InitialTailConfirmation();
+        var target = new object();
+        var generation = confirmation.Reset(target);
+        confirmation.BringingIntoView(17, target);
+        confirmation.ObserveBringOptions(17, target, true, false);
+        var captured = confirmation.BringOptionsObservation;
+        confirmation.BeginAttempt(target);
+        Assert.True(confirmation.IsCurrent(generation));
+        confirmation.ObserveBringOptions(17, target, true, true);
+        Assert.Equal(default(InitialTailBringOptionsObservation), confirmation.BringOptionsObservation);
+        confirmation.BringingIntoView(18, target);
+        confirmation.ObserveBringOptions(18, target, false, true);
+        var replacement = new object();
+        confirmation.Reset(replacement);
+        Assert.False(confirmation.IsCurrent(generation));
+        confirmation.ObserveBringOptions(18, target, true, true);
+        Assert.Equal(default(InitialTailBringOptionsObservation), confirmation.BringOptionsObservation);
+        confirmation.BringingIntoView(19, replacement);
+        confirmation.ObserveBringOptions(19, replacement, false, false);
+        confirmation.Invalidate();
+        confirmation.ObserveBringOptions(19, replacement, true, true);
+        Assert.Equal(default(InitialTailBringOptionsObservation), confirmation.BringOptionsObservation);
+        Assert.Equal(new InitialTailBringOptionsObservation(true, false), captured);
+    }
+
+    [Fact]
+    public void InitialTailBringOptions_ExposeOnlyTwoNullableCallbackBooleans()
+    {
+        var fields = typeof(InitialTailBringOptionsObservation).GetProperties()
+            .ToDictionary(property => property.Name, property => property.PropertyType);
+        Assert.Equal(2, fields.Count);
+        Assert.Equal(typeof(bool?), fields["CancelAtCallback"]);
+        Assert.Equal(typeof(bool?), fields["AnimationDesiredAtCallback"]);
+    }
+
+    [Fact]
+    public void InitialTailConfirmation_LandsOnlyAfterSettledFramesAtTheTail()
+    {
+        var confirmation = new InitialTailConfirmation();
+        var target = new object();
+        confirmation.Reset(target);
+        confirmation.BringingIntoView(17, target);
+        confirmation.ScrollCompleted(17);
+
+        for (var frame = 0; frame < 3; frame++)
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom: true));
+        Assert.Equal(InitialTailLanding.Landed, confirmation.Observe(idle: true, nearBottom: true));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void InitialTailConfirmation_DoesNotInterruptAnIdleButInFlightBring(bool nearBottom)
+    {
+        var confirmation = new InitialTailConfirmation();
+        var target = new object();
+        confirmation.Reset(target);
+        confirmation.BringingIntoView(17, target);
+
+        for (var frame = 0; frame < 20; frame++)
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom));
+
+        confirmation.ScrollCompleted(18);
+        for (var frame = 0; frame < 4; frame++)
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom));
+
+        confirmation.ScrollCompleted(17);
+        for (var frame = 0; frame < 3; frame++)
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom));
+        Assert.Equal(nearBottom ? InitialTailLanding.Landed : InitialTailLanding.Retry,
+            confirmation.Observe(idle: true, nearBottom));
+    }
+
+    [Fact]
+    public void InitialTailConfirmation_WaitsForTheLatestBringCorrelation()
+    {
+        var confirmation = new InitialTailConfirmation();
+        var target = new object();
+        confirmation.Reset(target);
+        confirmation.BringingIntoView(17, target);
+        confirmation.BringingIntoView(18, target);
+        confirmation.ScrollCompleted(17);
+
+        for (var frame = 0; frame < 8; frame++)
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom: false));
+
+        confirmation.ScrollCompleted(18);
+        for (var frame = 0; frame < 3; frame++)
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom: false));
+        Assert.Equal(InitialTailLanding.Retry, confirmation.Observe(idle: true, nearBottom: false));
+    }
+
+    [Fact]
+    public void InitialTailConfirmation_WaitsWhileScrollingAndRestartsSettling()
+    {
+        var confirmation = new InitialTailConfirmation();
+        var target = new object();
+        confirmation.Reset(target);
+        confirmation.BringingIntoView(17, target);
+        confirmation.ScrollCompleted(17);
+
+        Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom: false));
+        Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: false, nearBottom: false));
+        for (var frame = 0; frame < 3; frame++)
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom: false));
+        Assert.Equal(InitialTailLanding.Retry, confirmation.Observe(idle: true, nearBottom: false));
+    }
+
+    [Fact]
+    public void InitialTailConfirmation_RestartsSettlingWhenGeometryChanges()
+    {
+        var confirmation = new InitialTailConfirmation();
+        var target = new object();
+        confirmation.Reset(target);
+        confirmation.BringingIntoView(17, target);
+        confirmation.ScrollCompleted(17);
+
+        for (var frame = 0; frame < 3; frame++)
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom: false));
+        confirmation.GeometryChanged();
+        for (var frame = 0; frame < 3; frame++)
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom: false));
+        Assert.Equal(InitialTailLanding.Retry, confirmation.Observe(idle: true, nearBottom: false));
+    }
+
+    [Fact]
+    public void InitialTailConfirmation_TracksTheDispatchedItemWhenTheLiveTailChanges()
+    {
+        var confirmation = new InitialTailConfirmation();
+        var original = new object();
+        var appended = new object();
+        confirmation.Reset(original);
+        confirmation.BringingIntoView(18, appended);
+        confirmation.ScrollCompleted(18);
+        for (var frame = 0; frame < 4; frame++)
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom: false));
+
+        confirmation.BringingIntoView(17, original);
+        confirmation.ScrollCompleted(17);
+        for (var frame = 0; frame < 3; frame++)
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom: false));
+        Assert.Equal(InitialTailLanding.Retry, confirmation.Observe(idle: true, nearBottom: false));
+
+        confirmation.BeginAttempt(appended);
+        confirmation.BringingIntoView(17, original);
+        confirmation.ScrollCompleted(17);
+        for (var frame = 0; frame < 4; frame++)
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom: false));
+        confirmation.BringingIntoView(18, appended);
+        confirmation.ScrollCompleted(18);
+        for (var frame = 0; frame < 3; frame++)
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom: true));
+        Assert.Equal(InitialTailLanding.Landed, confirmation.Observe(idle: true, nearBottom: true));
+    }
+
+    [Fact]
+    public void InitialTailConfirmation_RetriesADroppedBringThenGivesUp()
+    {
+        var confirmation = new InitialTailConfirmation();
+        confirmation.Reset();
+
+        for (var attempt = 0; attempt < 4; attempt++)
+        {
+            for (var frame = 0; frame < 29; frame++)
+                Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom: false));
+            Assert.Equal(attempt < 3 ? InitialTailLanding.Retry : InitialTailLanding.GiveUp,
+                confirmation.Observe(idle: true, nearBottom: false));
+            if (attempt < 3)
+                confirmation.BeginAttempt();
+        }
+
+        confirmation.Reset();
+        for (var frame = 0; frame < 29; frame++)
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom: true));
+        Assert.Equal(InitialTailLanding.Landed, confirmation.Observe(idle: true, nearBottom: true));
+    }
+
+    [Fact]
+    public void InitialTailConfirmation_NewRequestAndCancellationInvalidateDeferredRetry()
+    {
+        var confirmation = new InitialTailConfirmation();
+        var original = confirmation.Reset();
+        Assert.True(confirmation.IsCurrent(original));
+
+        var replacement = confirmation.Reset();
+        Assert.False(confirmation.IsCurrent(original));
+        Assert.True(confirmation.IsCurrent(replacement));
+
+        confirmation.Invalidate();
+        Assert.False(confirmation.IsCurrent(replacement));
+    }
+
+    [Fact]
+    public void InitialTailConfirmation_RejectsEventsFromAReplacedRequest()
+    {
+        var confirmation = new InitialTailConfirmation();
+        var oldTarget = new object();
+        var newTarget = new object();
+        confirmation.Reset(oldTarget);
+        confirmation.BringingIntoView(17, oldTarget);
+
+        confirmation.Reset(newTarget);
+        confirmation.BringingIntoView(17, oldTarget);
+        confirmation.ScrollCompleted(17);
+        for (var frame = 0; frame < 4; frame++)
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom: false));
+
+        confirmation.BringingIntoView(18, newTarget);
+        confirmation.ScrollCompleted(17);
+        for (var frame = 0; frame < 4; frame++)
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom: false));
+        confirmation.ScrollCompleted(18);
+        for (var frame = 0; frame < 3; frame++)
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom: true));
+        Assert.Equal(InitialTailLanding.Landed, confirmation.Observe(idle: true, nearBottom: true));
+    }
+
+    [Fact]
+    public void ReactorTimeline_InitialTailStaysPendingUntilLandingIsConfirmed()
+    {
+        var binding = File.ReadAllText(Path.Combine(
+            TestRepositoryPaths.GetRepositoryRoot(),
+            "src", "OpenClaw.Tray.WinUI", "Chat", "ReactorItemsViewScrollController.cs"));
+
+        var dispatchStart = binding.IndexOf("private void DispatchTailRequest", StringComparison.Ordinal);
+        var confirmStart = binding.IndexOf("private void ConfirmInitialLanding", dispatchStart, StringComparison.Ordinal);
+        Assert.True(confirmStart > dispatchStart);
+        var dispatch = binding[dispatchStart..confirmStart];
+        Assert.Contains("ConfirmInitialLanding(initialRequest.Version, request)", dispatch);
+        Assert.DoesNotContain("_initialPending = false", dispatch);
+
+        var attachStart = binding.IndexOf("private void AttachScrollView", confirmStart, StringComparison.Ordinal);
+        var confirm = binding[confirmStart..attachStart];
+        Assert.Contains("version == _version", confirm);
+        Assert.Contains("_confirmation.IsCurrent(generation)", confirm);
+        Assert.Contains("CompositionTarget.Rendering += _confirming", confirm);
+        Assert.Contains("case InitialTailLanding.Landed:", confirm);
+        Assert.Contains("QueueInitialTailRetry(version, generation)", confirm);
+        Assert.Contains("StartTailRequest(request)", confirm);
+
+        var detachLayoutStart = binding.IndexOf("private void DetachLayout(", StringComparison.Ordinal);
+        var detachRenderingStart = binding.IndexOf("private void DetachRendering(", detachLayoutStart, StringComparison.Ordinal);
+        Assert.Contains("DetachConfirmation();", binding[detachLayoutStart..detachRenderingStart]);
+        Assert.Contains("_confirmation.Invalidate();", binding[detachLayoutStart..detachRenderingStart]);
+        Assert.Contains("CompositionTarget.Rendering -= _confirming", binding);
+
+        var updateStart = binding.IndexOf("public void UpdateTail(", StringComparison.Ordinal);
+        var loadedStart = binding.IndexOf("private void OnLoaded(", updateStart, StringComparison.Ordinal);
+        var update = binding[updateStart..loadedStart];
+        var lateRows = update.IndexOf("if (_awaitingInitialRows)", StringComparison.Ordinal);
+        Assert.True(lateRows > 0);
+        Assert.True(lateRows < update.IndexOf("QueueTailRequest(", StringComparison.Ordinal));
+        Assert.Contains("_awaitingInitialRows = false;", update[lateRows..]);
+        Assert.Contains("AwaitLayout();", update[lateRows..]);
+
+        var cancelStart = binding.IndexOf("private void CancelPendingNavigation", StringComparison.Ordinal);
+        var cancelEnd = binding.IndexOf("private void OnViewChanged", cancelStart, StringComparison.Ordinal);
+        Assert.Contains("_awaitingInitialRows = false;", binding[cancelStart..cancelEnd]);
+    }
+
+    [Fact]
+    public void ReactorTimeline_DoesNotStartATailRetryDuringRendering()
+    {
+        var binding = File.ReadAllText(Path.Combine(
+            TestRepositoryPaths.GetRepositoryRoot(),
+            "src", "OpenClaw.Tray.WinUI", "Chat", "ReactorItemsViewScrollController.cs"));
+
+        var confirmStart = binding.IndexOf("private void ConfirmInitialLanding(", StringComparison.Ordinal);
+        var handlerStart = binding.IndexOf("_confirming = (_, _) =>", confirmStart, StringComparison.Ordinal);
+        var handlerEnd = binding.IndexOf("CompositionTarget.Rendering += _confirming", handlerStart, StringComparison.Ordinal);
+        Assert.True(confirmStart >= 0 && handlerStart > confirmStart && handlerEnd > handlerStart);
+        var handler = binding[handlerStart..handlerEnd];
+        Assert.DoesNotContain("StartTailRequest(", handler);
+        Assert.Contains("QueueInitialTailRetry(version, generation);", handler);
+
+        var retryStart = binding.IndexOf("private void QueueInitialTailRetry(", handlerEnd, StringComparison.Ordinal);
+        var completeStart = binding.IndexOf("private void CompleteInitialLanding(", retryStart, StringComparison.Ordinal);
+        Assert.True(retryStart > handlerEnd && completeStart > retryStart);
+        var retry = binding[retryStart..completeStart];
+        var bring = retry.IndexOf("StartTailRequest(request)", StringComparison.Ordinal);
+        Assert.True(bring > 0);
+        Assert.Contains("itemsView.DispatcherQueue.TryEnqueue", retry[..bring]);
+        Assert.Contains("IsInitialConfirmationCurrent(version, generation)", retry[..bring]);
+        Assert.Contains("TailNavigationPolicy.TryCapture(", retry[..bring]);
+        Assert.Contains("ObserveInitialLanding(version, generation);", retry[bring..]);
+    }
+
+    [Fact]
+    public void ReactorTimeline_UnloadKeepsInitialRowsPendingForLateHistory()
+    {
+        var binding = File.ReadAllText(Path.Combine(
+            TestRepositoryPaths.GetRepositoryRoot(),
+            "src", "OpenClaw.Tray.WinUI", "Chat", "ReactorItemsViewScrollController.cs"));
+
+        var unloadStart = binding.IndexOf("private void OnUnloaded(", StringComparison.Ordinal);
+        var detachLayoutStart = binding.IndexOf("private void DetachLayout(", unloadStart, StringComparison.Ordinal);
+        Assert.True(detachLayoutStart > unloadStart);
+        Assert.DoesNotContain("_awaitingInitialRows = false;", binding[unloadStart..detachLayoutStart]);
+    }
+
+    [Fact]
+    public void ReactorTimeline_ClearingRowsDuringInitialPositioningRearmsWhenRowsReturn()
+    {
+        var binding = File.ReadAllText(Path.Combine(
+            TestRepositoryPaths.GetRepositoryRoot(),
+            "src", "OpenClaw.Tray.WinUI", "Chat", "ReactorItemsViewScrollController.cs"));
+        var updateStart = binding.IndexOf("public void UpdateTail(", StringComparison.Ordinal);
+        var invalidStart = binding.IndexOf("if (!_valid)", updateStart, StringComparison.Ordinal);
+        var lateRowsStart = binding.IndexOf("if (_awaitingInitialRows)", invalidStart, StringComparison.Ordinal);
+        Assert.True(updateStart >= 0 && invalidStart > updateStart && lateRowsStart > invalidStart);
+        var invalid = binding[invalidStart..lateRowsStart];
+        Assert.Contains("if (_initialPending)", invalid);
+        Assert.Contains("_version++;", invalid);
+        Assert.Contains("_initialPending = false;", invalid);
+        Assert.Contains("_awaitingInitialRows = true;", invalid);
+        Assert.Contains("DetachLayout();", invalid);
+    }
+
+    [Fact]
+    public void ReactorTimeline_RearmsInitialPositioningWhenTheScrollViewIsReplaced()
+    {
+        var binding = File.ReadAllText(Path.Combine(
+            TestRepositoryPaths.GetRepositoryRoot(),
+            "src", "OpenClaw.Tray.WinUI", "Chat", "ReactorItemsViewScrollController.cs"));
+        var handlerStart = binding.IndexOf("_confirming = (_, _) =>", StringComparison.Ordinal);
+        var handlerEnd = binding.IndexOf("CompositionTarget.Rendering += _confirming", handlerStart, StringComparison.Ordinal);
+        Assert.True(handlerStart >= 0 && handlerEnd > handlerStart);
+        var handler = binding[handlerStart..handlerEnd];
+        Assert.Contains("!ReferenceEquals(scrollView, itemsView.ScrollView)", handler);
+        Assert.Contains("_confirmation.Invalidate();", handler);
+        Assert.Contains("AwaitLayout();", handler);
+    }
+
+    [Fact]
+    public void InitialTailConfirmation_StopsObservingAViewThatNeverSettles()
+    {
+        var confirmation = new InitialTailConfirmation();
+        confirmation.Reset();
+
+        for (var frame = 0; frame < InitialTailConfirmation.MaxObservedFrames; frame++)
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: false, nearBottom: false));
+        Assert.Equal(InitialTailLanding.GiveUp, confirmation.Observe(idle: false, nearBottom: false));
+    }
+
+    [Fact]
+    public void InitialTailConfirmation_TimesOutWithoutInterruptingAnUnfinishedBring()
+    {
+        var confirmation = new InitialTailConfirmation();
+        var target = new object();
+        confirmation.Reset(target);
+        confirmation.BringingIntoView(17, target);
+
+        for (var frame = 0; frame < 120; frame++)
+            Assert.Equal(InitialTailLanding.Wait, confirmation.Observe(idle: true, nearBottom: false));
+        Assert.Equal(InitialTailLanding.GiveUp, confirmation.Observe(idle: true, nearBottom: false));
+    }
+
+    [Fact]
+    public void ReactorTimeline_TracksOnlyTheCurrentTailBringAndDetachesNativeEvents()
+    {
+        var binding = File.ReadAllText(Path.Combine(
+            TestRepositoryPaths.GetRepositoryRoot(),
+            "src", "OpenClaw.Tray.WinUI", "Chat", "ReactorItemsViewScrollController.cs"));
+
+        Assert.Contains("_scrollView.BringingIntoView += OnBringingIntoView", binding);
+        Assert.Contains("_scrollView.BringingIntoView -= OnBringingIntoView", binding);
+        Assert.Contains("_scrollView.ScrollCompleted += OnScrollCompleted", binding);
+        Assert.Contains("_scrollView.ScrollCompleted -= OnScrollCompleted", binding);
+        Assert.Contains("ReferenceEquals(sender, _scrollView)", binding);
+        Assert.Contains("_confirmation.Reset(GetRequestItem(request))", binding);
+        Assert.Contains("_confirmation.BeginAttempt(GetRequestItem(request))", binding);
+        var bringStart = binding.IndexOf("private void OnBringingIntoView(", StringComparison.Ordinal);
+        var completeStart = binding.IndexOf("private void OnScrollCompleted(", bringStart, StringComparison.Ordinal);
+        var nextHandler = binding.IndexOf("private void OnScrollStateChanged(", completeStart, StringComparison.Ordinal);
+        var bring = binding[bringStart..completeStart];
+        var complete = binding[completeStart..nextHandler];
+        Assert.Contains("!ReferenceEquals(sender, _scrollView)", bring);
+        Assert.Contains("var correlationId = args.CorrelationId;", bring);
+        Assert.Contains("var targetItem = target.DataContext;", bring);
+        Assert.Contains("_confirmation.BringingIntoView(correlationId, targetItem, geometry, targetIndex)", bring);
+        Assert.Contains("_initialPending && ReferenceEquals(sender, _scrollView)", complete);
+        Assert.Contains("var correlationId = args.CorrelationId;", complete);
+        Assert.Contains("_confirmation.ScrollCompleted(correlationId, geometry, currentSourceItem, sourceReadSucceeded)", complete);
+        Assert.DoesNotContain("GetOrCreateElement(", bring + complete);
+        Assert.DoesNotContain("UpdateLayout(", bring + complete);
+    }
+
+    [Fact]
+    public void ReactorTimeline_ReflowNavigationDetachesRenderingAndInputSubscriptions()
+    {
+        var binding = File.ReadAllText(Path.Combine(
+            TestRepositoryPaths.GetRepositoryRoot(),
+            "src", "OpenClaw.Tray.WinUI", "Chat", "ReactorItemsViewScrollController.cs"));
+
+        Assert.Contains("CompositionTarget.Rendering += _rendering", binding);
+        Assert.Contains("CompositionTarget.Rendering -= _rendering", binding);
+        Assert.Contains("itemsView.SizeChanged += OnSizeChanged", binding);
+        Assert.Contains("itemsView.SizeChanged -= OnSizeChanged", binding);
+        Assert.Contains("_scrollView.ExtentChanged += OnExtentChanged", binding);
+        Assert.Contains("_scrollView.ExtentChanged -= OnExtentChanged", binding);
+        Assert.Contains("itemsView.PreviewKeyDown += OnNavigationKeyDown", binding);
+        Assert.Contains("itemsView.PreviewKeyDown -= OnNavigationKeyDown", binding);
+        Assert.Contains("itemsView.AddHandler(UIElement.PointerWheelChangedEvent", binding);
+        Assert.Contains("itemsView.RemoveHandler(UIElement.PointerWheelChangedEvent", binding);
+    }
+
+    [Fact]
+    public void ReactorTimeline_ReflowDispatchRechecksFollowEligibility()
+    {
+        var binding = File.ReadAllText(Path.Combine(
+            TestRepositoryPaths.GetRepositoryRoot(),
+            "src", "OpenClaw.Tray.WinUI", "Chat", "ReactorItemsViewScrollController.cs"));
+        var dispatchStart = binding.IndexOf("private void DispatchTailRequest", StringComparison.Ordinal);
+        var attachStart = binding.IndexOf("private void AttachScrollView", dispatchStart, StringComparison.Ordinal);
+        var dispatch = binding[dispatchStart..attachStart];
+        var bringStart = dispatch.IndexOf("StartTailRequest(request)", StringComparison.Ordinal);
+
+        Assert.True(bringStart > 0);
+        Assert.Contains("TailNavigationPolicy.CanDispatch(renderAfterLayout, _following)", dispatch[..bringStart]);
+        Assert.Contains("TryConsume(_following, IsNearBottom(sender), _initialPending)", binding);
+
+        var cancelStart = binding.IndexOf("private void CancelPendingNavigation", StringComparison.Ordinal);
+        var cancelEnd = binding.IndexOf("private void OnViewChanged", cancelStart, StringComparison.Ordinal);
+        var cancel = binding[cancelStart..cancelEnd];
+        Assert.Contains("_following = _scrollView is { } scrollView && IsNearBottom(scrollView);", cancel);
+        Assert.DoesNotContain("_following = false;", cancel);
     }
 
     [Fact]

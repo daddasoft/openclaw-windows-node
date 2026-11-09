@@ -510,10 +510,10 @@ internal sealed class ReactorChatComposer : Component<ReactorChatComposerViewPro
             .AcceptsReturn(true)
             .FontSize(16)
             .Foreground(Theme.Ref("ChatTextBrush"))
+            .ItemStatus(renderItemStatus)
             .Set(control =>
             {
                 inputControl.Current = control;
-                Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(control, renderItemStatus);
                 control.Resources["TextControlBorderThemeThickness"] = new Thickness(0);
                 control.Resources["TextControlBorderThemeThicknessFocused"] = new Thickness(0);
                 control.Resources["TextControlBackground"] = transparentInputBrush;
@@ -778,7 +778,8 @@ internal sealed class ReactorChatComposer : Component<ReactorChatComposerViewPro
         var catalog = placement?.State.Catalog;
         surfaces.Add(inputs.ShowPlacementPickers
             ? ReactorChatWelcome.Header(
-                ChatWelcomePresentation.AgentIdentity(catalog, agentId),
+                ChatWelcomePresentation.AgentIdentity(
+                    catalog, agentId, inputs.AgentIdentity, inputs.AgentRosterPresentation),
                 viewportWidth)
             : Empty());
         if (inputs.ShowPlacementPickers && placement is not null)
