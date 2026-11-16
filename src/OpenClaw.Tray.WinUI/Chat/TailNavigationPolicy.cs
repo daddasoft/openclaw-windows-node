@@ -24,6 +24,12 @@ internal readonly record struct InitialTailNavigationRequest(int Version)
 
 internal static class TailNavigationPolicy
 {
+    private const double TailVisibilityTolerance = 1;
+
+    // Unlike follow intent, landing must reject overshoot after the extent shrinks.
+    public static bool IsAtBottom(double verticalOffset, double scrollableHeight) =>
+        Math.Abs(scrollableHeight - verticalOffset) <= TailVisibilityTolerance;
+
     public static bool TryCapture(
         int tailIndex,
         string? displayedTailKey,
@@ -107,6 +113,7 @@ internal enum InitialTailLanding
     Wait,
     Landed,
     Retry,
+    CorrectOffset,
     GiveUp,
 }
 
@@ -161,6 +168,7 @@ internal sealed class InitialTailConfirmation
     private object? _targetItem;
     private bool _bringCompleted;
     private bool _attemptActive;
+    private bool _offsetCorrection;
     private InitialTailAttemptDiagnostics _attemptDiagnostics;
     private InitialTailBringOptionsObservation _bringOptionsObservation;
 
@@ -182,6 +190,10 @@ internal sealed class InitialTailConfirmation
 
     public bool IsCurrent(int generation) => generation == _generation;
 
+    public bool CanCorrectOffset(object? targetItem) =>
+        !_attemptActive && _bringCompleted && _correlationId is not null
+        && targetItem is not null && ReferenceEquals(_targetItem, targetItem);
+
     public void Invalidate()
     {
         _generation++;
@@ -198,14 +210,26 @@ internal sealed class InitialTailConfirmation
         _targetItem = targetItem;
         _bringCompleted = false;
         _attemptActive = true;
+        _offsetCorrection = false;
         _attemptDiagnostics = default;
         _bringOptionsObservation = default;
+    }
+
+    public void OffsetCorrectionStarted(int correlationId)
+    {
+        if (!_attemptActive || _targetItem is null || correlationId < 0)
+            return;
+
+        _offsetCorrection = true;
+        _correlationId = correlationId;
+        _bringCompleted = false;
+        _settledFrames = 0;
     }
 
     public void BringingIntoView(int correlationId, object? targetItem,
         (double ProposedOffset, double Offset, double ScrollableHeight)? geometry = null, int? targetIndex = null)
     {
-        if (!_attemptActive || correlationId < 0 || _targetItem is null
+        if (!_attemptActive || _offsetCorrection || correlationId < 0 || _targetItem is null
             || !ReferenceEquals(_targetItem, targetItem))
             return;
 
@@ -295,15 +319,37 @@ internal sealed class InitialTailConfirmation
 
         _retries++;
         _settledFrames = 0;
-        return InitialTailLanding.Retry;
+        return _bringCompleted ? InitialTailLanding.CorrectOffset : InitialTailLanding.Retry;
     }
 }
 
 internal sealed class TailReflowCorrection
 {
     private bool _available;
+    private object? _contentRevision;
+    private bool _growthAvailable;
 
     public void Arm() => _available = true;
+
+    public void ContentChanged(object revision)
+    {
+        if (ReferenceEquals(_contentRevision, revision))
+            return;
+
+        _contentRevision = revision;
+        _growthAvailable = true;
+    }
+
+    public void ArmForExtentGrowth(bool following, bool atBottom, bool initialPending, bool readerOwnsAnchor)
+    {
+        if (!_growthAvailable || !following || atBottom || initialPending || readerOwnsAnchor)
+            return;
+
+        // A correction can itself remeasure virtual rows. Only another content
+        // revision, not another native extent event, grants a new growth budget.
+        _growthAvailable = false;
+        Arm();
+    }
 
     // A pending initial request already targets the tail. Starting a correction
     // then would merge with it and impose the correction's follow gate on it.
@@ -316,5 +362,9 @@ internal sealed class TailReflowCorrection
         return true;
     }
 
-    public void Clear() => _available = false;
+    public void Clear()
+    {
+        _available = false;
+        _growthAvailable = false;
+    }
 }

@@ -70,6 +70,8 @@ public interface ISettingsEditor
     bool GlobalHotkeyEnabled { set; }
     bool UseLegacyWebChat { set; }
     bool ShowNotifications { set; }
+    bool ShowDesktopCompanion { set; }
+    int DesktopCompanionScalePercent { set; }
     string NotificationSound { set; }
     string AppTheme { set; }
 
@@ -103,6 +105,7 @@ public interface ISettingsEditor
     bool LocationConsentGiven { set; }
     bool VoiceTtsEnabled { set; }
     bool ShowChatToolCalls { set; }
+    bool ShowChatThinking { set; }
 
     /// <summary>
     /// Pins or unpins one page for a saved-Gateway scope, applied to the live persisted list inside the
@@ -126,6 +129,8 @@ public sealed record SettingsSnapshot
         GlobalHotkeyEnabled = data.GlobalHotkeyEnabled,
         UseLegacyWebChat = data.UseLegacyWebChat,
         ShowNotifications = data.ShowNotifications,
+        ShowDesktopCompanion = data.ShowDesktopCompanion,
+        DesktopCompanionScalePercent = OpenClaw.Shared.DesktopCompanionScale.Normalize(data.DesktopCompanionScalePercent),
         NotificationSound = data.NotificationSound ?? "Default",
         AppTheme = SettingsManager.NormalizeAppTheme(data.AppTheme),
         ShowDiagnosticsEffective = data.ShowDiagnostics ?? Helpers.DiagnosticsGate.BuildDefault,
@@ -158,6 +163,7 @@ public sealed record SettingsSnapshot
         CameraRecordingConsentGiven = data.CameraRecordingConsentGiven,
         LocationConsentGiven = data.LocationConsentGiven,
         ShowChatToolCalls = data.ShowChatToolCalls,
+        ShowChatThinking = data.ShowChatThinking,
         PinnedPagesByGateway = data.PinnedPagesByGateway?.ToImmutableDictionary(
             entry => entry.Key, entry => entry.Value.ToImmutableArray(), StringComparer.Ordinal) ??
             ImmutableDictionary<string, ImmutableArray<string>>.Empty,
@@ -170,6 +176,8 @@ public sealed record SettingsSnapshot
     public bool GlobalHotkeyEnabled { get; init; }
     public bool UseLegacyWebChat { get; init; }
     public bool ShowNotifications { get; init; }
+    public bool ShowDesktopCompanion { get; init; }
+    public int DesktopCompanionScalePercent { get; init; } = OpenClaw.Shared.DesktopCompanionScale.DefaultPercent;
     public string NotificationSound { get; init; } = "Default";
     public string AppTheme { get; init; } = "System";
 
@@ -208,11 +216,12 @@ public sealed record SettingsSnapshot
     public bool LocationConsentGiven { get; init; }
 
     public bool ShowChatToolCalls { get; init; }
+    public bool ShowChatThinking { get; init; } = true;
 
     /// <summary>Immutable copy of the local sidebar page pins keyed by Gateway scope.</summary>
     public System.Collections.Immutable.ImmutableDictionary<string, System.Collections.Immutable.ImmutableArray<string>> PinnedPagesByGateway { get; init; } =
         System.Collections.Immutable.ImmutableDictionary<string, System.Collections.Immutable.ImmutableArray<string>>.Empty;
 
     public System.Collections.Immutable.ImmutableArray<string> PinnedPagesFor(string? gatewayId) =>
-        PinnedPagesByGateway.TryGetValue(PinnedPages.ScopeKey(gatewayId), out var pins) ? pins : [];
+        PinnedPagesByGateway.TryGetValue(PinnedPages.ScopeKey(gatewayId), out var pins) ? pins : PinnedPages.DefaultPins;
 }

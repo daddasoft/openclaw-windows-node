@@ -28,7 +28,7 @@ For changes touching tray UX, Settings, onboarding, chat/canvas, Command Center,
 
 Short version: run required tests, collect a closeout proof pass with `.\run-app-local.ps1 -Isolated` when UI is involved, use computer-use or developer-provided screenshots/output for the active changed UI state, prove MCP with `winnode` or raw JSON-RPC, prove gateway paths when available, and include current-head concrete output under `## Real behavior proof`. Mid-development computer-use/MCP/rubber-duck validation is fine when explicitly requested or needed to unblock work.
 
-### Reactor preview.16 compatibility proof
+### Reactor compatibility proof
 
 The [fixture Gateway harness](GATEWAY_FIXTURE_TESTING.md) can populate the real
 app without a running WSL Gateway or AI provider. Run
@@ -39,22 +39,30 @@ non-Dev Release binary as well as Debug; an empty page or MCP snapshot is not
 equivalent to visible native history proof. Streaming still needs separate
 coverage.
 
-Both Reactor packages use `0.1.0-preview.16`, which includes the recycled-anchor
-workaround from
+Both Reactor packages use `0.1.0-preview.18`, including the recycled-anchor
+workaround introduced in preview.16 from
 [microsoft/microsoft-ui-reactor#1214](https://github.com/microsoft/microsoft-ui-reactor/pull/1214).
 This is a Reactor workaround for
 [microsoft/microsoft-ui-xaml#11865](https://github.com/microsoft/microsoft-ui-xaml/issues/11865),
-not evidence of a released native WinUI fix. Keep the existing row-targeted
-`StartBringItemIntoView` scrolling rather than the application-side extent-only
-workaround from #1407.
+not evidence of a released native WinUI fix. Keep row-targeted navigation rather
+than the application-side extent-only workaround from #1407. The scroll owner
+stages `ItemsRepeater.GetOrCreateElement` and `UIElement.StartBringIntoView` across
+natural layout, with settled geometry and renewed identity checks. Do not restore
+the synchronous `ItemsView.StartBringItemIntoView` call: a captured native hang
+and compiled-runtime inspection match the recycled-container loop fixed by
+[microsoft/microsoft-ui-xaml#12320](https://github.com/microsoft/microsoft-ui-xaml/pull/12320).
+This application mitigation does not replace the runtime or prove that the separate
+animated-scroll layout-cycle issue is fixed.
 
-Rechecked on 2026-10-22: `0.1.0-preview.16` remains the latest published version,
+Historical check on 2026-10-22: `0.1.0-preview.16` was the latest published version,
 including previews, in the authoritative NuGet feeds for
 [Microsoft.UI.Reactor](https://api.nuget.org/v3-flatcontainer/microsoft.ui.reactor/index.json)
 and [Microsoft.UI.Reactor.Advanced](https://api.nuget.org/v3-flatcontainer/microsoft.ui.reactor.advanced/index.json),
 and the [upstream releases](https://github.com/microsoft/microsoft-ui-reactor/releases).
-Keep both references aligned. The core package requires `System.Drawing.Common`
-`10.0.12` or newer; the tray's direct reference meets that floor.
+The [official preview.18 release](https://github.com/microsoft/microsoft-ui-reactor/releases/tag/v0.1.0-preview.18)
+now supplies the hash-verified packages used here. Keep both references aligned.
+Preview.17 requires `System.Drawing.Common` `10.0.14` or newer; the tray's direct
+reference meets that floor.
 
 Preview.16 enforces pooled-control resets with `REACTOR_POOL_001`. Chat uses
 Reactor's declarative `HelpText`, `ToolTip` and `ItemStatus` modifiers instead of
@@ -68,13 +76,49 @@ Star-content Grid list layout from
 [microsoft/microsoft-ui-reactor#1197](https://github.com/microsoft/microsoft-ui-reactor/pull/1197)
 instead of the preview.12 `MarkdownOptions.ListItem` override. That override
 assumed a horizontal StackElement and is incompatible with the upstream Grid.
-Sanitization, parser flags, inert links/images and custom block presentation
+Sanitization, parser flags, allowed web links, inert images and custom block presentation
 remain application-owned.
+
+`build.ps1`, Store packaging and CI initialize the hash-verified official
+GitHub release packages in the ignored `artifacts\reactor-packages` feed.
+Before a direct `dotnet restore` or first test build, run
+`.\scripts\Initialize-ReactorPackages.ps1`. `NuGet.Config` maps only the two
+Reactor package IDs to that feed; it does not change machine NuGet settings.
+Package digests, not the release DLLs' development-style ProductVersion, identify
+the published assets. `.\scripts\test-reactor-packages.ps1` checks acquisition,
+cache integrity, failure cleanup and source mapping without network access.
 
 Run `ReactorMarkdownListProofTests` in `OpenClaw.Tray.UITests` on the host's
 native architecture. These mounted tests check ordered/unordered wrapping at
 240 DIPs, reflow at 600 DIPs, and nested/loose list content and formatting.
 Keep the existing table and disposal proof in the focused run.
+
+The Systems page relies on two preview.13 fixes: reconciling a ContentDialog
+while it is open (microsoft/microsoft-ui-reactor#1073) and clearing pooled Border
+backgrounds so `Theme.Ref` fills survive reuse (microsoft/microsoft-ui-reactor#952).
+On the `systems-inventory` fixture, switch between machines and confirm that every
+statistics tile keeps its fill and usage meter.
+
+The published preview.17 train also replaces the task-local dialog-theme and
+pooled-Background backports. This is a runtime dependency, not just an API
+upgrade: Systems' Add/Rename/Forget dialogs are side-mounted by Reactor, and
+its feedback, resource tiles and Forget facts use `Theme.Ref` backgrounds.
+Preview.17 includes [ContentDialog theme forwarding](https://github.com/microsoft/microsoft-ui-reactor/pull/1389),
+[host-inherited theme resolution](https://github.com/microsoft/microsoft-ui-reactor/pull/1417),
+[dialog retirement on host disposal](https://github.com/microsoft/microsoft-ui-reactor/pull/1444),
+and [Border background precedence](https://github.com/microsoft/microsoft-ui-reactor/pull/1449)
+with [record-background restoration](https://github.com/microsoft/microsoft-ui-reactor/pull/1450).
+Stock preview.16 is not equivalent to the earlier patched preview.16 outputs.
+
+After integrating a new Windows App SDK, rerun
+`SystemsPageProofTests.AddAndForgetDialogs_ExposeConsequencesAndSafeDefaults`
+in Light and Dark, the stale-epoch Forget regression, and the full Systems
+mounted suite. Also verify current-app dialog theme, retirement during navigation,
+and feedback/resource fills after reconciliation and pooled reuse. Retain the
+shared `PageHeroTests` theme and highlight-background ownership regressions.
+Geometry-only or non-null-brush assertions do not prove the painted theme;
+current visible proof remains required. Earlier package or SDK results are
+historical, not acceptance for the newly integrated dependency graph.
 
 Before release, also exercise repeated session switching
 while a bring-into-view request is pending, using 240 mixed-height messages.
@@ -138,9 +182,62 @@ The host compatibility fixture is not evidence for these MXC assertions.
 
 Setup's `CapabilitiesConfig` uses the same file command IDs as the live handler
 for initial node pairing and the Gateway command allowlist. This does not enable
-the Gateway's `file-transfer` plugin, grant its path rules, or bypass node trust.
-Existing Gateway registrations still require approval when their declared
-command surface grows.
+the Gateway's `file-transfer` plugin or bypass node trust. Existing Gateway
+registrations still require approval when their declared command surface grows.
+
+The Gateway's `file-transfer` plugin is deny-by-default, so every file request
+fails with `NO_POLICY` until this node has an entry. While the operator and the
+paired node are connected, `GatewayFileAccessPolicySync` gives it one in
+`plugins.entries.file-transfer.config.nodes.<nodeId>` (`policyVersion: 2`) with
+`**` in `allowReadPaths` and `allowWritePaths`, which matches every Windows
+path. The Gateway forwards file requests, and the Node Sandbox on the node
+decides access. A blocked request costs one node round trip and returns
+`PERMISSION_DENIED` with a message that names the cause (outside the allowed
+folders, read-only, or protected) and, where it applies, that the user can change
+access in Node Sandbox settings, without listing the folders. A later request
+succeeds as soon as the user grants access. Sandbox changes need no Gateway
+write. The entry also bypasses the Gateway's own `ask` prompts for this node.
+
+The Gateway uses only the first matching entry (node ID, its Gateway display name
+from `node.list`'s `displayName` field, then `"*"`). A new node entry would hide
+that effective entry, so it starts with a one-time copy of its `ask`, `maxBytes`,
+`followSymlinks` and `denyPaths`. Later edits to the display-name or `"*"` entry
+no longer apply to this node; edit its node ID entry instead.
+Companion only appends `**` to this node's two allow lists and never removes an
+entry: the Gateway rejects config writes that shrink a file below half its size
+(`size-drop`), and existing rules are harmless beside `**`. Setup writes the
+Gateway's node command allowlist (`gateway.nodes.commands.allow`, or the legacy
+`gateway.nodes.allowCommands` when only it exists) once, so Gateways set up
+before the file commands shipped lack them. The write that first gives this node
+`**` also appends any missing file commands that `gateway.nodes.commands.deny`
+does not block. Once this node allows all, Companion leaves that Gateway-wide
+allowlist alone, so an administrator's later removal stands. The allowlist
+extends platform defaults, and changing it hot-reloads. A node whose declared
+command surface grew still needs `openclaw nodes approve`; Companion does not
+approve itself. A `policyVersion` other than 2 is left unchanged and nothing is
+written. Administrator rules,
+other nodes and `literalGrants` are preserved. The write is skipped once confirmed for the current
+operator client and connection epoch. A timed-out or "persisted but not applied"
+write is read back once rather than replayed. A saved entry counts as synced only
+when `config.get` reports `appliedConfigHash` equal to `configRevisionHash`
+(Gateways that omit both are trusted) and that snapshot still allows this node.
+The sync polls for up to 60 seconds of elapsed time
+(`OPENCLAW_GATEWAY_FILE_POLICY_APPLY_WAIT_MS`) because plugin reloads can defer
+behind active work, then logs the entry as pending. A
+plugin reload held by work that never settles keeps the old, deny-by-default
+generation active until the Gateway restarts; Companion does not reload plugins
+or restart the Gateway itself. It requires `operator.admin` and declines to write
+while unreviewed legacy rules exist (`openclaw file-transfer approvals migrate`).
+These and failed writes appear only in the Companion log (`[file-policy]`), not
+in the UI. Each connection gets one
+attempt, including one that fails with an error; repeated state changes never
+replay a write, and the next connection (including a Gateway restart) tries
+again. On positively unsupported Windows, file commands run uncontained, so
+Companion writes no entry and the Gateway keeps its own deny-by-default policy.
+After a failed Sandbox availability probe nothing is written; Companion rechecks
+every 5 seconds, up to 12 times per connection, until a probe succeeds. `GatewayFileAccessPolicyTests`
+and `GatewayFileAccessPolicySyncTests` cover merge planning and connection
+binding with a fake client, not a real Gateway write.
 
 CLI `FileWorkerProcessTests` also run the real worker through MCP and winnode
 using the explicit uncontained compatibility adapter and test-owned folders.
@@ -513,7 +610,7 @@ Local MCP clients also see MCP-only `app.*` commands such as `app.navigate`, `ap
   process that could use the SDK-default appdata paths.
 - Output retains bounded UTF-8 bytes per stream, including truncation markers; BOMs can be fragmented and discarded bytes continue to drain. Shared incremental capture exposes complete characters (including 1-3 byte short output) before EOF. Deadline responses preserve captured stdout/stderr without waiting for cleanup. `[truncated]` denotes either a byte-budget limit or capture cut off before EOF, including a deadline before any output arrived. Incomplete BOMs/characters at a cutoff are not invented; real EOF still uses the decoder's replacement behavior.
 - One command deadline covers launch/wait/drains. Direct root exit is independent of output EOF: at most 500 ms of post-exit drain grace fits inside the remaining deadline. Native execution observes and caches root exit through the SDK's non-finalizing `TryGetExitCode` before calling `WaitAsync`. A known root exit retains its exit code rather than becoming a timeout because a descendant holds a pipe or SDK finalization crosses the deadline. Incomplete capture uses the existing truncation marker when it fits the byte budget. Native SDK finalization still reaps descendants and completes teardown before ownership is released. Only unsupported-Windows host compatibility execution leaves intentional background descendants running after normal root exit.
-- Host pipe readers use cancellable public `ReadAsync`; native SDK readers use synchronous `Read` interrupted by `IMxcStreamCloser`. Cancellation returns promptly while a late launch, blocked kill or pending SDK finalization remains owned. Capacity (eight owners) is held until readers, native tasks and the scratch cleanup attempt finish. In host compatibility execution, a background descendant retaining scratch as its cwd can prevent directory deletion; that failure is logged, not remedied by killing the background application. Running commands retain their immutable policy; pending commands revalidate settings and approvals before spawn.
+- Host pipe readers use cancellable public `ReadAsync`; native SDK readers use synchronous `Read` on dedicated (non-thread-pool) workers, interrupted by `IMxcStreamCloser`. Cancellation returns promptly while a late launch, blocked kill or pending SDK finalization remains owned. Capacity (eight owners) is held until readers, native tasks and the scratch cleanup attempt finish. In host compatibility execution, a background descendant retaining scratch as its cwd can prevent directory deletion; that failure is logged, not remedied by killing the background application. Running commands retain their immutable policy; pending commands revalidate settings and approvals before spawn.
 - Cleanup uses the operation's atomically created directory identity and
   retained no-follow ancestry, not a GUID name or manifest. Ended owned
   operations get bounded sharing-violation retries; later admission retries

@@ -28,7 +28,10 @@ public sealed partial class GatewayFixtureUiTests
             var pageRow = await ExpandInboxFeedRowAsync(run, "Command approval needed,");
             await AssertInboxFeedCommandAsync(run, pageRow, "curl https://example.test/run?token=*** ; echo fixture-end");
             Assert.Equal("Approvals 1", InboxFeedVisibleId(run, "WorkspaceNotificationsTabApprovals")!.Current.Name);
-            var firstCountdown = InboxFeedCountdown(pageRow);
+            // The countdown line can still be clipped (offscreen) while the expanded content settles. Wait for a
+            // parsed reading, including an invalid 0:00, then bound that same reading.
+            var firstCountdown = -1;
+            await WaitUiAsync(run, () => (firstCountdown = InboxFeedCountdown(pageRow)) >= 0, "visible approval countdown text");
             Assert.InRange(firstCountdown, 1, 45);
             await WaitUiAsync(run, () => InboxFeedCountdown(pageRow) is var remaining && remaining > 0 && remaining < firstCountdown,
                 "native approval countdown advances without another producer event");
@@ -123,7 +126,13 @@ public sealed partial class GatewayFixtureUiTests
             await InboxFeedTextAsync(run, automation, "Synthetic archive destination unavailable.");
             CaptureInboxFeed(run, "inbox-feed-automation-failed.png", automation);
             Invoke(await InboxFeedButtonAsync(run, automation, "Open Automations"));
-            await WaitUiAsync(run, () => InboxFeedVisibleId(run, "CronPageMarker") is not null, "native Automations destination");
+            await WaitUiAsync(run, () => InboxFeedVisibleId(run, "CronPageMarker") is not null &&
+                FindById(run, "AutomationExpander:fixture-inbox-cron") is not null,
+                "native Automations destination renders the referenced job");
+            Assert.All(run.Gateway.Requests.Where(request => request.Method == "cron.list" && request.Outcome != "pending"),
+                request => Assert.Equal("ok", request.Outcome));
+            await ScrollAutomationIntoViewAsync(run, "AutomationExpander:fixture-inbox-cron");
+            Assert.Contains("Fixture nightly archive", FindById(run, "AutomationExpander:fixture-inbox-cron")!.Current.Name);
             await CaptureIfRequestedAsync(run, "inbox-feed-automations-destination.png");
 
             await OpenInboxFeedPageAsync(run, "System");
@@ -172,16 +181,17 @@ public sealed partial class GatewayFixtureUiTests
             foreach (var window in AppWindows(run))
             {
                 var windowBounds = window.Current.BoundingRectangle;
-                if (!HeaderControlReady(window, windowBounds)) continue;
+                if (!HeaderControlReady(window, window, windowBounds)) continue;
                 var page = window.FindFirst(TreeScope.Descendants,
                     new PropertyCondition(AutomationElement.AutomationIdProperty, "NotificationsPage"));
-                if (!HeaderControlReady(page, windowBounds)) continue;
+                if (!HeaderControlReady(window, page, windowBounds)) continue;
                 var pageBounds = page!.Current.BoundingRectangle;
                 var heading = page.FindFirst(TreeScope.Descendants,
                     new PropertyCondition(AutomationElement.AutomationIdProperty, "NotificationsPageMarker"));
                 var candidate = page.FindFirst(TreeScope.Descendants,
                     new PropertyCondition(AutomationElement.AutomationIdProperty, $"WorkspaceNotificationsTab{tab}"));
-                if (!HeaderControlReady(heading, pageBounds) || !HeaderControlReady(candidate, pageBounds)) continue;
+                if (!HeaderControlReady(window, heading, pageBounds) ||
+                    !HeaderControlReady(window, candidate, pageBounds)) continue;
                 readyTab = candidate;
                 return true;
             }
@@ -189,12 +199,13 @@ public sealed partial class GatewayFixtureUiTests
         }, $"visible enabled Inbox page tab: {tab}");
         Invoke(readyTab!);
 
-        bool HeaderControlReady(AutomationElement? element, System.Windows.Rect viewport)
+        bool HeaderControlReady(AutomationElement owner, AutomationElement? element, System.Windows.Rect viewport)
         {
             if (element is null) return false;
             var info = element.Current;
             var bounds = info.BoundingRectangle;
-            return info.ProcessId == run.AppProcessId && !info.IsOffscreen && info.IsEnabled &&
+            return NativeUiOwnership.IsOwnedDescendant(owner, element, run.AppProcessId) &&
+                !info.IsOffscreen && info.IsEnabled &&
                 HasBounds(viewport) && HasBounds(bounds) && viewport.Contains(bounds);
         }
 

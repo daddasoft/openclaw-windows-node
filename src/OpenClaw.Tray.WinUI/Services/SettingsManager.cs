@@ -109,6 +109,12 @@ public class SettingsManager
 
     // Notifications
     public bool ShowNotifications { get => _data.ShowNotifications; set => _data = _data with { ShowNotifications = value }; }
+    public bool ShowDesktopCompanion { get => _data.ShowDesktopCompanion; set => _data = _data with { ShowDesktopCompanion = value }; }
+    public int DesktopCompanionScalePercent
+    {
+        get => _data.DesktopCompanionScalePercent;
+        set => _data = _data with { DesktopCompanionScalePercent = NormalizeDesktopCompanionScale(value) };
+    }
     public string NotificationSound { get => _data.NotificationSound ?? "Default"; set => _data = _data with { NotificationSound = value }; }
     
     // Notification filters
@@ -179,6 +185,8 @@ public class SettingsManager
     public bool VoiceTtsEnabled { get => _data.VoiceTtsEnabled; set => _data = _data with { VoiceTtsEnabled = value }; }
     /// <summary>Show tool-call and usage chips inline in the chat timeline.</summary>
     public bool ShowChatToolCalls { get => _data.ShowChatToolCalls; set => _data = _data with { ShowChatToolCalls = value }; }
+    /// <summary>Show supplied assistant reasoning in the chat timeline.</summary>
+    public bool ShowChatThinking { get => _data.ShowChatThinking; set => _data = _data with { ShowChatThinking = value }; }
     /// <summary>Play audio feedback chimes on listen start/stop.</summary>
     public bool VoiceAudioFeedback { get => _data.VoiceAudioFeedback; set => _data = _data with { VoiceAudioFeedback = value }; }
     public bool NodeTtsEnabled { get => _data.NodeTtsEnabled; set => _data = _data with { NodeTtsEnabled = value }; }
@@ -236,14 +244,18 @@ public class SettingsManager
         ClonePinnedPages(_data.PinnedPagesByGateway)
             .ToImmutableDictionary(entry => entry.Key, entry => entry.Value.ToImmutableArray(), StringComparer.Ordinal);
     public System.Collections.Immutable.ImmutableArray<string> GetPinnedPages(string scopeKey) =>
-        PinnedPagesByGateway.TryGetValue(OpenClawTray.Presentation.PinnedPages.ScopeKey(scopeKey), out var pins) ? pins : [];
+        PinnedPagesByGateway.TryGetValue(OpenClawTray.Presentation.PinnedPages.ScopeKey(scopeKey), out var pins)
+            ? pins : OpenClawTray.Presentation.PinnedPages.DefaultPins;
     public void TogglePinnedPage(string scopeKey, string tag, bool pinned)
     {
+        if (OpenClawTray.Presentation.PinnedPages.Find(tag) is null)
+            return;
         var key = OpenClawTray.Presentation.PinnedPages.ScopeKey(scopeKey);
         var all = ClonePinnedPages(_data.PinnedPagesByGateway);
-        all.TryGetValue(key, out var current);
+        IEnumerable<string> current = all.TryGetValue(key, out var stored)
+            ? stored : OpenClawTray.Presentation.PinnedPages.DefaultPins;
         var next = OpenClawTray.Presentation.PinnedPages.Toggle(current, tag, pinned);
-        if (next.IsEmpty) all.Remove(key); else all[key] = [.. next];
+        all[key] = [.. next];
         _data = _data with { PinnedPagesByGateway = all.Count == 0 ? null : all };
     }
     public void SetPinnedPages(string scopeKey, IEnumerable<string>? tags)
@@ -251,7 +263,7 @@ public class SettingsManager
         var key = OpenClawTray.Presentation.PinnedPages.ScopeKey(scopeKey);
         var all = ClonePinnedPages(_data.PinnedPagesByGateway);
         var normalized = OpenClawTray.Presentation.PinnedPages.Normalize(tags);
-        if (normalized.IsEmpty) all.Remove(key); else all[key] = [.. normalized];
+        all[key] = [.. normalized];
         _data = _data with { PinnedPagesByGateway = all.Count == 0 ? null : all };
     }
     private static Dictionary<string, List<string>>? NullIfEmpty(Dictionary<string, List<string>> pins) =>
@@ -265,7 +277,7 @@ public class SettingsManager
         {
             if (string.IsNullOrWhiteSpace(key)) continue;
             var normalized = OpenClawTray.Presentation.PinnedPages.Normalize(tags);
-            if (!normalized.IsEmpty) clone[key.Trim()] = [.. normalized];
+            clone[key.Trim()] = [.. normalized];
         }
         return clone;
     }
@@ -468,6 +480,7 @@ public class SettingsManager
             SshTunnelRemotePort = loaded.SshTunnelRemotePort <= 0 ? defaults.SshTunnelRemotePort : loaded.SshTunnelRemotePort,
             SshTunnelLocalPort = loaded.SshTunnelLocalPort <= 0 ? defaults.SshTunnelLocalPort : loaded.SshTunnelLocalPort,
             NotificationSound = loaded.NotificationSound ?? defaults.NotificationSound,
+            DesktopCompanionScalePercent = NormalizeDesktopCompanionScale(loaded.DesktopCompanionScalePercent),
             SttLanguage = string.IsNullOrWhiteSpace(loaded.SttLanguage) ? defaults.SttLanguage : loaded.SttLanguage,
             SttModelName = string.IsNullOrWhiteSpace(loaded.SttModelName) ? defaults.SttModelName : loaded.SttModelName,
             SttSilenceTimeout = loaded.SttSilenceTimeout > 0 ? loaded.SttSilenceTimeout : defaults.SttSilenceTimeout,
@@ -660,6 +673,14 @@ public class SettingsManager
         SandboxMaxTransferBytes = SandboxMaxTransferBytes,
         McpOnlyMode = null
     };
+
+    private static int NormalizeDesktopCompanionScale(int value)
+    {
+        var normalized = DesktopCompanionScale.Normalize(value);
+        if (value != normalized)
+            Logger.Warn($"Desktop lobster scale {value}% was adjusted to the supported size {normalized}%.");
+        return normalized;
+    }
 
     public static string NormalizeAppTheme(string? value)
     {

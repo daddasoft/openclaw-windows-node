@@ -365,7 +365,9 @@ internal sealed class WindowManager : IWindowManager
             {
                 _readyWindow?.Close();
                 ShowHub("connection");
-            });
+            },
+            gatewayId => _callbacks.GetGatewayRegistry()?.GetById(gatewayId),
+            collectLogs: ShowSetupDiagnosticsAsync);
         _readyWindow = ready;
         ready.Closed += (_, _) =>
         {
@@ -895,6 +897,7 @@ internal sealed class WindowManager : IWindowManager
                     _callbacks.GetGatewayRegistry() is { } registry
                     ? new SetupNativeConnectionHost(directConnect, registry, new AppLogger(), NotifyIncompleteNativeConnection)
                     : null,
+                collectLogs: ShowSetupDiagnosticsAsync,
                 commandLineArgs: SetupWindowArgumentProjection.Project(
                     _callbacks.GetStartupArgs(),
                     _callbacks.IsDeepLinkArg,
@@ -949,6 +952,38 @@ internal sealed class WindowManager : IWindowManager
         }
     }
 
+    private async Task ShowSetupDiagnosticsAsync(FrameworkElement page)
+    {
+        if (_isShuttingDown || page.XamlRoot is not { } root)
+            throw new InvalidOperationException("The setup diagnostics window is unavailable.");
+        var app = (App)Application.Current;
+        var state = app.BuildCommandCenterState();
+        var events = app.GetConnectionDiagnosticEvents().ToArray();
+        var bundle = await Task.Run(() => DiagnosticsBundleBuilder.Build(state, events));
+        if (_isShuttingDown || !page.IsLoaded || !ReferenceEquals(page.XamlRoot, root))
+            throw new InvalidOperationException("The setup diagnostics window has closed.");
+        var dialog = new DiagnosticsBundleDialog
+        {
+            XamlRoot = root,
+            Title = LocalizationHelper.GetString("DiagnosticsBundleDialog_DiagnosticsBundle.Title"),
+        };
+        dialog.Configure(bundle,
+            LocalizationHelper.GetString("DiagnosticsBundleDialog_ReviewBeforeSharingMessage.Text"),
+            $"openclaw-setup-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.txt",
+            ResolveWindowHandle);
+        await dialog.ShowAsync();
+
+        IntPtr ResolveWindowHandle()
+        {
+            if (!page.IsLoaded || _isShuttingDown) return IntPtr.Zero;
+            if (_setupWindow is { IsClosed: false } setup && ReferenceEquals((setup.Content as FrameworkElement)?.XamlRoot, root))
+                return WinRT.Interop.WindowNative.GetWindowHandle(setup);
+            if (_readyWindow is { IsClosed: false } ready && ReferenceEquals((ready.Content as FrameworkElement)?.XamlRoot, root))
+                return WinRT.Interop.WindowNative.GetWindowHandle(ready);
+            return IntPtr.Zero;
+        }
+    }
+
     private void OnSetupClosed(object sender, WindowEventArgs args)
     {
         if (sender is not SetupWindow setupWindow)
@@ -972,6 +1007,29 @@ internal sealed class WindowManager : IWindowManager
         {
             _setupWindow = null;
         }
+
+        var registry = _callbacks.GetGatewayRegistry();
+        if (registry is null)
+            return;
+        var before = registry.GetActive();
+        // The file lease can wait up to its own bound. Keep that wait off the UI thread.
+        // Registry change handlers marshal themselves back to the dispatcher.
+        var adoption = await Task.Run(() => registry.TryAdoptExternalSnapshot());
+        if (adoption == ExternalSnapshotAdoption.UnsavedEdits)
+        {
+            Logger.Warn("Gateway list was not refreshed after setup closed because this session has unsaved Gateway edits.");
+            NotifySetupRegistryRecovery();
+            return;
+        }
+
+        if (adoption != ExternalSnapshotAdoption.Adopted)
+        {
+            Logger.Warn("Gateway list was not refreshed after setup closed because the saved list could not be read.");
+            return;
+        }
+
+        Logger.Info("Gateway list refreshed after setup closed.");
+        await ReconcileSetupConnectionAsync(before, registry.GetActive());
     }
 
     public void CloseSetup()

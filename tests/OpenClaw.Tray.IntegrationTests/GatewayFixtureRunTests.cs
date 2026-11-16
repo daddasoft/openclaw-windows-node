@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using OpenClaw.GatewayFixtureHost;
 
 namespace OpenClaw.Tray.IntegrationTests;
@@ -7,6 +8,123 @@ public sealed class GatewayFixtureRunTests
     private const string Description = "history loaded for agent:main:fixture-long";
     private const string ArtifactsDirectory = @"C:\fixture-artifacts\test-run";
     private static readonly TimeSpan Deadline = TimeSpan.FromSeconds(5);
+
+    [Fact]
+    public void AppLaunchError_ReportsTheFirstOnLaunchedFailureRatherThanEarlierErrors()
+    {
+        var log = Path.Combine(Path.GetTempPath(), $"openclaw-fixture-log-{Guid.NewGuid():N}.log");
+        try
+        {
+            File.WriteAllLines(log,
+            [
+                "[2026-11-13 05:46:20.001] [ERROR] Previous session did not exit cleanly (started 2026-11-13T05:46:18Z)",
+                "[2026-11-13 05:46:23.762] [ERROR] OnLaunched failed: System.ArgumentException: Failed to load icon from status.ico (Parameter 'iconPath')",
+                "   at WinUIEx.TrayIcon..ctor(UInt32 trayiconId, String iconPath, String tooltip)",
+                "[2026-11-13 05:46:24.000] [ERROR] OnLaunched failed: later failure",
+            ]);
+
+            Assert.Equal(
+                "OnLaunched failed: System.ArgumentException: Failed to load icon from status.ico (Parameter 'iconPath')",
+                GatewayFixtureRun.FindAppLaunchError(log));
+            Assert.Null(GatewayFixtureRun.FindAppLaunchError(log + ".missing"));
+
+            // A restarted app appends to the same log; an earlier launch's failure is not reported.
+            var relaunchOffset = new FileInfo(log).Length;
+            File.AppendAllLines(log, ["[2026-11-13 05:47:00.000] [INFO] Started"]);
+            Assert.Null(GatewayFixtureRun.FindAppLaunchError(log, relaunchOffset));
+            File.AppendAllLines(log, ["[2026-11-13 05:47:01.000] [ERROR] OnLaunched failed: relaunch failure"]);
+            Assert.Equal("OnLaunched failed: relaunch failure", GatewayFixtureRun.FindAppLaunchError(log, relaunchOffset));
+        }
+        finally
+        {
+            File.Delete(log);
+        }
+    }
+
+    [Fact]
+    public void BrowserCleanup_RetainsNestedOwnedChildrenButRejectsForeignAndStaleParents()
+    {
+        var started = DateTime.UnixEpoch.AddDays(1);
+        var app = new GatewayFixtureRun.BrowserProcessIdentity(10, 0, started);
+        var descendants = GatewayFixtureRun.SelectOwnedBrowserDescendants(app,
+        [
+            new(30, 20, started.AddSeconds(2)),
+            new(20, 10, started.AddSeconds(1)),
+            new(40, 999, started.AddSeconds(1)),
+            new(50, 40, started.AddSeconds(2)),
+            new(60, 20, started),
+            new(70, 60, started.AddSeconds(3)),
+            new(80, 20, started.AddMinutes(2)),
+        ], started.AddMinutes(1));
+        Assert.Equal([20, 30], descendants);
+    }
+
+    [Fact]
+    public async Task Teardown_PreservesProcessAndProfileFailuresAndAttemptsEveryOwnerInOrder()
+    {
+        var processFailure = new InvalidOperationException("Synthetic owned browser remains live.");
+        var profileFailure = new IOException("Synthetic profile file remains locked.");
+        var steps = new List<string>();
+        var error = await Assert.ThrowsAsync<AggregateException>(() =>
+            GatewayFixtureRun.DisposeOwnedResourcesAsync(
+                () => { steps.Add("process"); return Task.FromException(processFailure); },
+                () => { steps.Add("gateway"); return Task.CompletedTask; },
+                () => { steps.Add("profile"); throw profileFailure; }));
+        Assert.Equal(["process", "gateway", "profile"], steps);
+        Assert.Equal([processFailure, profileFailure], error.InnerExceptions);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StartupFailure_PreservesTheOriginalAndStillCleansUpAfterReportFailure(bool reportFails)
+    {
+        var startupFailure = new InvalidOperationException("synthetic startup failure");
+        var reportFailure = new IOException("synthetic report failure");
+        var cleanupFailure = new AggregateException(new System.ComponentModel.Win32Exception(5));
+        var cleanupAttempted = false;
+
+        var error = await Assert.ThrowsAsync<AggregateException>(() =>
+            GatewayFixtureRun.HandleStartupFailureAsync(startupFailure,
+                () => reportFails ? Task.FromException(reportFailure) : Task.CompletedTask,
+                () =>
+                {
+                    cleanupAttempted = true;
+                    return Task.FromException(cleanupFailure);
+                }));
+
+        Assert.True(cleanupAttempted);
+        Assert.Same(startupFailure, error.InnerExceptions[0]);
+        Assert.Same(cleanupFailure, error.InnerExceptions[^1]);
+        Assert.Equal(reportFails ? 3 : 2, error.InnerExceptions.Count);
+        if (reportFails)
+            Assert.Same(reportFailure, error.InnerExceptions[1]);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StopOwnedProcesses_AttemptsAndDisposesEveryProcessAfterAFailure(bool aggregate)
+    {
+        using var first = Process.GetCurrentProcess();
+        using var second = Process.GetCurrentProcess();
+        var handles = new[] { first.SafeHandle, second.SafeHandle };
+        var attempted = new List<Process>();
+        Exception original = aggregate
+            ? new AggregateException(new System.ComponentModel.Win32Exception(5))
+            : new TimeoutException("synthetic process exit timeout");
+
+        var error = await Assert.ThrowsAsync<AggregateException>(() =>
+            GatewayFixtureRun.StopOwnedProcessesAsync([first, second], process =>
+            {
+                attempted.Add(process);
+                return ReferenceEquals(process, first) ? Task.FromException(original) : Task.CompletedTask;
+            }));
+
+        Assert.Equal([first, second], attempted);
+        Assert.All(handles, handle => Assert.True(handle.IsClosed));
+        Assert.Same(original, Assert.Single(error.InnerExceptions).InnerException);
+    }
 
     [Fact]
     public async Task WaitForAsync_SlowConditionPreservesTimeoutContext()
@@ -288,6 +406,31 @@ public sealed class GatewayFixtureRunTests
         Assert.False(disposed);
         Assert.Contains("stop:error:IOException", receipt);
         Assert.Contains("dispose:withheld-live-worker-or-app", receipt);
+    }
+
+    [Fact]
+    public async Task AppExitedBeforeCapture_RethrowsOriginalWithItsThrownStackAndRecordsCaptureError()
+    {
+        static async Task FailingBody()
+        {
+            await Task.Yield();
+            throw new NullReferenceException("Original UI assertion");
+        }
+        var body = FailingBody();
+        var original = await Assert.ThrowsAsync<NullReferenceException>(() => body);
+        var thrownStack = original.StackTrace;
+        IReadOnlyList<string> receipt = [];
+
+        var observed = await Assert.ThrowsAsync<NullReferenceException>(() => Finish(original, body: body,
+            capture: _ => throw new InvalidOperationException("No process is associated with this object."),
+            record: stages => receipt = stages).WaitAsync(FailureDeadline));
+
+        Assert.Same(original, observed);
+        // Containment re-observes the faulted body; that must not append its frames as if it had thrown.
+        Assert.DoesNotContain("ObserveAsync", observed.StackTrace!, StringComparison.Ordinal);
+        Assert.StartsWith(thrownStack!, observed.StackTrace!, StringComparison.Ordinal);
+        Assert.Contains("capture:error:InvalidOperationException", receipt);
+        Assert.Contains("dispose:completed", receipt);
     }
 
     private static Task Finish(Exception original, Task? body = null,

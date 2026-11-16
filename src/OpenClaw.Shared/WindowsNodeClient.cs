@@ -1159,6 +1159,35 @@ public class WindowsNodeClient : WebSocketClientBase
 
             RaiseStatusChanged(ConnectionStatus.Connected);
             HandshakeSucceeded?.Invoke(this, EventArgs.Empty);
+            if (_isPaired)
+                StartHostStatsPublishing();
+        }
+    }
+
+    private Timer? _hostStatsTimer;
+
+    /// <summary>Publishes host statistics so the Gateway's Systems inventory can show this machine's resources.</summary>
+    private void StartHostStatsPublishing()
+    {
+        StopHostStatsPublishing();
+        var timer = new Timer(_ => _ = PublishHostStatsAsync(), null, TimeSpan.Zero, Systems.HostStatsSampler.Interval);
+        if (Interlocked.CompareExchange(ref _hostStatsTimer, timer, null) is not null)
+            timer.Dispose();
+    }
+
+    private void StopHostStatsPublishing() => Interlocked.Exchange(ref _hostStatsTimer, null)?.Dispose();
+
+    private async Task PublishHostStatsAsync()
+    {
+        try
+        {
+            if (!_isConnected || !_isPaired || Systems.HostStatsSampler.Sample() is not { } payload)
+                return;
+            await SendNodeEventAsync(Systems.HostStatsSampler.EventName, payload).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn($"Host statistics publish failed: {ex.Message}");
         }
     }
 
@@ -2122,7 +2151,7 @@ public class WindowsNodeClient : WebSocketClientBase
 
     protected override void OnDisconnected()
     {
-        CancelTransportInvocations();
+        StopHostStatsPublishing();
         _isConnected = false;
         Volatile.Write(ref _pendingConnectRequestId, null);
         // Don't reset pairing state when disconnected due to pairing — gateway
@@ -2134,26 +2163,28 @@ public class WindowsNodeClient : WebSocketClientBase
         }
     }
 
-    protected override void OnError(Exception ex)
+    protected override Action CaptureTransportLossNotification() => CaptureTransportCleanup();
+
+    private Action CaptureTransportCleanup()
     {
-        CancelTransportInvocations();
-        _isConnected = false;
-        if (!_pairingBlocked)
+        var cancelInvocations = _activeInvocations.CaptureTransportCancellation();
+        var fileInvocations = _fileInvocations.Values.ToArray();
+        var drainProgressRequests = _progressRequests.CaptureDrain();
+        // Each step runs even when an earlier one throws, so file channels and progress waiters are always released.
+        return () =>
         {
-            _isPendingApproval = false;
-            _isPaired = false;
-        }
+            RunTransportLossCallback(cancelInvocations, "invocation cancellation");
+            foreach (var invocation in fileInvocations)
+                RunTransportLossCallback(invocation.Channel.Abort, "file channel abort");
+            RunTransportLossCallback(drainProgressRequests, "progress drain");
+        };
     }
 
     protected override void OnDisposing()
     {
+        StopHostStatsPublishing();
         CancelTransportInvocations();
     }
 
-    private void CancelTransportInvocations()
-    {
-        _activeInvocations.CancelAll();
-        foreach (var invocation in _fileInvocations.Values) invocation.Channel.Abort();
-        _progressRequests.Drain();
-    }
+    private void CancelTransportInvocations() => CaptureTransportCleanup()();
 }
