@@ -449,7 +449,7 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
             Invoke(FindById(run, "WorkspaceReopenPane")!);
             await WaitUiAsync(run, () => FindById(run, "WorkspaceSessionsAdd")?.Current.IsOffscreen == false, "sidebar restored");
 
-            Invoke(FindById(run, "WorkspaceSessionsAdd")!);
+            await TriggerReadOnlySessionErrorAsync(run);
             await WaitUiAsync(run, () => FindById(run, "WorkspaceEmbeddedOperationFeedback")?.Current.IsOffscreen == false,
                 "visible rejected-operation feedback above embedded content");
             Assert.Contains("Fixture Gateway is read-only", FindText(run, "Fixture Gateway is read-only")!.Current.Name);
@@ -598,7 +598,7 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
                 host = FindById(run, "WorkspaceNavigation")!.Current.BoundingRectangle;
                 viewport = FindById(run, "SystemsPageScroll")!.Current.BoundingRectangle;
                 Assert.InRange(Math.Abs((viewport.Top - host.Top) / scale), 0, 1);
-                Invoke(FindById(run, "WorkspaceSessionsAdd")!);
+                await TriggerReadOnlySessionErrorAsync(run);
                 await WaitUiAsync(run, () => FindById(run, "WorkspaceEmbeddedOperationFeedback") is { Current.IsOffscreen: false },
                     "explicit rejected operation on pinned Systems");
                 Assert.Contains("Fixture Gateway is read-only", FindText(run, "Fixture Gateway is read-only")!.Current.Name);
@@ -886,8 +886,8 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
                 && FindById(run, "SessionsHubList") is not null, "Sessions redesign loaded");
             CaptureSessionsWindow(run, "sessions-top.png");
 
-            CaptureSessionsWidths(run);
-            RestoreBaselineWindow(run);
+            await CaptureSessionsWidthsAsync(run);
+            await RestoreBaselineWindowAsync(run);
 
             var manifest = new List<CaptureStateResult>();
             await CaptureStateAsync(run, manifest, "messages", async () =>
@@ -1047,7 +1047,8 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
             Assert.Null(FindById(run, "WorkspaceArchivedToggle"));
             await CaptureIfRequestedAsync(run, "sidebar-without-archives.png");
             await OpenSessionMenuAsync(run, GatewayScenario.OtherSessionKey);
-            Invoke(FindById(run, "WorkspaceSessionMenuToggleArchive")!);
+            await InvokeWhenEnabledAsync(run, () => FindById(run, "WorkspaceSessionMenuToggleArchive"),
+                "explicit archive mutation");
             await WaitUiAsync(run, () => FindById(run, $"WorkspaceSession:{GatewayScenario.OtherSessionKey}") is null,
                 "archived conversation hidden from sidebar");
 
@@ -1232,7 +1233,8 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
             await SelectSessionAsync(run, GatewayScenario.OtherTitle, GatewayScenario.OtherSessionKey);
             run.Gateway.HoldSessionMutations();
             await OpenSessionMenuAsync(run, GatewayScenario.OtherSessionKey);
-            Invoke(FindById(run, "WorkspaceSessionMenuToggleArchive")!);
+            await InvokeWhenEnabledAsync(run, () => FindById(run, "WorkspaceSessionMenuToggleArchive"),
+                "archive selected conversation");
             await run.Gateway.WaitForRequestAsync("sessions.patch", GatewayScenario.OtherSessionKey);
             Assert.NotNull(FindById(run, "ChatComposerInput"));
             Assert.True(SessionSelected(run, GatewayScenario.OtherTitle));
@@ -1244,9 +1246,10 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
                 "accepted archive selected the remaining conversation");
             await WaitHistoryAsync(run, GatewayScenario.EdgeSessionKey);
             await OpenSessionMenuAsync(run, GatewayScenario.EdgeSessionKey);
-            Invoke(FindById(run, "WorkspaceSessionMenuDelete")!);
+            await InvokeWhenEnabledAsync(run, () => FindById(run, "WorkspaceSessionMenuDelete"),
+                "delete selected conversation");
             await WaitUiAsync(run, () => FindButton(run, "Delete") is not null, "delete confirmation");
-            Invoke(FindButton(run, "Delete")!);
+            await InvokeWhenEnabledAsync(run, () => FindButton(run, "Delete"), "confirm conversation deletion");
             await WaitUiAsync(run, () => FindById(run, "WorkspaceSelectConversation") is { Current.IsOffscreen: false },
                 "explicit empty chat after last removal");
             Assert.Null(FindById(run, "ChatComposerInput"));
@@ -1272,7 +1275,8 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
             const string draft = "Keep this draft after rejection";
             ((ValuePattern)FindById(run, "ChatComposerInput")!.GetCurrentPattern(ValuePattern.Pattern)).SetValue(draft);
             await OpenSessionMenuAsync(run, GatewayScenario.OtherSessionKey);
-            Invoke(FindById(run, "WorkspaceSessionMenuToggleArchive")!);
+            await InvokeWhenEnabledAsync(run, () => FindById(run, "WorkspaceSessionMenuToggleArchive"),
+                "archive selected conversation");
             await WaitUiAsync(run, () => FindText(run, "Fixture Gateway is read-only") is not null, "visible archive rejection");
             Assert.True(SessionSelected(run, GatewayScenario.OtherTitle));
             Assert.Equal(draft, ((ValuePattern)FindById(run, "ChatComposerInput")!.GetCurrentPattern(ValuePattern.Pattern)).Current.Value);
@@ -1280,13 +1284,40 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
         });
     }
 
+    private static async Task TriggerReadOnlySessionErrorAsync(GatewayFixtureRun run)
+    {
+        await OpenSessionMenuAsync(run, GatewayScenario.LongSessionKey);
+        await InvokeWhenEnabledAsync(run, () => FindById(run, "WorkspaceSessionMenuToggleArchive"),
+            "archive selected conversation");
+        await WaitUiAsync(run, () => FindText(run, "Fixture Gateway is read-only") is not null,
+            "rejected explicit session mutation");
+    }
+
     private static async Task OpenSessionMenuAsync(GatewayFixtureRun run, string key)
     {
-        var window = AppWindows(run).First(window => window.FindFirst(TreeScope.Descendants,
-            new PropertyCondition(AutomationElement.AutomationIdProperty, $"WorkspaceSession:{key}")) is not null);
+        AutomationElement? window = null;
+        AutomationElement? row = null;
+        await WaitUiAsync(run, () =>
+        {
+            foreach (var candidate in AppWindows(run))
+            {
+                var candidateRow = candidate.FindFirst(TreeScope.Descendants,
+                    new PropertyCondition(AutomationElement.AutomationIdProperty, $"WorkspaceSession:{key}"));
+                if (candidateRow is null)
+                    continue;
+
+                window = candidate;
+                row = candidateRow;
+                return true;
+            }
+
+            return false;
+        }, $"session row {key}");
+        if (window is null || row is null)
+            throw new InvalidOperationException($"Session row '{key}' was not found in the app window.");
+
         if (!SetForegroundWindow(new IntPtr(window.Current.NativeWindowHandle)))
             throw new InvalidOperationException("Cannot activate the isolated Workspace for keyboard proof.");
-        var row = FindById(run, $"WorkspaceSession:{key}")!;
         row.SetFocus();
         await WaitUiAsync(run, () => FindById(run, $"WorkspaceSession:{key}")?.Current.HasKeyboardFocus == true,
             "session row keyboard focus");
@@ -1590,6 +1621,32 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
                 && request.SessionKey == GatewayScenario.EdgeSessionKey
                 && request.ModelCatalogView == "configured");
             await CaptureIfRequestedAsync(run, "retained-current-model-catalog.png");
+        });
+    }
+
+    [GatewayFixtureUiFact]
+    [Trait("Category", "GatewayFixture")]
+    public async Task NewChatIsLocalAndBackForwardDoesNotCreateGatewaySessions()
+    {
+        await WithAppAsync(async run =>
+        {
+            await run.InvokeAsync("app.navigate", new { page = "chat" });
+            await SelectSessionAsync(run, GatewayScenario.OtherSessionTitle, GatewayScenario.OtherSessionKey);
+            await InvokeWhenEnabledAsync(run, () => FindById(run, "WorkspaceSessionsAdd"), "open local draft");
+            bool DraftDefaultsVisible() =>
+                FindById(run, "ChatEnvironmentPicker") is { Current.IsOffscreen: false } environment &&
+                environment.Current.Name.Contains("Fixture Gateway", StringComparison.Ordinal) &&
+                FindById(run, "ChatWorkspacePicker") is { Current.IsOffscreen: false } workspace &&
+                workspace.Current.Name.Contains("research", StringComparison.Ordinal);
+            await WaitUiAsync(run, DraftDefaultsVisible, "fresh local draft with selected assistant defaults");
+            Assert.DoesNotContain(run.Gateway.Requests, request => request.Method is "sessions.create" or "chat.send");
+            Assert.False(SessionSelected(run, GatewayScenario.OtherSessionTitle));
+            await CaptureIfRequestedAsync(run, "new-chat-local-draft.png");
+            await InvokeWhenEnabledAsync(run, () => FindById(run, "WorkspaceBack"), "Back from local draft");
+            await WaitComposerSelectionAsync(run, GatewayScenario.OtherSessionKey);
+            await InvokeWhenEnabledAsync(run, () => FindById(run, "WorkspaceForward"), "Forward to local draft");
+            await WaitUiAsync(run, DraftDefaultsVisible, "Forward restores unsent local draft");
+            Assert.DoesNotContain(run.Gateway.Requests, request => request.Method is "sessions.create" or "chat.send");
         });
     }
 
@@ -2510,7 +2567,7 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
             window.FindFirst(TreeScope.Descendants,
                 new PropertyCondition(AutomationElement.AutomationIdProperty, "WorkspaceTitleBar")) is not null);
 
-    private static void CaptureSessionsWidths(GatewayFixtureRun run)
+    private static async Task CaptureSessionsWidthsAsync(GatewayFixtureRun run)
     {
         try
         {
@@ -2544,16 +2601,18 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
             var shellExpandedSizing = new WindowSizingResult(shellWidthPx, shellWidthPx, shellExpandedHost, 0);
             metrics.Add(CaptureWidth(run, "sessions-width-shell-min-expanded", null, "Medium",
                 "1000 DIP shell minimum with pane expanded", shellExpandedSizing));
-            var paneToggle = FindById(run, "SettingsTogglePane")!;
-            AssertVisibleInHub(run, paneToggle, "Settings pane toggle");
-            Invoke(paneToggle);
+            await InvokeWhenEnabledAsync(run,
+                () => FindById(run, "SettingsTogglePane") is { } toggle && IsVisibleInHub(run, toggle) ? toggle : null,
+                "visible Settings pane toggle before collapsing");
+            await WaitUiAsync(run, () => !SettingsPaneOpen(run), "Settings pane collapsed");
             var shellHost = WaitForStableHostWidth(run, requireStableNavWidth: true);
             var shellSizing = new WindowSizingResult(shellWidthPx, shellWidthPx, shellHost, 0);
             metrics.Add(CaptureWidth(run, "sessions-width-shell-min-collapsed", null, "Medium",
                 "1000 DIP shell minimum with pane collapsed", shellSizing));
 
             Assert.True(metrics.Select(metric => metric.WindowWidthPx).Distinct().Count() >= 4);
-            Assert.Equal(metrics.Count, metrics.Select(metric => metric.Sha256).Distinct(StringComparer.Ordinal).Count());
+            if (Environment.GetEnvironmentVariable("OPENCLAW_GATEWAY_FIXTURE_SCREENSHOTS") == "1")
+                Assert.Equal(metrics.Count, metrics.Select(metric => metric.Sha256).Distinct(StringComparer.Ordinal).Count());
             File.WriteAllText(Path.Combine(run.ArtifactsDirectory, "sessions-widths.json"),
                 JsonSerializer.Serialize(metrics, new JsonSerializerOptions { WriteIndented = true }));
         }
@@ -2565,10 +2624,15 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
         }
     }
 
-    private static void RestoreBaselineWindow(GatewayFixtureRun run)
+    // The toolbar search button is collapsed with the pane, so its visibility reports the pane state.
+    private static bool SettingsPaneOpen(GatewayFixtureRun run) =>
+        FindById(run, "SettingsSearch") is { Current.IsOffscreen: false };
+
+    // CI saw one UIA lookup miss the toggle right after the collapse relayout, so wait for it.
+    private static async Task RestoreBaselineWindowAsync(GatewayFixtureRun run)
     {
-        Invoke(FindById(run, "SettingsTogglePane")!);
-        Thread.Sleep(250);
+        await InvokeWhenEnabledAsync(run, "SettingsTogglePane", "enabled Settings pane toggle before expanding");
+        await WaitUiAsync(run, () => SettingsPaneOpen(run), "Settings pane expanded");
 
         var window = SettingsWindow(run);
         var handle = new IntPtr(window.Current.NativeWindowHandle);
@@ -2655,8 +2719,11 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
         var contentWidth = Math.Min(Math.Max(0, hostWidth - 2 * (hostWidth < 720 ? 20 : 32)), 1200);
         var tier = hostWidth >= 1000 ? "Wide" : hostWidth >= 720 ? "Medium" : "Narrow";
         CaptureSessionsWindow(run, captureName + ".png");
-        var imagePath = Path.Combine(run.ArtifactsDirectory, captureName + ".png");
-        var sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(imagePath)));
+        // The new-test soak disables screenshots; geometry is still measured and asserted.
+        var sha = Environment.GetEnvironmentVariable("OPENCLAW_GATEWAY_FIXTURE_SCREENSHOTS") == "1"
+            ? Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                File.ReadAllBytes(Path.Combine(run.ArtifactsDirectory, captureName + ".png"))))
+            : null;
         var result = new WidthCaptureResult(
             requestedHostWidth,
             Math.Round(hostWidth, 2),
@@ -2836,7 +2903,7 @@ public sealed partial class GatewayFixtureUiTests(ITestOutputHelper output)
         int InitialWindowWidthPx,
         int FinalWindowWidthPx,
         int Corrections,
-        string Sha256,
+        string? Sha256,
         string Note);
     private sealed record WindowSizingResult(
         int InitialWindowWidthPx,
